@@ -1,4 +1,7 @@
+'use client'
+
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 
 type CharacterCard = {
   id: string
@@ -56,11 +59,46 @@ const frequentlyAskedQuestions: FaqItem[] = [
 ]
 
 const LoginHomePage = () => {
+  const [isSignInModalOpen, setIsSignInModalOpen] = useState(false)
+
+  const handleOpenSignInModal = () => {
+    setIsSignInModalOpen(true)
+  }
+
+  const handleCloseSignInModal = () => {
+    setIsSignInModalOpen(false)
+  }
+
+  const handleModalContainerClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.currentTarget !== event.target) {
+      return
+    }
+
+    handleCloseSignInModal()
+  }
+
+  useEffect(() => {
+    const handleDocumentKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return
+      }
+
+      handleCloseSignInModal()
+    }
+
+    window.addEventListener('keydown', handleDocumentKeyDown)
+
+    return () => {
+      window.removeEventListener('keydown', handleDocumentKeyDown)
+    }
+  }, [])
+
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#030303] text-white">
-      <section className="relative isolate border-b border-white/10 pb-20">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(244,99,19,0.3),transparent_34%),radial-gradient(circle_at_5%_10%,rgba(139,44,16,0.4),transparent_28%),radial-gradient(circle_at_95%_5%,rgba(114,39,16,0.3),transparent_27%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(3,3,3,0.35),rgba(3,3,3,0.95))]" />
+      <section className="relative isolate h-screen min-h-[100vh] border-b border-white/10">
+        <div className="absolute inset-0 h-screen bg-[#070605]" />
+        <div className="absolute inset-0 h-screen bg-[radial-gradient(circle_at_50%_15%,rgba(244,99,19,0.28),transparent_34%),radial-gradient(circle_at_0%_5%,rgba(114,39,16,0.4),transparent_32%),radial-gradient(circle_at_100%_0%,rgba(212,75,9,0.28),transparent_30%)]" />
+        <div className="absolute inset-0 h-screen bg-[linear-gradient(to_bottom,rgba(3,3,3,0.35),rgba(3,3,3,0.95))]" />
 
         <header className="relative z-20 mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5 md:px-8">
           <Link
@@ -86,69 +124,99 @@ const LoginHomePage = () => {
           <button
             type="button"
             className="rounded-md border border-ember-400/60 bg-ember-500/30 px-4 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-ember-100 transition hover:bg-ember-500/50"
-            aria-label="Open login panel"
+            aria-label="Open sign in modal"
+            onClick={handleOpenSignInModal}
           >
-            Login
+            Sign In
           </button>
         </header>
 
-        <div className="relative z-10 mx-auto flex w-full max-w-6xl items-start justify-center px-5 pt-6 md:px-8 md:pt-10">
-          <div className="w-full max-w-md rounded-2xl border border-ember-300/20 bg-[#171411]/85 p-6 shadow-ember backdrop-blur md:p-8">
-            <h1 className="font-[family-name:var(--font-heading)] text-4xl font-extrabold uppercase tracking-wider text-white">
-              Welcome Back
+        <div className="relative z-10 mx-auto flex h-[calc(100vh-88px)] w-full max-w-6xl items-center justify-center px-5 pb-14 md:px-8">
+          <div className="max-w-2xl text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-ember-200/95">Ai Character Project</p>
+            <h1 className="mt-4 font-[family-name:var(--font-heading)] text-6xl font-extrabold uppercase leading-none text-white md:text-7xl">
+              Chat Connect Collect
             </h1>
-
-            <form className="mt-6 space-y-4" aria-label="Sign in form">
-              <label className="block">
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-white/70">Username</span>
-                <input
-                  type="text"
-                  name="username"
-                  className="w-full rounded-md border border-ember-200/35 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-ember-300 focus:ring-2 focus:ring-ember-400/45"
-                  aria-label="Username"
-                />
-              </label>
-
-              <label className="block">
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-white/70">Email Address</span>
-                <input
-                  type="email"
-                  name="email"
-                  className="w-full rounded-md border border-ember-200/35 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-ember-300 focus:ring-2 focus:ring-ember-400/45"
-                  aria-label="Email address"
-                />
-              </label>
-
-              <label className="block">
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-white/70">Password</span>
-                <input
-                  type="password"
-                  name="password"
-                  className="w-full rounded-md border border-ember-200/35 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-ember-300 focus:ring-2 focus:ring-ember-400/45"
-                  aria-label="Password"
-                />
-              </label>
-
-              <div className="pt-1 text-right">
-                <Link
-                  href="/auth/forgot-password"
-                  className="text-xs font-semibold uppercase tracking-[0.08em] text-ember-300 transition hover:text-ember-200"
-                  aria-label="Go to forgot password"
-                >
-                  Forgot Password?
-                </Link>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 py-2.5 text-sm font-bold uppercase tracking-[0.12em] text-black transition hover:brightness-110"
-                aria-label="Sign in to account"
-              >
-                Sign In
-              </button>
-            </form>
+            <p className="mx-auto mt-4 max-w-xl text-sm text-white/80 md:text-base">
+              Explore top VRoid personalities, support creators, and jump into the web demo with instant gated access through Patreon.
+            </p>
           </div>
         </div>
+
+        {isSignInModalOpen ? (
+          <div
+            className="absolute inset-0 z-30 flex items-center justify-center bg-black/55 px-5"
+            onClick={handleModalContainerClick}
+            aria-label="Sign in modal backdrop"
+            role="presentation"
+          >
+            <div className="w-full max-w-md rounded-2xl border border-ember-300/20 bg-[#171411]/95 p-6 shadow-ember backdrop-blur md:p-8">
+              <div className="mb-5 flex items-start justify-between gap-3">
+                <h2 className="font-[family-name:var(--font-heading)] text-4xl font-extrabold uppercase tracking-wider text-white">
+                  Welcome Back
+                </h2>
+                <button
+                  type="button"
+                  className="rounded-md border border-ember-300/30 px-2 py-1 text-xs font-semibold uppercase tracking-[0.1em] text-ember-200 transition hover:border-ember-200 hover:text-white"
+                  onClick={handleCloseSignInModal}
+                  aria-label="Close sign in modal"
+                >
+                  Close
+                </button>
+              </div>
+
+              <form className="space-y-4" aria-label="Sign in form">
+                <label className="block">
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-white/70">Username</span>
+                  <input
+                    type="text"
+                    name="username"
+                    className="w-full rounded-md border border-ember-200/35 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-ember-300 focus:ring-2 focus:ring-ember-400/45"
+                    aria-label="Username"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-white/70">Email Address</span>
+                  <input
+                    type="email"
+                    name="email"
+                    className="w-full rounded-md border border-ember-200/35 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-ember-300 focus:ring-2 focus:ring-ember-400/45"
+                    aria-label="Email address"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-white/70">Password</span>
+                  <input
+                    type="password"
+                    name="password"
+                    className="w-full rounded-md border border-ember-200/35 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-ember-300 focus:ring-2 focus:ring-ember-400/45"
+                    aria-label="Password"
+                  />
+                </label>
+
+                <div className="pt-1 text-right">
+                  <Link
+                    href="/auth/forgot-password"
+                    className="text-xs font-semibold uppercase tracking-[0.08em] text-ember-300 transition hover:text-ember-200"
+                    aria-label="Go to forgot password"
+                  >
+                    Forgot Password?
+                  </Link>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 py-2.5 text-sm font-bold uppercase tracking-[0.12em] text-black transition hover:brightness-110"
+                  aria-label="Sign in to account"
+                >
+                  Sign In
+                </button>
+              </form>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="relative mx-auto w-full max-w-6xl px-5 py-16 md:px-8">
