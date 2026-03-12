@@ -1,5 +1,6 @@
 'use client'
 
+import AuthInputField from '@/components/ui-elements/auth-input-field'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
@@ -93,35 +94,9 @@ const Header = () => {
             </div>
 
             <form className="space-y-4" aria-label="Sign in form">
-              <label className="block">
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-white/70">Username</span>
-                <input
-                  type="text"
-                  name="username"
-                  className="w-full rounded-md border border-ember-200/35 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-ember-300 focus:ring-2 focus:ring-ember-400/45"
-                  aria-label="Username"
-                />
-              </label>
-
-              <label className="block">
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-white/70">Email Address</span>
-                <input
-                  type="email"
-                  name="email"
-                  className="w-full rounded-md border border-ember-200/35 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-ember-300 focus:ring-2 focus:ring-ember-400/45"
-                  aria-label="Email address"
-                />
-              </label>
-
-              <label className="block">
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-white/70">Password</span>
-                <input
-                  type="password"
-                  name="password"
-                  className="w-full rounded-md border border-ember-200/35 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-ember-300 focus:ring-2 focus:ring-ember-400/45"
-                  aria-label="Password"
-                />
-              </label>
+              <AuthInputField label="Username" name="username" type="text" ariaLabel="Username" />
+              <AuthInputField label="Email Address" name="email" type="email" ariaLabel="Email address" />
+              <AuthInputField label="Password" name="password" type="password" ariaLabel="Password" />
 
               <div className="pt-1 text-right">
                 <Link
