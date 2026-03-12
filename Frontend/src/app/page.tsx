@@ -1,4 +1,4 @@
-import HomePage from '@/components/home-page'
+import HomePage from '@/components/home/home-page'
 
 const RootPage = () => {
   return <HomePage />

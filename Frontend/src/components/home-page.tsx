@@ -1,8 +1,6 @@
 'use client'
 
-import Image from 'next/image'
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
 
 type CharacterCard = {
   id: string
@@ -142,78 +140,15 @@ const PlatformIcon = ({ iconType }: PlatformIconProps) => {
 }
 
 const HomePage = () => {
-  const [isSignInModalOpen, setIsSignInModalOpen] = useState(false)
-
-  const handleOpenSignInModal = () => {
-    setIsSignInModalOpen(true)
-  }
-
-  const handleCloseSignInModal = () => {
-    setIsSignInModalOpen(false)
-  }
-
-  const handleModalContainerClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (event.currentTarget !== event.target) {
-      return
-    }
-
-    handleCloseSignInModal()
-  }
-
-  useEffect(() => {
-    const handleDocumentKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') {
-        return
-      }
-
-      handleCloseSignInModal()
-    }
-
-    window.addEventListener('keydown', handleDocumentKeyDown)
-
-    return () => {
-      window.removeEventListener('keydown', handleDocumentKeyDown)
-    }
-  }, [])
-
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#030303] text-white">
+    <main className="relative overflow-hidden bg-[#030303] text-white">
       <section className="relative isolate h-screen min-h-[100vh] border-b border-white/10">
         <div className="absolute inset-0 h-screen bg-[url('/images/BannerBackground.png')] bg-cover bg-center bg-no-repeat" />
         <div className="absolute inset-0 h-screen bg-[#070605]/52" />
         <div className="absolute inset-0 h-screen bg-[radial-gradient(circle_at_50%_15%,rgba(244,99,19,0.28),transparent_34%),radial-gradient(circle_at_0%_5%,rgba(114,39,16,0.4),transparent_32%),radial-gradient(circle_at_100%_0%,rgba(212,75,9,0.28),transparent_30%)]" />
         <div className="absolute inset-0 h-screen bg-[linear-gradient(to_bottom,rgba(3,3,3,0.2),rgba(3,3,3,0.78))]" />
 
-        <header className="relative z-20">
-          <div className="mx-auto flex w-full max-w-[1150px] items-center justify-between px-5 py-5 md:px-8">
-            <Link href="/" className="inline-flex items-center text-white" aria-label="SecretWaifu home">
-              <Image src="/images/Logo.png" alt="SecretWaifu logo" width={164} height={44} className="h-9 w-auto" priority />
-            </Link>
-
-            <nav className="hidden items-center gap-9 text-xs font-semibold uppercase tracking-[0.2em] text-white/85 md:flex">
-              <Link href="/" className="transition hover:text-ember-300" aria-label="Go to home">
-                Home
-              </Link>
-              <Link href="/play-demo" className="transition hover:text-ember-300" aria-label="Go to play page">
-                Play
-              </Link>
-              <Link href="/characters" className="transition hover:text-ember-300" aria-label="Go to characters">
-                Characters
-              </Link>
-            </nav>
-
-            <button
-              type="button"
-              className="rounded-md border border-ember-500/65 bg-[#2b160f]/85 px-5 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-ember-100 transition hover:bg-[#3a1d13]"
-              aria-label="Open sign in modal"
-              onClick={handleOpenSignInModal}
-            >
-              Sign In
-            </button>
-          </div>
-        </header>
-
-        <div className="relative z-10 mx-auto flex h-[calc(100vh-88px)] w-full max-w-6xl items-start justify-center px-5 pb-14 pt-24 md:px-8 md:pt-28">
+        <div className="relative z-10 mx-auto flex h-full w-full max-w-6xl items-start justify-center px-5 pb-14 pt-24 md:px-8 md:pt-28">
           <div className="max-w-3xl text-center">
             <p className="text-sm font-semibold uppercase tracking-[0.22em] text-ember-200/95">Ai Character Project</p>
 
@@ -261,81 +196,6 @@ const HomePage = () => {
             </div>
           </div>
         </div>
-
-        {isSignInModalOpen ? (
-          <div
-            className="absolute inset-0 z-30 flex items-center justify-center bg-black/55 px-5"
-            onClick={handleModalContainerClick}
-            aria-label="Sign in modal backdrop"
-            role="presentation"
-          >
-            <div className="w-full max-w-md rounded-2xl border border-ember-300/20 bg-[#171411]/95 p-6 shadow-ember backdrop-blur md:p-8">
-              <div className="mb-5 flex items-start justify-between gap-3">
-                <h2 className="font-[family-name:var(--font-heading)] text-4xl font-extrabold uppercase tracking-wider text-white">
-                  Welcome Back
-                </h2>
-                <button
-                  type="button"
-                  className="rounded-md border border-ember-300/30 px-2 py-1 text-xs font-semibold uppercase tracking-[0.1em] text-ember-200 transition hover:border-ember-200 hover:text-white"
-                  onClick={handleCloseSignInModal}
-                  aria-label="Close sign in modal"
-                >
-                  Close
-                </button>
-              </div>
-
-              <form className="space-y-4" aria-label="Sign in form">
-                <label className="block">
-                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-white/70">Username</span>
-                  <input
-                    type="text"
-                    name="username"
-                    className="w-full rounded-md border border-ember-200/35 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-ember-300 focus:ring-2 focus:ring-ember-400/45"
-                    aria-label="Username"
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-white/70">Email Address</span>
-                  <input
-                    type="email"
-                    name="email"
-                    className="w-full rounded-md border border-ember-200/35 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-ember-300 focus:ring-2 focus:ring-ember-400/45"
-                    aria-label="Email address"
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-white/70">Password</span>
-                  <input
-                    type="password"
-                    name="password"
-                    className="w-full rounded-md border border-ember-200/35 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-ember-300 focus:ring-2 focus:ring-ember-400/45"
-                    aria-label="Password"
-                  />
-                </label>
-
-                <div className="pt-1 text-right">
-                  <Link
-                    href="/auth/forgot-password"
-                    className="text-xs font-semibold uppercase tracking-[0.08em] text-ember-300 transition hover:text-ember-200"
-                    aria-label="Go to forgot password"
-                  >
-                    Forgot Password?
-                  </Link>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 py-2.5 text-sm font-bold uppercase tracking-[0.12em] text-black transition hover:brightness-110"
-                  aria-label="Sign in to account"
-                >
-                  Sign In
-                </button>
-              </form>
-            </div>
-          </div>
-        ) : null}
       </section>
 
       <section className="relative mx-auto w-full max-w-6xl px-5 py-16 md:px-8">
@@ -400,47 +260,6 @@ const HomePage = () => {
         </div>
       </section>
 
-      <footer className="border-t border-white/5 bg-[radial-gradient(circle_at_18%_115%,rgba(237,90,20,0.62),rgba(237,90,20,0.08)_36%,transparent_60%),radial-gradient(circle_at_70%_122%,rgba(237,90,20,0.4),rgba(237,90,20,0.04)_30%,transparent_56%),linear-gradient(to_right,#130804,#070707_42%,#050505)]">
-        <div className="mx-auto flex h-auto w-full max-w-[1240px] flex-col justify-between px-8 py-10 !pb-[50px] md:px-12">
-          <div className="flex items-start justify-between">
-            <div className="max-w-[360px]">
-              <div className="inline-flex items-center">
-                <Image src="/images/Logo.png" alt="SecretWaifu logo" width={164} height={44} className="h-8 w-auto opacity-95" />
-              </div>
-              <p className="mt-4 text-[14px] leading-[1.45] text-white/45">
-                Step into a world, interactive world with your favorite VRoid girl uncensored and completely immersive VR supported
-              </p>
-            </div>
-
-            <div className="flex flex-col items-end">
-              <nav className="mt-1 flex flex-col items-end gap-[2px] text-[13px] font-semibold uppercase tracking-[0.12em] text-white/35">
-                <Link href="/" className="transition hover:text-white/60" aria-label="Home link in footer">
-                  Home
-                </Link>
-                <Link href="/chat-faq" className="transition hover:text-white/60" aria-label="Chat FAQ link in footer">
-                  Chat FAQ
-                </Link>
-                <Link href="/characters" className="transition hover:text-white/60" aria-label="Characters link in footer">
-                  Characters
-                </Link>
-                <Link href="/access-code" className="transition hover:text-white/60" aria-label="Access code link in footer">
-                  Access Code
-                </Link>
-                <Link href="/members" className="transition hover:text-white/60" aria-label="Membership link in footer">
-                  Membership
-                </Link>
-              </nav>
-              <p className="mt-9 text-[34px] font-semibold italic tracking-[0.02em] text-white/70">VISA</p>
-            </div>
-          </div>
-
-          <div className="text-[13px] leading-[1.35] text-white/35">
-            <p>(c) 2026 - Copyright</p>
-            <p>All rights reserved</p>
-            <p>Terms of Service</p>
-          </div>
-        </div>
-      </footer>
     </main>
   )
 }

@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
 import { Barlow_Condensed, Sora } from 'next/font/google'
+import Footer from '@/components/shared/footer'
+import Header from '@/components/shared/header'
 import './globals.css'
 
 const bodyFont = Sora({
@@ -29,7 +31,9 @@ const RootLayout = ({ children }: RootLayoutProps) => {
         suppressHydrationWarning
         className={`${bodyFont.variable} ${headingFont.variable} bg-[#030303] text-white antialiased`}
       >
+        <Header />
         {children}
+        <Footer />
       </body>
     </html>
   )
