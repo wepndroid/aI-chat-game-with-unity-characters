@@ -42,7 +42,7 @@ const Header = () => {
 
   return (
     <>
-      <header className="relative z-40 border-b border-white/10 bg-[linear-gradient(to_right,rgba(77,32,12,0.55),rgba(14,10,8,0.9)_44%,rgba(7,7,7,0.96))]">
+      <header className="z-40 border-b border-white/10 bg-transparent fixed w-[100%]">
         <div className="mx-auto flex w-full max-w-[1150px] items-center justify-between px-5 py-5 md:px-8">
           <Link href="/" className="inline-flex items-center text-white" aria-label="SecretWaifu home">
             <Image src="/images/Logo.png" alt="SecretWaifu logo" width={164} height={44} className="h-9 w-auto" priority />
