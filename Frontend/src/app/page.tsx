@@ -1,7 +1,7 @@
-import LoginHomePage from '@/components/login-home-page'
+import HomePage from '@/components/home-page'
 
-const HomePage = () => {
-  return <LoginHomePage />
+const RootPage = () => {
+  return <HomePage />
 }
 
-export default HomePage
+export default RootPage

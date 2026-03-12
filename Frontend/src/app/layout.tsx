@@ -14,7 +14,7 @@ const headingFont = Barlow_Condensed({
 })
 
 export const metadata: Metadata = {
-  title: 'SecretWaifu | Login Home',
+  title: 'SecretWaifu | Home Page',
   description: 'AI Chat Game platform login and homepage preview'
 }
 

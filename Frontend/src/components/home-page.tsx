@@ -141,7 +141,7 @@ const PlatformIcon = ({ iconType }: PlatformIconProps) => {
   )
 }
 
-const LoginHomePage = () => {
+const HomePage = () => {
   const [isSignInModalOpen, setIsSignInModalOpen] = useState(false)
 
   const handleOpenSignInModal = () => {
@@ -407,13 +407,13 @@ const LoginHomePage = () => {
               <div className="inline-flex items-center">
                 <Image src="/images/Logo.png" alt="SecretWaifu logo" width={164} height={44} className="h-8 w-auto opacity-95" />
               </div>
-              <p className="mt-4 text-[12px] leading-[1.45] text-white/45">
+              <p className="mt-4 text-[14px] leading-[1.45] text-white/45">
                 Step into a world, interactive world with your favorite VRoid girl uncensored and completely immersive VR supported
               </p>
             </div>
 
             <div className="flex flex-col items-end">
-              <nav className="mt-1 flex flex-col items-end gap-[2px] text-[11px] font-semibold uppercase tracking-[0.12em] text-white/35">
+              <nav className="mt-1 flex flex-col items-end gap-[2px] text-[13px] font-semibold uppercase tracking-[0.12em] text-white/35">
                 <Link href="/" className="transition hover:text-white/60" aria-label="Home link in footer">
                   Home
                 </Link>
@@ -430,11 +430,11 @@ const LoginHomePage = () => {
                   Membership
                 </Link>
               </nav>
-              <p className="mt-9 text-[28px] font-semibold italic tracking-[0.02em] text-white/70">VISA</p>
+              <p className="mt-9 text-[34px] font-semibold italic tracking-[0.02em] text-white/70">VISA</p>
             </div>
           </div>
 
-          <div className="text-[11px] leading-[1.35] text-white/35">
+          <div className="text-[13px] leading-[1.35] text-white/35">
             <p>(c) 2026 - Copyright</p>
             <p>All rights reserved</p>
             <p>Terms of Service</p>
@@ -445,4 +445,4 @@ const LoginHomePage = () => {
   )
 }
 
-export default LoginHomePage
+export default HomePage
