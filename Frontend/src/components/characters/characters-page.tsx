@@ -113,7 +113,7 @@ const CharactersPage = () => {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_40%_0%,rgba(244,99,19,0.15),transparent_32%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.09)_1px,transparent_1px)] [background-size:22px_22px] opacity-50" />
 
-        <div className="relative z-10 mx-auto w-full max-w-[1150px]">
+        <div className="relative z-10 mx-auto w-full max-w-[1150px] pt-24">
           <h1 className="text-center font-[family-name:var(--font-heading)] text-5xl font-semibold italic text-white md:text-6xl">
             AI Anime Girlfriend
           </h1>
