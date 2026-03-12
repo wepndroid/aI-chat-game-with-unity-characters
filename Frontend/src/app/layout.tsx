@@ -25,7 +25,10 @@ type RootLayoutProps = Readonly<{
 const RootLayout = ({ children }: RootLayoutProps) => {
   return (
     <html lang="en">
-      <body className={`${bodyFont.variable} ${headingFont.variable} bg-[#030303] text-white antialiased`}>
+      <body
+        suppressHydrationWarning
+        className={`${bodyFont.variable} ${headingFont.variable} bg-[#030303] text-white antialiased`}
+      >
         {children}
       </body>
     </html>
