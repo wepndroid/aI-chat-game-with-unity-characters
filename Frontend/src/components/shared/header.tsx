@@ -61,6 +61,9 @@ const Header = () => {
             <Link href="/profile" className="transition hover:text-ember-300" aria-label="Go to profile">
               Profile
             </Link>
+            <Link href="/admin/dashboard" className="transition hover:text-ember-300" aria-label="Go to admin dashboard">
+              Admin
+            </Link>
           </nav>
 
           <button
