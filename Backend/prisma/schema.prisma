@@ -1,0 +1,123 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  CREATOR
+  ADMIN
+}
+
+enum CharacterStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+enum CharacterVisibility {
+  PRIVATE
+  UNLISTED
+  PUBLIC
+}
+
+enum EntitlementSource {
+  PATREON
+  STRIPE
+  MANUAL
+}
+
+enum EntitlementStatus {
+  ACTIVE
+  INACTIVE
+  EXPIRED
+}
+
+model User {
+  id                String           @id @default(cuid())
+  email             String           @unique
+  username          String           @unique
+  passwordHash      String?
+  role              UserRole         @default(USER)
+  isEmailVerified   Boolean          @default(false)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  characters        Character[]
+  reviews           Review[]
+  patreonAccount    PatreonAccount?
+  entitlementGrants Entitlement[]
+}
+
+model Character {
+  id               String              @id @default(cuid())
+  slug             String              @unique
+  name             String
+  tagline          String?
+  description      String?
+  vroidFileUrl     String?
+  previewImageUrl  String?
+  status           CharacterStatus     @default(DRAFT)
+  visibility       CharacterVisibility @default(PRIVATE)
+  isPatreonGated   Boolean             @default(false)
+  minimumTierCents Int?
+  heartsCount      Int                 @default(0)
+  averageRating    Float               @default(0)
+  viewsCount       Int                 @default(0)
+  ownerId          String
+  owner            User                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  reviews          Review[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  publishedAt      DateTime?
+
+  @@index([ownerId, status])
+  @@index([status, visibility])
+}
+
+model Review {
+  id          String    @id @default(cuid())
+  rating      Int
+  body        String
+  userId      String
+  characterId String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, characterId])
+  @@index([characterId])
+}
+
+model PatreonAccount {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  patreonUserId    String   @unique
+  tierCents        Int?
+  membershipStatus String?
+  lastCheckedAt    DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Entitlement {
+  id         String            @id @default(cuid())
+  userId     String
+  source     EntitlementSource @default(PATREON)
+  tierCode   String
+  status     EntitlementStatus @default(INACTIVE)
+  validFrom  DateTime?
+  validUntil DateTime?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
