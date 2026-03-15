@@ -12,11 +12,7 @@ const PlayDemoPage = () => {
         <div className="relative z-10 mx-auto w-full max-w-6xl pt-24">
           <h1 className="text-center font-[family-name:var(--font-heading)] text-5xl font-semibold italic leading-none text-white md:text-6xl">
             WebGL Demo
-          </h1>
-          <p className="mx-auto mt-4 max-w-3xl text-center text-sm leading-7 text-white/75">
-            Placeholder structure for embedding the itch.io or hosted WebGL build. Configure
-            `NEXT_PUBLIC_WEBGL_EMBED_URL` to load the live demo URL.
-          </p>
+          </h1> 
 
           <div className="mx-auto mt-8 w-full max-w-5xl overflow-hidden rounded-2xl border border-white/15 bg-[#0b0b0b] shadow-[0_18px_45px_rgba(0,0,0,0.45)]">
             <div className="aspect-video w-full">
@@ -31,9 +27,6 @@ const PlayDemoPage = () => {
               ) : (
                 <div className="flex h-full w-full flex-col items-center justify-center px-6 text-center">
                   <p className="font-[family-name:var(--font-heading)] text-4xl font-semibold italic text-white">WebGL Embed Placeholder</p>
-                  <p className="mt-3 max-w-2xl text-sm leading-6 text-white/70">
-                    Set `NEXT_PUBLIC_WEBGL_EMBED_URL` in your environment to load the actual game build in this frame.
-                  </p>
                 </div>
               )}
             </div>

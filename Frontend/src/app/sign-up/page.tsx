@@ -1,0 +1,127 @@
+'use client'
+
+import AuthInputField from '@/components/ui-elements/auth-input-field'
+import { registerAuthUser, writeSessionUser } from '@/lib/auth-session'
+import { useRouter } from 'next/navigation'
+import { useState } from 'react'
+
+const SignUpPage = () => {
+  const router = useRouter()
+  const [usernameInputValue, setUsernameInputValue] = useState('')
+  const [emailInputValue, setEmailInputValue] = useState('')
+  const [passwordInputValue, setPasswordInputValue] = useState('')
+  const [confirmPasswordInputValue, setConfirmPasswordInputValue] = useState('')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  const handleSignUpSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (passwordInputValue.trim() !== confirmPasswordInputValue.trim()) {
+      setErrorMessage('Passwords do not match.')
+      return
+    }
+
+    const registrationResult = registerAuthUser({
+      username: usernameInputValue,
+      email: emailInputValue,
+      password: passwordInputValue
+    })
+
+    if (!registrationResult.success) {
+      setErrorMessage(registrationResult.message)
+      return
+    }
+
+    writeSessionUser(registrationResult.sessionUser)
+    router.replace('/profile')
+  }
+
+  const handleOpenSignInModal = () => {
+    router.push('/?openSignIn=1')
+  }
+
+  return (
+    <main className="relative overflow-hidden bg-[#030303] text-white">
+      <section className="relative min-h-[calc(100vh-140px)] border-b border-white/10 px-5 py-10 md:px-8">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(244,99,19,0.15),transparent_34%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:22px_22px] opacity-45" />
+
+        <div className="relative z-10 mx-auto w-full max-w-md pt-24">
+          <div className="rounded-2xl border border-ember-300/20 bg-[#171411]/95 p-6 shadow-ember backdrop-blur md:p-8">
+            <h1 className="font-[family-name:var(--font-heading)] text-4xl font-extrabold uppercase tracking-wider text-white">
+              Create Account
+            </h1>
+            <p className="mt-3 text-sm text-white/70">
+              Register a new account to access your profile and character management.
+            </p>
+
+            <form className="mt-5 space-y-4" aria-label="Sign up form" onSubmit={handleSignUpSubmit}>
+              <AuthInputField
+                label="Username"
+                name="username"
+                type="text"
+                ariaLabel="Username"
+                value={usernameInputValue}
+                onChange={setUsernameInputValue}
+                autoComplete="username"
+              />
+              <AuthInputField
+                label="Email Address"
+                name="email"
+                type="email"
+                ariaLabel="Email address"
+                value={emailInputValue}
+                onChange={setEmailInputValue}
+                autoComplete="email"
+              />
+              <AuthInputField
+                label="Password"
+                name="password"
+                type="password"
+                ariaLabel="Password"
+                value={passwordInputValue}
+                onChange={setPasswordInputValue}
+                autoComplete="new-password"
+              />
+              <AuthInputField
+                label="Confirm Password"
+                name="confirm-password"
+                type="password"
+                ariaLabel="Confirm password"
+                value={confirmPasswordInputValue}
+                onChange={setConfirmPasswordInputValue}
+                autoComplete="new-password"
+              />
+
+              {errorMessage ? (
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-rose-300">{errorMessage}</p>
+              ) : null}
+
+              <button
+                type="submit"
+                className="w-full rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 py-2.5 text-sm font-bold uppercase tracking-[0.12em] text-black transition hover:brightness-110"
+                aria-label="Create account"
+              >
+                Sign Up
+              </button>
+            </form>
+
+            <p className="mt-4 text-xs text-white/70">
+              Already have an account?{' '}
+              <button
+                type="button"
+                onClick={handleOpenSignInModal}
+                className="font-semibold text-ember-300 transition hover:text-ember-200"
+                aria-label="Open sign in modal"
+              >
+                Sign In
+              </button>
+            </p>
+          </div>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+export default SignUpPage
