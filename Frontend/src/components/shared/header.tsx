@@ -1,14 +1,32 @@
 'use client'
 
 import AuthInputField from '@/components/ui-elements/auth-input-field'
+import {
+  AUTH_SESSION_CHANGED_EVENT,
+  authenticateAuthUser,
+  clearSessionUser,
+  readSessionUser,
+  writeSessionUser
+} from '@/lib/auth-session'
+import type { SessionUser } from '@/lib/auth-session'
 import Image from 'next/image'
 import Link from 'next/link'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 const Header = () => {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const [isSignInModalOpen, setIsSignInModalOpen] = useState(false)
+  const [sessionUser, setSessionUser] = useState<SessionUser | null>(() => readSessionUser())
+  const [usernameInputValue, setUsernameInputValue] = useState('')
+  const [emailInputValue, setEmailInputValue] = useState('')
+  const [passwordInputValue, setPasswordInputValue] = useState('')
+  const [signInErrorMessage, setSignInErrorMessage] = useState<string | null>(null)
 
   const handleOpenSignInModal = () => {
+    setSignInErrorMessage(null)
     setIsSignInModalOpen(true)
   }
 
@@ -21,6 +39,35 @@ const Header = () => {
       return
     }
 
+    handleCloseSignInModal()
+  }
+
+  const handleSignOut = () => {
+    setSessionUser(null)
+    clearSessionUser()
+  }
+
+  const handleSignInSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    const normalizedEmail = emailInputValue.trim().toLowerCase()
+    const normalizedPassword = passwordInputValue.trim()
+
+    const authenticationResult = authenticateAuthUser(normalizedEmail, normalizedPassword)
+
+    if (!authenticationResult.success) {
+      setSignInErrorMessage(authenticationResult.message)
+      return
+    }
+
+    const nextSessionUser: SessionUser = authenticationResult.sessionUser
+
+    setSessionUser(nextSessionUser)
+    writeSessionUser(nextSessionUser)
+    setUsernameInputValue('')
+    setEmailInputValue('')
+    setPasswordInputValue('')
+    setSignInErrorMessage(null)
     handleCloseSignInModal()
   }
 
@@ -40,6 +87,36 @@ const Header = () => {
     }
   }, [])
 
+  useEffect(() => {
+    const handleSessionChanged = () => {
+      setSessionUser(readSessionUser())
+    }
+
+    window.addEventListener(AUTH_SESSION_CHANGED_EVENT, handleSessionChanged)
+    window.addEventListener('storage', handleSessionChanged)
+
+    return () => {
+      window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, handleSessionChanged)
+      window.removeEventListener('storage', handleSessionChanged)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (searchParams.get('openSignIn') !== '1') {
+      return
+    }
+
+    setSignInErrorMessage(null)
+    setIsSignInModalOpen(true)
+
+    if (pathname === '/') {
+      router.replace('/')
+      return
+    }
+
+    router.replace(pathname)
+  }, [pathname, router, searchParams])
+
   return (
     <>
       <header className="fixed z-40 w-[100%] border-b border-white/10 bg-[#0b0b0b]/35 backdrop-blur-sm">
@@ -58,22 +135,42 @@ const Header = () => {
             <Link href="/characters" className="transition hover:text-ember-300" aria-label="Go to characters">
               Characters
             </Link>
-            <Link href="/profile" className="transition hover:text-ember-300" aria-label="Go to profile">
-              Profile
-            </Link>
-            <Link href="/admin/dashboard" className="transition hover:text-ember-300" aria-label="Go to admin dashboard">
-              Admin
-            </Link>
+            {sessionUser ? (
+              <Link href="/profile" className="transition hover:text-ember-300" aria-label="Go to profile">
+                Profile
+              </Link>
+            ) : null}
+            {sessionUser?.role === 'admin' ? (
+              <Link href="/admin/dashboard" className="transition hover:text-ember-300" aria-label="Go to admin dashboard">
+                Admin
+              </Link>
+            ) : null}
           </nav>
 
-          <button
-            type="button"
-            className="rounded-md border border-ember-500/65 bg-[#2b160f]/85 px-5 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-ember-100 transition hover:bg-[#3a1d13]"
-            aria-label="Open sign in modal"
-            onClick={handleOpenSignInModal}
-          >
-            Sign In
-          </button>
+          {sessionUser ? (
+            <div className="flex items-center gap-3">
+              <p className="hidden text-[11px] font-semibold uppercase tracking-[0.08em] text-white/80 md:block">
+                {sessionUser.username} ({sessionUser.role})
+              </p>
+              <button
+                type="button"
+                className="rounded-md border border-white/30 bg-transparent px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:border-ember-300 hover:text-ember-200"
+                aria-label="Sign out"
+                onClick={handleSignOut}
+              >
+                Sign Out
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="rounded-md border border-ember-500/65 bg-[#2b160f]/85 px-5 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-ember-100 transition hover:bg-[#3a1d13]"
+              aria-label="Open sign in modal"
+              onClick={handleOpenSignInModal}
+            >
+              Sign In
+            </button>
+          )}
         </div>
       </header>
 
@@ -99,10 +196,38 @@ const Header = () => {
               </button>
             </div>
 
-            <form className="space-y-4" aria-label="Sign in form">
-              <AuthInputField label="Username" name="username" type="text" ariaLabel="Username" />
-              <AuthInputField label="Email Address" name="email" type="email" ariaLabel="Email address" />
-              <AuthInputField label="Password" name="password" type="password" ariaLabel="Password" />
+            <form className="space-y-4" aria-label="Sign in form" onSubmit={handleSignInSubmit}>
+              <AuthInputField
+                label="Username"
+                name="username"
+                type="text"
+                ariaLabel="Username"
+                value={usernameInputValue}
+                onChange={setUsernameInputValue}
+                autoComplete="username"
+              />
+              <AuthInputField
+                label="Email Address"
+                name="email"
+                type="email"
+                ariaLabel="Email address"
+                value={emailInputValue}
+                onChange={setEmailInputValue}
+                autoComplete="email"
+              />
+              <AuthInputField
+                label="Password"
+                name="password"
+                type="password"
+                ariaLabel="Password"
+                value={passwordInputValue}
+                onChange={setPasswordInputValue}
+                autoComplete="current-password"
+              />
+
+              {signInErrorMessage ? (
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-rose-300">{signInErrorMessage}</p>
+              ) : null}
 
               <div className="pt-1 text-right">
                 <Link
@@ -114,6 +239,17 @@ const Header = () => {
                 </Link>
               </div>
 
+              <div className="text-right">
+                <Link
+                  href="/sign-up"
+                  className="text-xs font-semibold uppercase tracking-[0.08em] text-ember-300 transition hover:text-ember-200"
+                  aria-label="Go to sign up page"
+                  onClick={handleCloseSignInModal}
+                >
+                  Create Account
+                </Link>
+              </div>
+
               <button
                 type="submit"
                 className="w-full rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 py-2.5 text-sm font-bold uppercase tracking-[0.12em] text-black transition hover:brightness-110"
@@ -121,6 +257,10 @@ const Header = () => {
               >
                 Sign In
               </button>
+
+              <p className="text-[11px] leading-5 text-white/60">
+                Admin demo login: <span className="text-ember-300">admin@secretwaifu.com / admin123</span>
+              </p>
             </form>
           </div>
         </div>
