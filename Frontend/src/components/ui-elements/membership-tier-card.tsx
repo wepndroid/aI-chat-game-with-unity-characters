@@ -9,12 +9,12 @@ type MembershipTierCardProps = {
 const MembershipTierCard = ({ tierName, monthlyPriceLabel, summary, benefitList, isCurrentTier }: MembershipTierCardProps) => {
   const containerClassName = isCurrentTier
     ? 'border-ember-300/45 bg-ember-500/10'
-    : 'border-white/12 bg-[#131112]'
+    : 'border-white/10 bg-[#131112]'
   const headingColorClassName = isCurrentTier ? 'text-ember-200' : 'text-white'
 
   return (
     <article className={`rounded-xl border p-4 ${containerClassName}`}>
-      <p className={`font-[family-name:var(--font-heading)] text-[34px] font-semibold italic leading-none ${headingColorClassName}`}>{tierName}</p>
+      <p className={`font-[family-name:var(--font-heading)] text-[22px] font-normal italic leading-none ${headingColorClassName}`}>{tierName}</p>
       <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-white/70">{monthlyPriceLabel}</p>
       <p className="mt-3 text-sm leading-6 text-white/75">{summary}</p>
 

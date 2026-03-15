@@ -10,7 +10,7 @@ const ProfilePage = () => {
         <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.09)_1px,transparent_1px)] [background-size:22px_22px] opacity-50" />
 
         <div className="relative z-10 mx-auto w-full max-w-[1150px] pt-24">
-          <h1 className="text-center font-[family-name:var(--font-heading)] text-6xl font-semibold italic leading-none text-white md:text-7xl">
+          <h1 className="text-center font-[family-name:var(--font-heading)] text-4xl font-normal italic leading-none text-white md:text-5xl">
             Profile
           </h1>
 
@@ -18,7 +18,7 @@ const ProfilePage = () => {
             <AccountSideMenu activeKey="profile" />
 
             <div className="rounded-md border border-white/10 bg-[#1a1414]/95 p-6 md:p-10">
-              <h2 className="font-[family-name:var(--font-heading)] text-6xl font-semibold italic leading-none text-white md:text-7xl">reKengator2</h2>
+              <h2 className="font-[family-name:var(--font-heading)] text-4xl font-normal italic leading-none text-white md:text-5xl">reKengator2</h2>
               <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/45">Member Since Feb 2025</p>
 
               <button

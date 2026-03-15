@@ -163,7 +163,7 @@ const MembershipPage = () => {
         <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.09)_1px,transparent_1px)] [background-size:22px_22px] opacity-50" />
 
         <div className="relative z-10 mx-auto w-full max-w-[1150px] pt-24">
-          <h1 className="text-center font-[family-name:var(--font-heading)] text-6xl font-semibold italic leading-none text-white md:text-7xl">
+          <h1 className="text-center font-[family-name:var(--font-heading)] text-4xl font-normal italic leading-none text-white md:text-5xl">
             Membership
           </h1>
           <p className="mx-auto mt-3 max-w-[780px] text-center text-sm leading-7 text-white/70">
@@ -174,11 +174,11 @@ const MembershipPage = () => {
             <AccountSideMenu activeKey="membership" />
 
             <div className="space-y-5">
-              <article className="rounded-xl border border-white/12 bg-[#151214]/95 p-5">
+              <article className="rounded-xl border border-white/10 bg-[#151214]/95 p-5">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/55">Provider</p>
-                    <p className="mt-1 font-[family-name:var(--font-heading)] text-[34px] font-semibold italic leading-none text-white">Patreon OAuth</p>
+                    <p className="mt-1 font-[family-name:var(--font-heading)] text-[22px] font-normal italic leading-none text-white">Patreon OAuth</p>
                   </div>
                   <MembershipStatusPill status={connectionStatus} />
                 </div>
@@ -276,10 +276,10 @@ const MembershipPage = () => {
                 />
               </div>
 
-              <article className="rounded-xl border border-white/12 bg-[#151214]/95 p-5">
+              <article className="rounded-xl border border-white/10 bg-[#151214]/95 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h2 className="font-[family-name:var(--font-heading)] text-[38px] font-semibold italic leading-none text-white">Entitlements</h2>
+                    <h2 className="font-[family-name:var(--font-heading)] text-[25px] font-normal italic leading-none text-white">Entitlements</h2>
                     <p className="mt-1 text-xs uppercase tracking-[0.09em] text-white/55">
                       Server-side permissions snapshot synced from Patreon
                     </p>
@@ -287,7 +287,7 @@ const MembershipPage = () => {
                   <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-white/60">Sync Count: {syncCount}</p>
                 </div>
 
-                <div className="mt-4 hidden rounded-lg border border-white/12 bg-[#0f0e10] px-3 py-2 text-[11px] uppercase tracking-[0.09em] text-white/60 sm:grid sm:grid-cols-[1.4fr_0.8fr_0.9fr_0.7fr]">
+                <div className="mt-4 hidden rounded-lg border border-white/10 bg-[#0f0e10] px-3 py-2 text-[11px] uppercase tracking-[0.09em] text-white/60 sm:grid sm:grid-cols-[1.4fr_0.8fr_0.9fr_0.7fr]">
                   <p>Feature Key</p>
                   <p>Source</p>
                   <p>Valid Until</p>

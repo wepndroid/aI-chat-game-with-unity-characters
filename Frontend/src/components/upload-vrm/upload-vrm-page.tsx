@@ -49,7 +49,7 @@ const UploadVrmPage = () => {
         <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.09)_1px,transparent_1px)] [background-size:22px_22px] opacity-50" />
 
         <div className="relative z-10 mx-auto w-full max-w-[1150px] pt-24">
-          <h1 className="text-center font-[family-name:var(--font-heading)] text-6xl font-semibold italic leading-none text-white md:text-7xl">
+          <h1 className="text-center font-[family-name:var(--font-heading)] text-4xl font-normal italic leading-none text-white md:text-5xl">
             Upload VRM
           </h1>
 

@@ -56,7 +56,7 @@ const AccountSideMenu = ({ activeKey }: AccountSideMenuProps) => {
               aria-current={isActive ? 'page' : undefined}
               className="group inline-flex items-center justify-between pr-1"
             >
-              <span className={`font-[family-name:var(--font-heading)] text-[32px] font-semibold italic leading-[0.8] tracking-[0.01em] ${textColorClassName}`}>
+              <span className={`font-[family-name:var(--font-heading)] text-[21px] font-medium italic leading-[0.85] tracking-[0.01em] ${textColorClassName}`}>
                 {entryItem.label}
               </span>
               <span className="shrink-0 transition group-hover:brightness-125">

@@ -13,7 +13,7 @@ const statusLabelMap: Record<MembershipConnectionStatus, string> = {
 }
 
 const statusClassNameMap: Record<MembershipConnectionStatus, string> = {
-  'not-connected': 'border-white/25 bg-white/5 text-white/75',
+  'not-connected': 'border-white/20 bg-white/5 text-white/75',
   syncing: 'border-amber-300/45 bg-amber-300/10 text-amber-100',
   active: 'border-emerald-300/45 bg-emerald-300/10 text-emerald-100',
   expired: 'border-rose-300/45 bg-rose-300/10 text-rose-100',
