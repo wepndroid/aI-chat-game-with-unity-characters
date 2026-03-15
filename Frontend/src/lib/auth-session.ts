@@ -9,6 +9,7 @@ type SessionUser = {
 const AUTH_SESSION_STORAGE_KEY = 'secretwaifu-session-v1'
 const AUTH_SESSION_CHANGED_EVENT = 'auth-session-changed'
 const AUTH_USERS_STORAGE_KEY = 'secretwaifu-users-v1'
+const AUTH_OPEN_SIGN_IN_MODAL_EVENT = 'auth-open-sign-in-modal'
 
 type StoredAuthUser = {
   username: string
@@ -283,6 +284,7 @@ const authenticateAuthUser = (emailInput: string, passwordInput: string): Authen
 }
 
 export {
+  AUTH_OPEN_SIGN_IN_MODAL_EVENT,
   AUTH_SESSION_CHANGED_EVENT,
   AUTH_SESSION_STORAGE_KEY,
   AUTH_USERS_STORAGE_KEY,

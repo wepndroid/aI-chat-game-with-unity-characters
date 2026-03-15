@@ -2,6 +2,8 @@ import Link from 'next/link'
 
 const PlayDemoPage = () => {
   const webglEmbedUrl = process.env.NEXT_PUBLIC_WEBGL_EMBED_URL
+  const trailerEmbedUrl = process.env.NEXT_PUBLIC_TRAILER_EMBED_URL
+  const trailerVideoUrl = process.env.NEXT_PUBLIC_TRAILER_VIDEO_URL
 
   return (
     <main className="relative overflow-hidden bg-[#030303] text-white">
@@ -13,6 +15,9 @@ const PlayDemoPage = () => {
           <h1 className="text-center font-[family-name:var(--font-heading)] text-5xl font-semibold italic leading-none text-white md:text-6xl">
             WebGL Demo
           </h1> 
+          <p className="mx-auto mt-4 max-w-3xl text-center text-sm leading-7 text-white/75">
+            Play the browser demo below, then continue to download or membership options for full access.
+          </p>
 
           <div className="mx-auto mt-8 w-full max-w-5xl overflow-hidden rounded-2xl border border-white/15 bg-[#0b0b0b] shadow-[0_18px_45px_rgba(0,0,0,0.45)]">
             <div className="aspect-video w-full">
@@ -27,10 +32,40 @@ const PlayDemoPage = () => {
               ) : (
                 <div className="flex h-full w-full flex-col items-center justify-center px-6 text-center">
                   <p className="font-[family-name:var(--font-heading)] text-4xl font-semibold italic text-white">WebGL Embed Placeholder</p>
+                  <p className="mt-3 max-w-2xl text-sm leading-6 text-white/70">
+                    Set `NEXT_PUBLIC_WEBGL_EMBED_URL` to the live game build URL to activate this demo frame.
+                  </p>
                 </div>
               )}
             </div>
           </div>
+
+          <section className="mx-auto mt-8 w-full max-w-5xl">
+            <h2 className="font-[family-name:var(--font-heading)] text-[38px] font-semibold italic leading-none text-white">
+              Trailer Preview
+            </h2>
+
+            <div className="mt-4 overflow-hidden rounded-2xl border border-white/15 bg-[#0b0b0b]">
+              <div className="aspect-video w-full">
+                {trailerEmbedUrl ? (
+                  <iframe
+                    src={trailerEmbedUrl}
+                    title="AI Chat Game Trailer"
+                    className="h-full w-full"
+                    loading="lazy"
+                    allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                    allowFullScreen
+                  />
+                ) : trailerVideoUrl ? (
+                  <video src={trailerVideoUrl} controls className="h-full w-full bg-black" preload="metadata" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center px-6 text-center">
+                    <p className="text-sm text-white/70">Set trailer env vars to display the official trailer here.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
 
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link

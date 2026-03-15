@@ -4,6 +4,7 @@ import morgan from 'morgan'
 import { ZodError } from 'zod'
 import characterRoutes from './routes/character-routes'
 import healthRoutes from './routes/health-routes'
+import patreonRoutes from './routes/patreon-routes'
 import statsRoutes from './routes/stats-routes'
 import userRoutes from './routes/user-routes'
 
@@ -23,6 +24,7 @@ app.use('/api', healthRoutes)
 app.use('/api', userRoutes)
 app.use('/api', characterRoutes)
 app.use('/api', statsRoutes)
+app.use('/api', patreonRoutes)
 
 app.use((_request, response) => {
   response.status(404).json({
