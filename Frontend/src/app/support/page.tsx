@@ -5,8 +5,7 @@ const SupportPage = () => {
     <MarketingPlaceholderPage
       title="Support"
       description="Support and roadmap page for Patreon users, creators, and administrators."
-      bulletList={[
-        'Track milestones and release notes',
+      bulletList={[ 
         'Open issues related to account access or uploads',
         'Coordinate API contract changes with game integration'
       ]}

@@ -1,30 +1,59 @@
 import Link from 'next/link'
 
-const purchasePathList = [
-  {
-    id: 'itch',
-    title: 'Buy On itch.io',
-    description: 'Recommended for instant checkout and desktop builds.',
-    ctaLabel: 'Open itch.io',
-    href: 'https://itch.io'
-  },
-  {
-    id: 'patreon',
-    title: 'Unlock With Patreon',
-    description: 'Link your Patreon tier and unlock gated content on the website and game.',
-    ctaLabel: 'Connect Patreon',
-    href: '/members'
-  },
-  {
-    id: 'direct',
-    title: 'Direct Download (Placeholder)',
-    description: 'Reserved for future first-party website paywall and account-based downloads.',
-    ctaLabel: 'Coming Soon',
-    href: '/support'
-  }
-]
+type PurchasePathItem = {
+  id: string
+  title: string
+  description: string
+  ctaLabel: string
+  href: string
+}
 
 const DownloadPage = () => {
+  const itchIoUrl = process.env.NEXT_PUBLIC_ITCH_IO_URL ?? 'https://itch.io'
+  const patreonUrl = process.env.NEXT_PUBLIC_PATREON_URL ?? '/members'
+  const directPurchaseUrl = process.env.NEXT_PUBLIC_DIRECT_PURCHASE_URL ?? '/support'
+  const windowsBuildUrl = process.env.NEXT_PUBLIC_WINDOWS_BUILD_URL ?? '/support'
+
+  const purchasePathList: PurchasePathItem[] = [
+    {
+      id: 'purchase-webgl',
+      title: 'Play Free WebGL Demo',
+      description: 'Try the game instantly in browser before purchasing.',
+      ctaLabel: 'Launch Demo',
+      href: '/play-demo'
+    },
+    {
+      id: 'purchase-itch',
+      title: 'Buy On itch.io',
+      description: 'Recommended path for full game checkout and release builds.',
+      ctaLabel: 'Open itch.io',
+      href: itchIoUrl
+    },
+    {
+      id: 'purchase-patreon',
+      title: 'Patreon Membership',
+      description: 'Use your tier to unlock gated content and synced account perks.',
+      ctaLabel: 'Open Patreon',
+      href: patreonUrl
+    },
+    {
+      id: 'purchase-direct',
+      title: 'Direct Website Purchase',
+      description: 'Future-ready direct purchase path for first-party checkout flow.',
+      ctaLabel: 'Open Direct Purchase',
+      href: directPurchaseUrl
+    },
+    {
+      id: 'purchase-windows',
+      title: 'Windows Build Download',
+      description: 'Download the latest Windows build after account verification.',
+      ctaLabel: 'Open Build Download',
+      href: windowsBuildUrl
+    }
+  ]
+
+  const isExternalHref = (href: string) => href.startsWith('http://') || href.startsWith('https://')
+
   return (
     <main className="relative overflow-hidden bg-[#030303] text-white">
       <section className="relative min-h-[calc(100vh-140px)] border-b border-white/10 px-5 py-10 md:px-8">
@@ -36,23 +65,36 @@ const DownloadPage = () => {
             Download And Purchase
           </h1>
           <p className="mx-auto mt-4 max-w-3xl text-center text-sm leading-7 text-white/75">
-            Purchase-path structure. Production checkout and entitlement flows will connect in later versions.
+            Compare available purchase and access paths. Configure external links via environment variables for production.
           </p>
 
-          <div className="mt-10 grid gap-4 md:grid-cols-3">
+          <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {purchasePathList.map((pathItem) => (
               <article key={pathItem.id} className="rounded-xl border border-white/10 bg-[#121212]/95 p-5">
                 <h2 className="font-[family-name:var(--font-heading)] text-3xl font-semibold italic leading-none text-white">
                   {pathItem.title}
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-white/70">{pathItem.description}</p>
-                <Link
-                  href={pathItem.href}
-                  className="mt-5 inline-flex h-10 min-w-[160px] items-center justify-center rounded-md border border-ember-300/40 px-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-ember-200 transition hover:border-ember-300 hover:text-white"
-                  aria-label={pathItem.ctaLabel}
-                >
-                  {pathItem.ctaLabel}
-                </Link>
+
+                {isExternalHref(pathItem.href) ? (
+                  <a
+                    href={pathItem.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-5 inline-flex h-10 min-w-[160px] items-center justify-center rounded-md border border-ember-300/40 px-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-ember-200 transition hover:border-ember-300 hover:text-white"
+                    aria-label={pathItem.ctaLabel}
+                  >
+                    {pathItem.ctaLabel}
+                  </a>
+                ) : (
+                  <Link
+                    href={pathItem.href}
+                    className="mt-5 inline-flex h-10 min-w-[160px] items-center justify-center rounded-md border border-ember-300/40 px-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-ember-200 transition hover:border-ember-300 hover:text-white"
+                    aria-label={pathItem.ctaLabel}
+                  >
+                    {pathItem.ctaLabel}
+                  </Link>
+                )}
               </article>
             ))}
           </div>

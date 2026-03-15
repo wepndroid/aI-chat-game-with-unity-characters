@@ -1,7 +1,7 @@
 'use client'
 
 import AuthInputField from '@/components/ui-elements/auth-input-field'
-import { registerAuthUser, writeSessionUser } from '@/lib/auth-session'
+import { AUTH_OPEN_SIGN_IN_MODAL_EVENT, registerAuthUser, writeSessionUser } from '@/lib/auth-session'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
@@ -37,7 +37,8 @@ const SignUpPage = () => {
   }
 
   const handleOpenSignInModal = () => {
-    router.push('/?openSignIn=1')
+    router.push('/')
+    window.dispatchEvent(new Event(AUTH_OPEN_SIGN_IN_MODAL_EVENT))
   }
 
   return (

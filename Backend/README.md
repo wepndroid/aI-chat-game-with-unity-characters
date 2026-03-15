@@ -34,6 +34,21 @@ This service provides backend/API fundamentals and database schema foundations f
 - `POST /api/characters`
 - `PATCH /api/characters/:characterId/status`
 - `GET /api/stats/overview`
+- `GET /api/patreon/connect?email=&username=&redirectAfter=`
+- `GET /api/patreon/oauth/callback`
+- `GET /api/patreon/status?email=`
+- `POST /api/patreon/sync`
+- `POST /api/patreon/disconnect`
+
+## Patreon OAuth Setup
+Set these in `.env`:
+- `PATREON_OAUTH_ENABLED=true`
+- `PATREON_CLIENT_ID=...`
+- `PATREON_CLIENT_SECRET=...`
+- `PATREON_REDIRECT_URI=http://127.0.0.1:4000/api/patreon/oauth/callback`
+- `PATREON_SCOPES="identity identity.memberships"`
+- `PATREON_TOKEN_ENCRYPTION_KEY=<32-byte key in base64 or utf8>`
+- `FRONTEND_URL=http://127.0.0.1:5000`
 
 ## Notes
 - Authentication and secure session handling are intentionally deferred to later milestones.

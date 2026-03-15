@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  engineType = "binary"
 }
 
 datasource db {
@@ -51,6 +52,7 @@ model User {
   characters        Character[]
   reviews           Review[]
   patreonAccount    PatreonAccount?
+  patreonOauthState PatreonOAuthState[]
   entitlementGrants Entitlement[]
 }
 
@@ -96,15 +98,34 @@ model Review {
 }
 
 model PatreonAccount {
-  id               String   @id @default(cuid())
-  userId           String   @unique
-  patreonUserId    String   @unique
-  tierCents        Int?
-  membershipStatus String?
-  lastCheckedAt    DateTime?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  patreonUserId        String   @unique
+  campaignMemberId     String?
+  accessTokenEncrypted String?
+  refreshTokenEncrypted String?
+  tokenExpiresAt       DateTime?
+  tierCents            Int?
+  membershipStatus     String?
+  lastChargeStatus     String?
+  lastChargeDate       DateTime?
+  nextChargeDate       DateTime?
+  lastCheckedAt        DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PatreonOAuthState {
+  id            String   @id @default(cuid())
+  stateToken    String   @unique
+  userId        String
+  redirectAfter String?
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
 }
 
 model Entitlement {

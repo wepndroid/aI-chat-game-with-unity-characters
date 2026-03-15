@@ -2,6 +2,7 @@
 
 import AuthInputField from '@/components/ui-elements/auth-input-field'
 import {
+  AUTH_OPEN_SIGN_IN_MODAL_EVENT,
   AUTH_SESSION_CHANGED_EVENT,
   authenticateAuthUser,
   clearSessionUser,
@@ -11,13 +12,9 @@ import {
 import type { SessionUser } from '@/lib/auth-session'
 import Image from 'next/image'
 import Link from 'next/link'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 const Header = () => {
-  const router = useRouter()
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
   const [isSignInModalOpen, setIsSignInModalOpen] = useState(false)
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(() => readSessionUser())
   const [usernameInputValue, setUsernameInputValue] = useState('')
@@ -88,34 +85,25 @@ const Header = () => {
   }, [])
 
   useEffect(() => {
+    const handleOpenSignInModal = () => {
+      setSignInErrorMessage(null)
+      setIsSignInModalOpen(true)
+    }
+
     const handleSessionChanged = () => {
       setSessionUser(readSessionUser())
     }
 
+    window.addEventListener(AUTH_OPEN_SIGN_IN_MODAL_EVENT, handleOpenSignInModal)
     window.addEventListener(AUTH_SESSION_CHANGED_EVENT, handleSessionChanged)
     window.addEventListener('storage', handleSessionChanged)
 
     return () => {
+      window.removeEventListener(AUTH_OPEN_SIGN_IN_MODAL_EVENT, handleOpenSignInModal)
       window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, handleSessionChanged)
       window.removeEventListener('storage', handleSessionChanged)
     }
   }, [])
-
-  useEffect(() => {
-    if (searchParams.get('openSignIn') !== '1') {
-      return
-    }
-
-    setSignInErrorMessage(null)
-    setIsSignInModalOpen(true)
-
-    if (pathname === '/') {
-      router.replace('/')
-      return
-    }
-
-    router.replace(pathname)
-  }, [pathname, router, searchParams])
 
   return (
     <>
