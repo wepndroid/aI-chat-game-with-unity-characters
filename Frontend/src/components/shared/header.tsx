@@ -2,6 +2,7 @@
 
 import AuthInputField from '@/components/ui-elements/auth-input-field'
 import {
+  AUTH_SESSION_STORAGE_KEY,
   AUTH_OPEN_SIGN_IN_MODAL_EVENT,
   AUTH_SESSION_CHANGED_EVENT,
   authenticateAuthUser,
@@ -12,11 +13,42 @@ import {
 import type { SessionUser } from '@/lib/auth-session'
 import Image from 'next/image'
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+
+const subscribeSessionUser = (onStoreChange: () => void) => {
+  if (typeof window === 'undefined') {
+    return () => undefined
+  }
+
+  window.addEventListener(AUTH_SESSION_CHANGED_EVENT, onStoreChange)
+  window.addEventListener('storage', onStoreChange)
+
+  return () => {
+    window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, onStoreChange)
+    window.removeEventListener('storage', onStoreChange)
+  }
+}
+
+const readClientSessionSnapshot = () => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  return localStorage.getItem(AUTH_SESSION_STORAGE_KEY)
+}
+
+const readServerSessionSnapshot = () => null
 
 const Header = () => {
   const [isSignInModalOpen, setIsSignInModalOpen] = useState(false)
-  const [sessionUser, setSessionUser] = useState<SessionUser | null>(() => readSessionUser())
+  const sessionSnapshot = useSyncExternalStore<string | null>(subscribeSessionUser, readClientSessionSnapshot, readServerSessionSnapshot)
+  const sessionUser = useMemo<SessionUser | null>(() => {
+    if (!sessionSnapshot) {
+      return null
+    }
+
+    return readSessionUser()
+  }, [sessionSnapshot])
   const [usernameInputValue, setUsernameInputValue] = useState('')
   const [emailInputValue, setEmailInputValue] = useState('')
   const [passwordInputValue, setPasswordInputValue] = useState('')
@@ -40,7 +72,6 @@ const Header = () => {
   }
 
   const handleSignOut = () => {
-    setSessionUser(null)
     clearSessionUser()
   }
 
@@ -59,7 +90,6 @@ const Header = () => {
 
     const nextSessionUser: SessionUser = authenticationResult.sessionUser
 
-    setSessionUser(nextSessionUser)
     writeSessionUser(nextSessionUser)
     setUsernameInputValue('')
     setEmailInputValue('')
@@ -85,23 +115,15 @@ const Header = () => {
   }, [])
 
   useEffect(() => {
-    const handleOpenSignInModal = () => {
+    const handleOpenSignInModalEvent = () => {
       setSignInErrorMessage(null)
       setIsSignInModalOpen(true)
     }
 
-    const handleSessionChanged = () => {
-      setSessionUser(readSessionUser())
-    }
-
-    window.addEventListener(AUTH_OPEN_SIGN_IN_MODAL_EVENT, handleOpenSignInModal)
-    window.addEventListener(AUTH_SESSION_CHANGED_EVENT, handleSessionChanged)
-    window.addEventListener('storage', handleSessionChanged)
+    window.addEventListener(AUTH_OPEN_SIGN_IN_MODAL_EVENT, handleOpenSignInModalEvent)
 
     return () => {
-      window.removeEventListener(AUTH_OPEN_SIGN_IN_MODAL_EVENT, handleOpenSignInModal)
-      window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, handleSessionChanged)
-      window.removeEventListener('storage', handleSessionChanged)
+      window.removeEventListener(AUTH_OPEN_SIGN_IN_MODAL_EVENT, handleOpenSignInModalEvent)
     }
   }, [])
 

@@ -10,11 +10,31 @@ import userRoutes from './routes/user-routes'
 
 const app = express()
 
-const allowedOrigins = process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()).filter(Boolean) ?? []
+const normalizeOrigin = (origin: string) => {
+  return origin.trim().replace(/^['"]|['"]$/g, '').replace(/\/+$/, '')
+}
+
+const configuredOrigins = process.env.CORS_ORIGIN?.split(',').map((origin) => normalizeOrigin(origin)).filter(Boolean) ?? []
+const defaultDevOrigins = ['http://127.0.0.1:5000', 'http://localhost:5000']
+const allowedOrigins = new Set<string>([...configuredOrigins, ...defaultDevOrigins])
 
 app.use(
   cors({
-    origin: allowedOrigins.length > 0 ? allowedOrigins : true
+    origin: (origin, callback) => {
+      if (!origin) {
+        callback(null, true)
+        return
+      }
+
+      const normalizedRequestOrigin = normalizeOrigin(origin)
+
+      if (allowedOrigins.size === 0 || allowedOrigins.has(normalizedRequestOrigin)) {
+        callback(null, true)
+        return
+      }
+
+      callback(null, false)
+    }
   })
 )
 app.use(express.json({ limit: '10mb' }))

@@ -29,6 +29,30 @@ const parseDate = (value: unknown) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
+const mapTierCodeFromCents = (tierCents: number) => {
+  if (tierCents >= 1650) {
+    return 'secretwaifu_access'
+  }
+
+  if (tierCents >= 900) {
+    return 'just_models'
+  }
+
+  return 'inactive'
+}
+
+const mapCanonicalTierCentsFromCode = (tierCode: string) => {
+  if (tierCode === 'secretwaifu_access') {
+    return 1650
+  }
+
+  if (tierCode === 'just_models') {
+    return 900
+  }
+
+  return 0
+}
+
 const extractMembershipSnapshot = (identity: PatreonIdentityResponse) => {
   const memberships = (identity.included ?? []).filter((resource) => resource.type === 'member')
   const tiers = (identity.included ?? []).filter((resource) => resource.type === 'tier')
@@ -56,10 +80,13 @@ const extractMembershipSnapshot = (identity: PatreonIdentityResponse) => {
   const entitledAmountFromMember =
     typeof memberAttributes.currently_entitled_amount_cents === 'number' ? memberAttributes.currently_entitled_amount_cents : 0
   const tierCents = Math.max(maxTierAmount, entitledAmountFromMember)
+  const campaignId =
+    (selectedMembership?.relationships?.campaign as { data?: { id?: string } } | undefined)?.data?.id ?? null
 
   return {
     patreonUserId: identity.data.id,
     campaignMemberId: selectedMembership?.id ?? null,
+    campaignId,
     patronStatus,
     tierCents,
     lastChargeStatus,
@@ -130,9 +157,14 @@ const syncPatreonMembership = async (input: SyncPatreonMembershipInput): Promise
 
   const identity = await fetchPatreonIdentity(accessToken)
   const snapshot = extractMembershipSnapshot(identity)
+  const requiredCampaignId = process.env.PATREON_CAMPAIGN_ID?.trim() || null
+  const isCampaignMatch = !requiredCampaignId || snapshot.campaignId === requiredCampaignId
+  const effectiveTierCents = isCampaignMatch ? snapshot.tierCents : 0
+  const effectiveMembershipStatus = isCampaignMatch ? snapshot.patronStatus : 'campaign_mismatch'
+  const tierCode = mapTierCodeFromCents(effectiveTierCents)
+  const canonicalTierCents = mapCanonicalTierCentsFromCode(tierCode)
   const entitlementStatus =
-    snapshot.patronStatus === 'active_patron' && snapshot.tierCents > 0 ? EntitlementStatus.ACTIVE : EntitlementStatus.INACTIVE
-  const tierCode = snapshot.tierCents > 0 ? `valid_${snapshot.tierCents}` : 'inactive'
+    effectiveMembershipStatus === 'active_patron' && canonicalTierCents > 0 ? EntitlementStatus.ACTIVE : EntitlementStatus.INACTIVE
 
   if (!refreshToken || !tokenExpiresAt) {
     const currentPatreonAccount = await prisma.patreonAccount.findUnique({
@@ -161,8 +193,8 @@ const syncPatreonMembership = async (input: SyncPatreonMembershipInput): Promise
       accessTokenEncrypted,
       refreshTokenEncrypted,
       tokenExpiresAt,
-      tierCents: snapshot.tierCents,
-      membershipStatus: snapshot.patronStatus,
+      tierCents: canonicalTierCents,
+      membershipStatus: effectiveMembershipStatus,
       lastChargeStatus: snapshot.lastChargeStatus,
       lastChargeDate: snapshot.lastChargeDate,
       nextChargeDate: snapshot.nextChargeDate,
@@ -175,8 +207,8 @@ const syncPatreonMembership = async (input: SyncPatreonMembershipInput): Promise
       accessTokenEncrypted,
       refreshTokenEncrypted,
       tokenExpiresAt,
-      tierCents: snapshot.tierCents,
-      membershipStatus: snapshot.patronStatus,
+      tierCents: canonicalTierCents,
+      membershipStatus: effectiveMembershipStatus,
       lastChargeStatus: snapshot.lastChargeStatus,
       lastChargeDate: snapshot.lastChargeDate,
       nextChargeDate: snapshot.nextChargeDate,
@@ -210,9 +242,9 @@ const syncPatreonMembership = async (input: SyncPatreonMembershipInput): Promise
   return {
     linked: true,
     patreonUserId: snapshot.patreonUserId,
-    tierCents: snapshot.tierCents,
+    tierCents: canonicalTierCents,
     tierCode,
-    membershipStatus: snapshot.patronStatus,
+    membershipStatus: effectiveMembershipStatus,
     lastCheckedAt: now.toISOString(),
     nextChargeDate: snapshot.nextChargeDate ? snapshot.nextChargeDate.toISOString() : null,
     entitlementStatus
