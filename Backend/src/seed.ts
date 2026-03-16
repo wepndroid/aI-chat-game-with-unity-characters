@@ -69,15 +69,15 @@ const run = async () => {
       userId: creatorUser.id
     },
     update: {
-      tierCents: 1799,
-      membershipStatus: 'active',
+      tierCents: 1650,
+      membershipStatus: 'active_patron',
       lastCheckedAt: new Date()
     },
     create: {
       userId: creatorUser.id,
       patreonUserId: 'patreon_creator_001',
-      tierCents: 1799,
-      membershipStatus: 'active',
+      tierCents: 1650,
+      membershipStatus: 'active_patron',
       lastCheckedAt: new Date()
     }
   })
@@ -94,7 +94,7 @@ const run = async () => {
       id: 'seed-entitlement-premium',
       userId: creatorUser.id,
       source: 'PATREON',
-      tierCode: 'valid_1799',
+      tierCode: 'secretwaifu_access',
       status: 'ACTIVE',
       validFrom: new Date(),
       validUntil: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30)

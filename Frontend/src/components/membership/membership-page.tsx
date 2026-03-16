@@ -9,7 +9,7 @@ import { readSessionUser } from '@/lib/auth-session'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 
-type MembershipTier = 'free' | 'supporter_799' | 'premium_1799'
+type MembershipTier = 'free' | 'just_models_900' | 'secretwaifu_1650'
 type PatreonEntitlementApiRecord = {
   id: string
   tierCode: string
@@ -30,22 +30,15 @@ type PatreonStatusApiResponse = {
 
 const inactiveEntitlementRecords: MembershipEntitlementRecord[] = [
   {
-    id: 'entitlement-premium-gallery',
-    featureKey: 'premium_gallery',
+    id: 'entitlement-just-models',
+    featureKey: 'just_models',
     sourceProvider: 'patreon',
     validUntilLabel: 'No access',
     status: 'inactive'
   },
   {
-    id: 'entitlement-exclusive-characters',
-    featureKey: 'exclusive_characters',
-    sourceProvider: 'patreon',
-    validUntilLabel: 'No access',
-    status: 'inactive'
-  },
-  {
-    id: 'entitlement-high-priority-queue',
-    featureKey: 'priority_character_queue',
+    id: 'entitlement-secretwaifu-access',
+    featureKey: 'secretwaifu_access',
     sourceProvider: 'patreon',
     validUntilLabel: 'No access',
     status: 'inactive'
@@ -55,6 +48,8 @@ const inactiveEntitlementRecords: MembershipEntitlementRecord[] = [
 const MembershipPage = () => {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:4000/api'
   const patreonExternalUrl = process.env.NEXT_PUBLIC_PATREON_URL ?? 'https://www.patreon.com'
+  const modelsTierUrl = process.env.NEXT_PUBLIC_PATREON_TIER_MODELS_URL ?? patreonExternalUrl
+  const secretwaifuTierUrl = process.env.NEXT_PUBLIC_PATREON_TIER_SECRETWAIFU_URL ?? patreonExternalUrl
   const [connectionStatus, setConnectionStatus] = useState<MembershipConnectionStatus>('not-connected')
   const [currentTier, setCurrentTier] = useState<MembershipTier>('free')
   const [isPatreonLinked, setIsPatreonLinked] = useState(false)
@@ -95,12 +90,12 @@ const MembershipPage = () => {
   }
 
   const mapTierFromCents = (tierCents: number): MembershipTier => {
-    if (tierCents >= 1799) {
-      return 'premium_1799'
+    if (tierCents >= 1650) {
+      return 'secretwaifu_1650'
     }
 
-    if (tierCents >= 799) {
-      return 'supporter_799'
+    if (tierCents >= 900) {
+      return 'just_models_900'
     }
 
     return 'free'
@@ -201,11 +196,11 @@ const MembershipPage = () => {
       const response = await fetch(`${apiBaseUrl}/patreon/connect?${query.toString()}`)
       const payload = (await response.json().catch(() => null)) as
         | {
-            data?: {
-              authorizationUrl?: string
-            }
-            message?: string
+          data?: {
+            authorizationUrl?: string
           }
+          message?: string
+        }
         | null
 
       if (!response.ok || !payload?.data?.authorizationUrl) {
@@ -301,14 +296,20 @@ const MembershipPage = () => {
 
   const tierLabelMap: Record<MembershipTier, string> = {
     free: 'Free',
-    supporter_799: 'Supporter',
-    premium_1799: 'Premium 17.99'
+    just_models_900: 'Just Our Models',
+    secretwaifu_1650: 'SecretWaifu Access'
   }
 
   const tierPriceLabelMap: Record<MembershipTier, string> = {
     free: '$0 / month',
-    supporter_799: '$7.99 / month',
-    premium_1799: '$17.99 / month'
+    just_models_900: 'EUR 9.00 / month (+VAT)',
+    secretwaifu_1650: 'EUR 16.50 / month (+VAT)'
+  }
+
+  const accessTierHelperTextMap: Record<MembershipTier, string> = {
+    free: 'Link Patreon and subscribe to unlock paid plans',
+    just_models_900: 'Tier 1 active: models pack and polls',
+    secretwaifu_1650: 'Tier 2 active: full SecretWaifu access'
   }
 
   return (
@@ -404,37 +405,68 @@ const MembershipPage = () => {
                   value={tierLabelMap[currentTier]}
                   label="Current Tier"
                   helperText={tierPriceLabelMap[currentTier]}
-                  isEmphasized={currentTier === 'premium_1799'}
+                  isEmphasized={currentTier === 'secretwaifu_1650'}
                 />
                 <DashboardStatCard
                   value={activeEntitlementCount.toString()}
                   label="Active Entitlements"
                   helperText="Used for server-side access checks"
                 />
-                <DashboardStatCard value={gatedAccessLabel} label="Gated Access" helperText={accessStateHelperText} isEmphasized={activeEntitlementCount > 0} />
+                <DashboardStatCard
+                  value={gatedAccessLabel}
+                  label="Gated Access"
+                  helperText={currentTier === 'free' ? accessStateHelperText : accessTierHelperTextMap[currentTier]}
+                  isEmphasized={activeEntitlementCount > 0}
+                />
               </div>
 
               <div className="grid gap-3 xl:grid-cols-3">
                 <MembershipTierCard
-                  tierName="FREE"
+                  tierName="Free"
                   monthlyPriceLabel="$0 / month"
-                  summary="Starter access for public characters and base website features."
-                  benefitList={['Browse approved public VRoid gallery', 'Post reviews on public characters', 'Save favorites to profile']}
+                  summary="Base access plan for public website and character browsing."
+                  benefitList={[
+                    'Browse approved public VRoid gallery',
+                    'View character pages and screenshots',
+                    'Submit public reviews and hearts',
+                    'Use account profile and favorites'
+                  ]}
+                  ctaLabel="Use Free"
+                  ctaHref="/characters"
                   isCurrentTier={currentTier === 'free'}
                 />
                 <MembershipTierCard
-                  tierName="SUPPORTER"
-                  monthlyPriceLabel="$7.99 / month"
-                  summary="Entry-level supporter perks with extra gated character access."
-                  benefitList={['Unlock supporter-tagged characters', 'Early access to selected community drops', 'Priority in review moderation queue']}
-                  isCurrentTier={currentTier === 'supporter_799'}
+                  tierName="Just Our Models"
+                  monthlyPriceLabel="EUR 9.00 / month (plus VAT)"
+                  summary="Models-only plan for character packs and community updates."
+                  benefitList={[
+                    'Access to the Patreon character pack',
+                    'Monthly character poll',
+                    'Developer blog',
+                    'Patreon exclusive posts and messages',
+                    'Discord access'
+                  ]}
+                  noteList={[]}
+                  ctaLabel="Select"
+                  ctaHref={modelsTierUrl}
+                  isCurrentTier={currentTier === 'just_models_900'}
                 />
                 <MembershipTierCard
-                  tierName="PREMIUM"
-                  monthlyPriceLabel="$17.99 / month"
-                  summary="Full Patreon experience with all gated character content and premium access."
-                  benefitList={['Unlock all premium gallery content', 'Access premium members-only character tiers', 'Highest priority for new release access']}
-                  isCurrentTier={currentTier === 'premium_1799'}
+                  tierName="SecretWaifu Access"
+                  monthlyPriceLabel="EUR 16.50 / month (plus VAT)"
+                  summary="Full access plan with game access and premium Patreon perks."
+                  benefitList={[
+                    'Access to Hey Waifu',
+                    'Full library access',
+                    'Patreon exclusive clothed and nude character pack',
+                    'Patreon exclusive posts and messages',
+                    'Patreon exclusive character polls',
+                    'Discord access'
+                  ]}
+                  ctaLabel="Select"
+                  ctaHref={secretwaifuTierUrl}
+                  isMostPopular
+                  isCurrentTier={currentTier === 'secretwaifu_1650'}
                 />
               </div>
 
