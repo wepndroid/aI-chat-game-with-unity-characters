@@ -1,10 +1,13 @@
+import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import express from 'express'
 import morgan from 'morgan'
 import { ZodError } from 'zod'
+import authRoutes from './routes/auth-routes'
 import characterRoutes from './routes/character-routes'
 import healthRoutes from './routes/health-routes'
 import patreonRoutes from './routes/patreon-routes'
+import reviewRoutes from './routes/review-routes'
 import statsRoutes from './routes/stats-routes'
 import userRoutes from './routes/user-routes'
 
@@ -14,13 +17,15 @@ const normalizeOrigin = (origin: string) => {
   return origin.trim().replace(/^['"]|['"]$/g, '').replace(/\/+$/, '')
 }
 
+const isProduction = process.env.NODE_ENV === 'production'
 const configuredOrigins = process.env.CORS_ORIGIN?.split(',').map((origin) => normalizeOrigin(origin)).filter(Boolean) ?? []
-const defaultDevOrigins = ['http://127.0.0.1:5000', 'http://localhost:5000']
+const defaultDevOrigins = isProduction ? [] : ['http://127.0.0.1:5000', 'http://localhost:5000']
 const allowedOrigins = new Set<string>([...configuredOrigins, ...defaultDevOrigins])
 
 app.use(
   cors({
-    origin: (origin, callback) => {
+    credentials: true,
+    origin: (origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) => {
       if (!origin) {
         callback(null, true)
         return
@@ -28,7 +33,7 @@ app.use(
 
       const normalizedRequestOrigin = normalizeOrigin(origin)
 
-      if (allowedOrigins.size === 0 || allowedOrigins.has(normalizedRequestOrigin)) {
+      if (allowedOrigins.has(normalizedRequestOrigin)) {
         callback(null, true)
         return
       }
@@ -38,11 +43,14 @@ app.use(
   })
 )
 app.use(express.json({ limit: '10mb' }))
+app.use(cookieParser())
 app.use(morgan('dev'))
 
 app.use('/api', healthRoutes)
+app.use('/api', authRoutes)
 app.use('/api', userRoutes)
 app.use('/api', characterRoutes)
+app.use('/api', reviewRoutes)
 app.use('/api', statsRoutes)
 app.use('/api', patreonRoutes)
 

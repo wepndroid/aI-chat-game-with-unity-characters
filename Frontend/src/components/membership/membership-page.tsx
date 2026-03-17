@@ -1,13 +1,14 @@
 'use client'
 
+import { useAuth } from '@/components/providers/auth-provider'
 import AccountSideMenu from '@/components/shared/account-side-menu'
 import DashboardStatCard from '@/components/ui-elements/dashboard-stat-card'
 import MembershipEntitlementRow, { type MembershipEntitlementRecord } from '@/components/ui-elements/membership-entitlement-row'
 import MembershipStatusPill, { type MembershipConnectionStatus } from '@/components/ui-elements/membership-status-pill'
 import MembershipTierCard from '@/components/ui-elements/membership-tier-card'
-import { readSessionUser } from '@/lib/auth-session'
+import { apiGet, apiPost } from '@/lib/api-client'
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 type MembershipTier = 'free' | 'just_models_900' | 'secretwaifu_1650'
 type PatreonEntitlementApiRecord = {
@@ -28,6 +29,8 @@ type PatreonStatusApiResponse = {
   entitlements: PatreonEntitlementApiRecord[]
 }
 
+type MembershipAccessState = 'not-connected' | 'connected-inactive' | 'active-entitlement' | 'sync-in-progress'
+
 const inactiveEntitlementRecords: MembershipEntitlementRecord[] = [
   {
     id: 'entitlement-just-models',
@@ -45,8 +48,68 @@ const inactiveEntitlementRecords: MembershipEntitlementRecord[] = [
   }
 ]
 
+const formatDateLabel = (value: string | null, fallbackLabel: string) => {
+  if (!value) {
+    return fallbackLabel
+  }
+
+  const parsedDate = new Date(value)
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return fallbackLabel
+  }
+
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(parsedDate)
+}
+
+const mapTierFromCents = (tierCents: number): MembershipTier => {
+  if (tierCents >= 1650) {
+    return 'secretwaifu_1650'
+  }
+
+  if (tierCents >= 900) {
+    return 'just_models_900'
+  }
+
+  return 'free'
+}
+
+const mapMembershipStatusToChip = (linked: boolean, membershipStatus: string): MembershipConnectionStatus => {
+  if (!linked) {
+    return 'not-connected'
+  }
+
+  if (membershipStatus === 'active_patron') {
+    return 'active'
+  }
+
+  if (membershipStatus === 'former_patron') {
+    return 'canceled'
+  }
+
+  if (membershipStatus === 'declined_patron') {
+    return 'expired'
+  }
+
+  return 'not-connected'
+}
+
+const mapEntitlements = (entitlements: PatreonEntitlementApiRecord[]): MembershipEntitlementRecord[] => {
+  if (entitlements.length === 0) {
+    return inactiveEntitlementRecords
+  }
+
+  return entitlements.map((entitlement) => ({
+    id: entitlement.id,
+    featureKey: entitlement.tierCode,
+    sourceProvider: 'patreon',
+    validUntilLabel: formatDateLabel(entitlement.validUntil, 'No access'),
+    status: entitlement.status === 'ACTIVE' ? 'active' : 'inactive'
+  }))
+}
+
 const MembershipPage = () => {
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:4000/api'
+  const { sessionUser, isAuthLoading } = useAuth()
   const patreonExternalUrl = process.env.NEXT_PUBLIC_PATREON_URL ?? 'https://www.patreon.com'
   const modelsTierUrl = process.env.NEXT_PUBLIC_PATREON_TIER_MODELS_URL ?? patreonExternalUrl
   const secretwaifuTierUrl = process.env.NEXT_PUBLIC_PATREON_TIER_SECRETWAIFU_URL ?? patreonExternalUrl
@@ -75,69 +138,7 @@ const MembershipPage = () => {
     }
   }, [])
 
-  const formatDateLabel = (value: string | null, fallbackLabel: string) => {
-    if (!value) {
-      return fallbackLabel
-    }
-
-    const parsedDate = new Date(value)
-
-    if (Number.isNaN(parsedDate.getTime())) {
-      return fallbackLabel
-    }
-
-    return new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(parsedDate)
-  }
-
-  const mapTierFromCents = (tierCents: number): MembershipTier => {
-    if (tierCents >= 1650) {
-      return 'secretwaifu_1650'
-    }
-
-    if (tierCents >= 900) {
-      return 'just_models_900'
-    }
-
-    return 'free'
-  }
-
-  const mapMembershipStatusToChip = (linked: boolean, membershipStatus: string): MembershipConnectionStatus => {
-    if (!linked) {
-      return 'not-connected'
-    }
-
-    if (membershipStatus === 'active_patron') {
-      return 'active'
-    }
-
-    if (membershipStatus === 'former_patron') {
-      return 'canceled'
-    }
-
-    if (membershipStatus === 'declined_patron') {
-      return 'expired'
-    }
-
-    return 'not-connected'
-  }
-
-  const mapEntitlements = (entitlements: PatreonEntitlementApiRecord[]): MembershipEntitlementRecord[] => {
-    if (entitlements.length === 0) {
-      return inactiveEntitlementRecords
-    }
-
-    return entitlements.map((entitlement) => ({
-      id: entitlement.id,
-      featureKey: entitlement.tierCode,
-      sourceProvider: 'patreon',
-      validUntilLabel: formatDateLabel(entitlement.validUntil, 'No access'),
-      status: entitlement.status === 'ACTIVE' ? 'active' : 'inactive'
-    }))
-  }
-
-  const loadMembershipStatus = async () => {
-    const sessionUser = readSessionUser()
-
+  const loadMembershipStatus = useCallback(async () => {
     if (!sessionUser) {
       setIsPatreonLinked(false)
       setCurrentTier('free')
@@ -148,14 +149,8 @@ const MembershipPage = () => {
       return
     }
 
-    const response = await fetch(`${apiBaseUrl}/patreon/status?email=${encodeURIComponent(sessionUser.email)}`)
-
-    if (!response.ok) {
-      const errorPayload = (await response.json().catch(() => null)) as { message?: string } | null
-      throw new Error(errorPayload?.message ?? 'Failed to load Patreon status.')
-    }
-
-    const payload = (await response.json()) as { data: PatreonStatusApiResponse }
+    setConnectionStatus('syncing')
+    const payload = await apiGet<{ data: PatreonStatusApiResponse }>('/patreon/status')
     const statusData = payload.data
 
     setIsPatreonLinked(statusData.linked)
@@ -165,19 +160,20 @@ const MembershipPage = () => {
     setPeriodEndLabel(formatDateLabel(statusData.nextChargeDate, 'No active billing period'))
     setEntitlementRecords(mapEntitlements(statusData.entitlements))
     setSyncCount((previousCount) => previousCount + 1)
-  }
+  }, [sessionUser])
 
   useEffect(() => {
+    if (isAuthLoading) {
+      return
+    }
+
     loadMembershipStatus().catch((error) => {
       setMembershipMessage(error instanceof Error ? error.message : 'Failed to load membership status.')
       setConnectionStatus('not-connected')
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [isAuthLoading, loadMembershipStatus])
 
   const handleConnectPatreon = async () => {
-    const sessionUser = readSessionUser()
-
     if (!sessionUser) {
       setMembershipMessage('Please sign in before connecting Patreon.')
       return
@@ -188,23 +184,13 @@ const MembershipPage = () => {
       setMembershipMessage(null)
 
       const query = new URLSearchParams({
-        email: sessionUser.email,
-        username: sessionUser.username,
         redirectAfter: '/members'
       })
 
-      const response = await fetch(`${apiBaseUrl}/patreon/connect?${query.toString()}`)
-      const payload = (await response.json().catch(() => null)) as
-        | {
-          data?: {
-            authorizationUrl?: string
-          }
-          message?: string
-        }
-        | null
+      const payload = await apiGet<{ data: { authorizationUrl?: string } }>(`/patreon/connect?${query.toString()}`)
 
-      if (!response.ok || !payload?.data?.authorizationUrl) {
-        throw new Error(payload?.message ?? 'Unable to start Patreon connection.')
+      if (!payload?.data?.authorizationUrl) {
+        throw new Error('Unable to start Patreon connection.')
       }
 
       window.location.assign(payload.data.authorizationUrl)
@@ -215,8 +201,6 @@ const MembershipPage = () => {
   }
 
   const handleRecheckMembership = async () => {
-    const sessionUser = readSessionUser()
-
     if (!sessionUser || connectionStatus === 'syncing') {
       return
     }
@@ -225,20 +209,7 @@ const MembershipPage = () => {
       setConnectionStatus('syncing')
       setMembershipMessage(null)
 
-      const response = await fetch(`${apiBaseUrl}/patreon/sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          email: sessionUser.email
-        })
-      })
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { message?: string } | null
-        throw new Error(payload?.message ?? 'Unable to refresh Patreon status.')
-      }
+      await apiPost<{ data: unknown }>('/patreon/sync')
 
       await loadMembershipStatus()
       setMembershipMessage('Membership synced successfully.')
@@ -249,8 +220,6 @@ const MembershipPage = () => {
   }
 
   const handleDisconnectPatreon = async () => {
-    const sessionUser = readSessionUser()
-
     if (!sessionUser || !isPatreonLinked || connectionStatus === 'syncing') {
       return
     }
@@ -259,20 +228,7 @@ const MembershipPage = () => {
       setConnectionStatus('syncing')
       setMembershipMessage(null)
 
-      const response = await fetch(`${apiBaseUrl}/patreon/disconnect`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          email: sessionUser.email
-        })
-      })
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { message?: string } | null
-        throw new Error(payload?.message ?? 'Unable to disconnect Patreon.')
-      }
+      await apiPost<{ data: unknown }>('/patreon/disconnect')
 
       setIsPatreonLinked(false)
       setCurrentTier('free')
@@ -290,6 +246,36 @@ const MembershipPage = () => {
   const activeEntitlementCount = useMemo(() => {
     return entitlementRecords.filter((entitlementItem) => entitlementItem.status === 'active').length
   }, [entitlementRecords])
+
+  const membershipAccessState = useMemo<MembershipAccessState>(() => {
+    if (connectionStatus === 'syncing') {
+      return 'sync-in-progress'
+    }
+
+    if (!isPatreonLinked) {
+      return 'not-connected'
+    }
+
+    if (activeEntitlementCount > 0) {
+      return 'active-entitlement'
+    }
+
+    return 'connected-inactive'
+  }, [activeEntitlementCount, connectionStatus, isPatreonLinked])
+
+  const membershipStateLabelMap: Record<MembershipAccessState, string> = {
+    'not-connected': 'Not Connected',
+    'connected-inactive': 'Connected But Inactive',
+    'active-entitlement': 'Active Entitlement',
+    'sync-in-progress': 'Sync In Progress'
+  }
+
+  const membershipStateDescriptionMap: Record<MembershipAccessState, string> = {
+    'not-connected': 'Connect Patreon to sync your tier and unlock gated content.',
+    'connected-inactive': 'Patreon is linked, but no active entitlement is currently available for this account.',
+    'active-entitlement': 'Your Patreon entitlement is active. Gated characters and member features are unlocked.',
+    'sync-in-progress': 'We are syncing your Patreon membership data with the backend.'
+  }
 
   const gatedAccessLabel = activeEntitlementCount > 0 ? 'Unlocked' : 'Locked'
   const accessStateHelperText = activeEntitlementCount > 0 ? 'Patreon content is available now' : 'Link Patreon to unlock gated content'
@@ -311,6 +297,8 @@ const MembershipPage = () => {
     just_models_900: 'Tier 1 active: models pack and polls',
     secretwaifu_1650: 'Tier 2 active: full SecretWaifu access'
   }
+  const supportActionHref = membershipAccessState === 'connected-inactive' ? secretwaifuTierUrl : patreonExternalUrl
+  const isSupportActionExternal = supportActionHref.startsWith('http')
 
   return (
     <main className="relative overflow-hidden bg-[#030303] text-white">
@@ -350,6 +338,12 @@ const MembershipPage = () => {
                   <p>Last Sync: {lastSyncLabel}</p>
                   <p>Current Period Ends: {periodEndLabel}</p>
                 </div>
+                <div className="mt-4 rounded-md border border-white/10 bg-[#0f0d10] px-3 py-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ember-200">
+                    {membershipStateLabelMap[membershipAccessState]}
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-white/75">{membershipStateDescriptionMap[membershipAccessState]}</p>
+                </div>
 
                 <div className="mt-5 flex flex-wrap gap-3">
                   <button
@@ -383,13 +377,13 @@ const MembershipPage = () => {
                   </button>
 
                   <Link
-                    href={patreonExternalUrl}
-                    target={patreonExternalUrl.startsWith('http') ? '_blank' : undefined}
-                    rel={patreonExternalUrl.startsWith('http') ? 'noreferrer' : undefined}
+                    href={supportActionHref}
+                    target={isSupportActionExternal ? '_blank' : undefined}
+                    rel={isSupportActionExternal ? 'noreferrer' : undefined}
                     className="inline-flex h-10 items-center justify-center rounded-md border border-white/20 px-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-white/85 transition hover:border-ember-300 hover:text-ember-200"
                     aria-label="Open membership plans and support page"
                   >
-                    Open Patreon
+                    {membershipAccessState === 'connected-inactive' ? 'Upgrade Tier' : 'Open Patreon'}
                   </Link>
                 </div>
               </article>

@@ -1,13 +1,21 @@
 import { CharacterStatus, CharacterVisibility } from '@prisma/client'
+import type { Request } from 'express'
 import { Router } from 'express'
 import { z } from 'zod'
+import { optionalAuth, requireAdmin, requireAuth } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
 import { buildUniqueSlug } from '../lib/slug'
+import {
+  buildCharacterListWhereClause,
+  canCreateCharacter,
+  canModerateCharacterStatus,
+  resolveCharacterAccess,
+  type CharacterAccessActor
+} from '../services/character-access-service'
 
 const characterRoutes = Router()
 
 const createCharacterSchema = z.object({
-  ownerId: z.string().min(1),
   name: z.string().trim().min(2).max(120),
   tagline: z.string().trim().max(160).optional(),
   description: z.string().trim().max(5000).optional(),
@@ -33,38 +41,32 @@ const updateCharacterStatusSchema = z.object({
   status: z.nativeEnum(CharacterStatus)
 })
 
-characterRoutes.get('/characters', async (request, response, next) => {
+const characterParamsSchema = z.object({
+  characterId: z.string().min(1)
+})
+
+const toCharacterAccessActor = (request: Request): CharacterAccessActor => {
+  const authUser = request.authUser
+
+  if (!authUser) {
+    return null
+  }
+
+  return {
+    userId: authUser.userId,
+    role: authUser.role
+  }
+}
+
+characterRoutes.get('/characters', optionalAuth, async (request, response, next) => {
   try {
     const query = listCharactersQuerySchema.parse(request.query)
-
-    const whereClause = {
-      ...(query.includeUnpublished
-        ? {}
-        : {
-            status: 'APPROVED' as const,
-            visibility: 'PUBLIC' as const
-          }),
-      ...(query.status ? { status: query.status } : {}),
-      ...(query.visibility ? { visibility: query.visibility } : {}),
-      ...(query.search
-        ? {
-            OR: [
-              {
-                name: {
-                  contains: query.search,
-                  mode: 'insensitive' as const
-                }
-              },
-              {
-                slug: {
-                  contains: query.search,
-                  mode: 'insensitive' as const
-                }
-              }
-            ]
-          }
-        : {})
-    }
+    const actor = toCharacterAccessActor(request)
+    const whereClause = buildCharacterListWhereClause(actor, {
+      status: query.status,
+      visibility: query.visibility,
+      search: query.search
+    })
 
     const characterList = await prisma.character.findMany({
       where: whereClause,
@@ -104,22 +106,112 @@ characterRoutes.get('/characters', async (request, response, next) => {
   }
 })
 
-characterRoutes.post('/characters', async (request, response, next) => {
+characterRoutes.get('/characters/:characterId', optionalAuth, async (request, response, next) => {
   try {
-    const payload = createCharacterSchema.parse(request.body)
+    const { characterId } = characterParamsSchema.parse(request.params)
+    const actor = toCharacterAccessActor(request)
 
-    const owner = await prisma.user.findUnique({
+    const character = await prisma.character.findFirst({
       where: {
-        id: payload.ownerId
+        OR: [
+          {
+            id: characterId
+          },
+          {
+            slug: characterId
+          }
+        ]
       },
       select: {
-        id: true
+        id: true,
+        slug: true,
+        name: true,
+        tagline: true,
+        description: true,
+        vroidFileUrl: true,
+        previewImageUrl: true,
+        status: true,
+        visibility: true,
+        isPatreonGated: true,
+        minimumTierCents: true,
+        heartsCount: true,
+        averageRating: true,
+        viewsCount: true,
+        ownerId: true,
+        createdAt: true,
+        updatedAt: true,
+        publishedAt: true,
+        owner: {
+          select: {
+            id: true,
+            username: true
+          }
+        }
       }
     })
 
-    if (!owner) {
+    if (!character) {
       response.status(404).json({
-        message: 'Owner user not found.'
+        message: 'Character not found.'
+      })
+      return
+    }
+
+    const characterAccess = await resolveCharacterAccess(actor, {
+      id: character.id,
+      ownerId: character.ownerId,
+      status: character.status,
+      visibility: character.visibility,
+      isPatreonGated: character.isPatreonGated,
+      minimumTierCents: character.minimumTierCents
+    })
+
+    if (!characterAccess.canReadCharacter) {
+      response.status(404).json({
+        message: 'Character not found.'
+      })
+      return
+    }
+
+    response.json({
+      data: {
+        id: character.id,
+        slug: character.slug,
+        name: character.name,
+        tagline: character.tagline,
+        description: character.description,
+        vroidFileUrl: characterAccess.canAccessPatreonGatedContent ? character.vroidFileUrl : null,
+        previewImageUrl: character.previewImageUrl,
+        status: character.status,
+        visibility: character.visibility,
+        isPatreonGated: character.isPatreonGated,
+        minimumTierCents: character.minimumTierCents,
+        heartsCount: character.heartsCount,
+        averageRating: character.averageRating,
+        viewsCount: character.viewsCount,
+        owner: character.owner,
+        createdAt: character.createdAt,
+        updatedAt: character.updatedAt,
+        publishedAt: character.publishedAt,
+        gatedAccess: {
+          hasAccess: characterAccess.canAccessPatreonGatedContent,
+          requiredTierCents: character.minimumTierCents ?? null
+        }
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+characterRoutes.post('/characters', requireAuth, async (request, response, next) => {
+  try {
+    const payload = createCharacterSchema.parse(request.body)
+    const actor = toCharacterAccessActor(request)
+
+    if (!canCreateCharacter(actor) || !actor) {
+      response.status(403).json({
+        message: 'You are not allowed to create characters.'
       })
       return
     }
@@ -130,7 +222,7 @@ characterRoutes.post('/characters', async (request, response, next) => {
     const createdCharacter = await prisma.character.create({
       data: {
         slug: generatedSlug,
-        ownerId: payload.ownerId,
+        ownerId: actor.userId,
         name: payload.name,
         tagline: payload.tagline,
         description: payload.description,
@@ -159,10 +251,18 @@ characterRoutes.post('/characters', async (request, response, next) => {
   }
 })
 
-characterRoutes.patch('/characters/:characterId/status', async (request, response, next) => {
+characterRoutes.patch('/characters/:characterId/status', requireAdmin, async (request, response, next) => {
   try {
-    const { characterId } = z.object({ characterId: z.string().min(1) }).parse(request.params)
+    const { characterId } = characterParamsSchema.parse(request.params)
     const payload = updateCharacterStatusSchema.parse(request.body)
+    const actor = toCharacterAccessActor(request)
+
+    if (!canModerateCharacterStatus(actor)) {
+      response.status(403).json({
+        message: 'Admin permission required to moderate character status.'
+      })
+      return
+    }
 
     const currentCharacter = await prisma.character.findUnique({
       where: { id: characterId },

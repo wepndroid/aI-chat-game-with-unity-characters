@@ -1,22 +1,16 @@
 'use client'
 
+import { useAuth } from '@/components/providers/auth-provider'
 import CharacterGalleryCard from '@/components/ui-elements/character-gallery-card'
 import FilterTab from '@/components/ui-elements/filter-tab'
 import PaginationControls from '@/components/ui-elements/pagination-controls'
 import SearchField from '@/components/ui-elements/search-field'
-import { useMemo, useState } from 'react'
+import { listCharacters, type CharacterListRecord } from '@/lib/character-api'
+import { apiGet } from '@/lib/api-client'
+import { resolveAvailableTierCents, type PatreonStatusSnapshot } from '@/lib/patreon-access'
+import { useEffect, useMemo, useState } from 'react'
 
 type CharacterCategory = 'official' | 'community' | 'your-characters'
-
-type CharacterRecord = {
-  id: string
-  name: string
-  likes: string
-  chats: string
-  description?: string
-  gradientClassName: string
-  category: CharacterCategory
-}
 
 const categoryTabs: Array<{ key: CharacterCategory; label: string }> = [
   { key: 'official', label: 'Official' },
@@ -24,53 +18,176 @@ const categoryTabs: Array<{ key: CharacterCategory; label: string }> = [
   { key: 'your-characters', label: 'Your Characters' }
 ]
 
-const characterVariants: Omit<CharacterRecord, 'id' | 'category'>[] = [
-  {
-    name: 'Airi Akizuki',
-    likes: '1.2k',
-    chats: '2.4k',
-    gradientClassName: 'from-[#322a39] via-[#19263a] to-[#0b1018]'
-  },
-  {
-    name: 'Airi Akizuki',
-    likes: '1.2k',
-    chats: '2.4k',
-    description: 'Your fantasy from this world into reality. Personal interactions and immersive scenes.',
-    gradientClassName: 'from-[#3f343a] via-[#2a2e37] to-[#121722]'
-  },
-  {
-    name: 'Airi Akizuki',
-    likes: '1.2k',
-    chats: '2.4k',
-    gradientClassName: 'from-[#29252f] via-[#1d1e2f] to-[#11111b]'
-  },
-  {
-    name: 'Airi Akizuki',
-    likes: '1.2k',
-    chats: '2.4k',
-    gradientClassName: 'from-[#332936] via-[#2a2030] to-[#150f18]'
-  }
+const defaultGradientVariants = [
+  'from-[#322a39] via-[#19263a] to-[#0b1018]',
+  'from-[#3f343a] via-[#2a2e37] to-[#121722]',
+  'from-[#29252f] via-[#1d1e2f] to-[#11111b]',
+  'from-[#332936] via-[#2a2030] to-[#150f18]'
 ]
 
-const allCharacters: CharacterRecord[] = Array.from({ length: 72 }, (_, index) => {
-  const variant = characterVariants[index % characterVariants.length]
-  const category: CharacterCategory = index % 3 === 0 ? 'official' : index % 3 === 1 ? 'community' : 'your-characters'
+const officialOwnerUsernameSet = new Set(['adminsenpai', 'secretwaifu', 'squirclegames', 'squircle'])
 
-  return {
-    id: `character-${index + 1}`,
-    name: variant.name,
-    likes: variant.likes,
-    chats: variant.chats,
-    description: variant.description,
-    gradientClassName: variant.gradientClassName,
-    category
+const formatCompactNumber = (value: number) => {
+  if (!Number.isFinite(value)) {
+    return '0'
   }
-})
+
+  return new Intl.NumberFormat('en-US', {
+    notation: 'compact',
+    maximumFractionDigits: 1
+  }).format(value)
+}
+
+const resolveCharacterCategory = (characterRecord: CharacterListRecord, sessionUserId: string | null): CharacterCategory => {
+  if (sessionUserId && characterRecord.owner.id === sessionUserId) {
+    return 'your-characters'
+  }
+
+  const normalizedOwnerUsername = characterRecord.owner.username.trim().toLowerCase()
+
+  if (officialOwnerUsernameSet.has(normalizedOwnerUsername)) {
+    return 'official'
+  }
+
+  return 'community'
+}
+
+const resolveCharacterGatedAccess = (
+  characterRecord: CharacterListRecord,
+  sessionUser: { id: string; role: 'USER' | 'CREATOR' | 'ADMIN' } | null,
+  availableTierCents: number
+) => {
+  if (!characterRecord.isPatreonGated) {
+    return true
+  }
+
+  if (!sessionUser) {
+    return false
+  }
+
+  if (sessionUser.role === 'ADMIN' || sessionUser.id === characterRecord.owner.id) {
+    return true
+  }
+
+  const requiredTierCents = characterRecord.minimumTierCents ?? 1
+  return availableTierCents >= requiredTierCents
+}
 
 const CharactersPage = () => {
+  const { sessionUser, isAuthLoading } = useAuth()
+  const sessionUserId = sessionUser?.id ?? null
   const [activeCategory, setActiveCategory] = useState<CharacterCategory>('official')
   const [searchValue, setSearchValue] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
+  const [isCharactersLoading, setIsCharactersLoading] = useState(true)
+  const [isPatreonLoading, setIsPatreonLoading] = useState(false)
+  const [charactersErrorMessage, setCharactersErrorMessage] = useState<string | null>(null)
+  const [characterList, setCharacterList] = useState<CharacterListRecord[]>([])
+  const [patreonStatusSnapshot, setPatreonStatusSnapshot] = useState<PatreonStatusSnapshot | null>(null)
+
+  useEffect(() => {
+    if (isAuthLoading) {
+      return
+    }
+
+    let isCancelled = false
+
+    Promise.resolve().then(async () => {
+      if (isCancelled) {
+        return
+      }
+
+      setIsCharactersLoading(true)
+      setCharactersErrorMessage(null)
+
+      try {
+        const payload = await listCharacters()
+
+        if (isCancelled) {
+          return
+        }
+
+        setCharacterList(payload.data)
+      } catch (error) {
+        if (isCancelled) {
+          return
+        }
+
+        const message = error instanceof Error ? error.message : 'Failed to load characters.'
+        setCharactersErrorMessage(message)
+        setCharacterList([])
+      } finally {
+        if (!isCancelled) {
+          setIsCharactersLoading(false)
+        }
+      }
+      })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [isAuthLoading, sessionUserId])
+
+  useEffect(() => {
+    if (isAuthLoading) {
+      return
+    }
+
+    if (!sessionUserId) {
+      return
+    }
+
+    let isCancelled = false
+
+    Promise.resolve().then(async () => {
+      if (isCancelled) {
+        return
+      }
+
+      setIsPatreonLoading(true)
+
+      try {
+        const payload = await apiGet<{ data: PatreonStatusSnapshot }>('/patreon/status')
+
+        if (isCancelled) {
+          return
+        }
+
+        setPatreonStatusSnapshot(payload.data)
+      } catch {
+        if (!isCancelled) {
+          setPatreonStatusSnapshot(null)
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsPatreonLoading(false)
+        }
+      }
+    })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [isAuthLoading, sessionUserId])
+
+  const availableTierCents = useMemo(() => {
+    if (!sessionUser || !patreonStatusSnapshot) {
+      return 0
+    }
+
+    return resolveAvailableTierCents(patreonStatusSnapshot)
+  }, [patreonStatusSnapshot, sessionUser])
+
+  useEffect(() => {
+    if (sessionUserId) {
+      return
+    }
+
+    Promise.resolve().then(() => {
+      setPatreonStatusSnapshot(null)
+      setIsPatreonLoading(false)
+    })
+  }, [sessionUserId])
 
   const handleCategoryChange = (nextCategory: CharacterCategory) => {
     setActiveCategory(nextCategory)
@@ -84,9 +201,10 @@ const CharactersPage = () => {
 
   const filteredCharacters = useMemo(() => {
     const normalizedSearchValue = searchValue.trim().toLowerCase()
+    return characterList.filter((characterItem) => {
+      const category = resolveCharacterCategory(characterItem, sessionUserId)
 
-    return allCharacters.filter((characterItem) => {
-      if (characterItem.category !== activeCategory) {
+      if (category !== activeCategory) {
         return false
       }
 
@@ -94,9 +212,12 @@ const CharactersPage = () => {
         return true
       }
 
-      return characterItem.name.toLowerCase().includes(normalizedSearchValue)
+      return (
+        characterItem.name.toLowerCase().includes(normalizedSearchValue) ||
+        (characterItem.tagline ?? '').toLowerCase().includes(normalizedSearchValue)
+      )
     })
-  }, [activeCategory, searchValue])
+  }, [activeCategory, characterList, searchValue, sessionUserId])
 
   const itemsPerPage = 12
   const totalPages = Math.max(1, Math.ceil(filteredCharacters.length / itemsPerPage))
@@ -142,21 +263,44 @@ const CharactersPage = () => {
           </div>
 
           <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {paginatedCharacters.map((characterItem) => (
-              <CharacterGalleryCard
-                key={characterItem.id}
-                id={characterItem.id}
-                name={characterItem.name}
-                likes={characterItem.likes}
-                chats={characterItem.chats}
-                gradientClassName={characterItem.gradientClassName}
-                description={characterItem.description}
-              />
-            ))}
+            {isCharactersLoading ? (
+              <p className="col-span-full text-sm text-white/70">Loading characters...</p>
+            ) : null}
+            {!isCharactersLoading && charactersErrorMessage ? (
+              <p className="col-span-full rounded-md border border-rose-300/20 bg-rose-300/10 px-4 py-3 text-sm text-rose-100">
+                {charactersErrorMessage}
+              </p>
+            ) : null}
+            {!isCharactersLoading && !charactersErrorMessage && paginatedCharacters.length === 0 ? (
+              <p className="col-span-full text-sm text-white/70">No characters match this filter.</p>
+            ) : null}
+            {!isCharactersLoading && !charactersErrorMessage
+              ? paginatedCharacters.map((characterItem, index) => {
+                  const hasGatedAccess = resolveCharacterGatedAccess(characterItem, sessionUser, availableTierCents)
+
+                  return (
+                    <CharacterGalleryCard
+                      key={characterItem.id}
+                      routeId={characterItem.slug}
+                      name={characterItem.name}
+                      likes={formatCompactNumber(characterItem.heartsCount)}
+                      chats={formatCompactNumber(characterItem.viewsCount)}
+                      gradientClassName={defaultGradientVariants[index % defaultGradientVariants.length]}
+                      description={characterItem.tagline ?? undefined}
+                      isPatreonGated={characterItem.isPatreonGated}
+                      hasGatedAccess={hasGatedAccess}
+                      requiredTierCents={characterItem.minimumTierCents}
+                    />
+                  )
+                })
+              : null}
           </div>
 
           <div className="mt-10 flex flex-col items-center justify-center gap-4 text-center md:flex-row md:gap-6">
-            <p className="text-xs text-white/75">{filteredCharacters.length} VRM characters</p>
+            <p className="text-xs text-white/75">
+              {filteredCharacters.length} VRM characters
+              {isPatreonLoading ? ' | Syncing membership...' : ''}
+            </p>
             <PaginationControls currentPage={visiblePage} totalPages={totalPages} onPageChange={setCurrentPage} />
           </div>
         </div>
