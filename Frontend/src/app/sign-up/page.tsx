@@ -1,19 +1,24 @@
 'use client'
 
+import { useAuth } from '@/components/providers/auth-provider'
 import AuthInputField from '@/components/ui-elements/auth-input-field'
-import { AUTH_OPEN_SIGN_IN_MODAL_EVENT, registerAuthUser, writeSessionUser } from '@/lib/auth-session'
+import { getGoogleOauthStartUrl, isGoogleOauthEnabled } from '@/lib/auth-api'
+import { AUTH_OPEN_SIGN_IN_MODAL_EVENT } from '@/lib/auth-events'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
 const SignUpPage = () => {
+  const googleOauthEnabled = isGoogleOauthEnabled()
+  const { registerUser } = useAuth()
   const router = useRouter()
   const [usernameInputValue, setUsernameInputValue] = useState('')
   const [emailInputValue, setEmailInputValue] = useState('')
   const [passwordInputValue, setPasswordInputValue] = useState('')
   const [confirmPasswordInputValue, setConfirmPasswordInputValue] = useState('')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const handleSignUpSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSignUpSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
     if (passwordInputValue.trim() !== confirmPasswordInputValue.trim()) {
@@ -21,24 +26,37 @@ const SignUpPage = () => {
       return
     }
 
-    const registrationResult = registerAuthUser({
+    setIsSubmitting(true)
+    setErrorMessage(null)
+
+    const registrationResult = await registerUser({
       username: usernameInputValue,
       email: emailInputValue,
       password: passwordInputValue
     })
 
     if (!registrationResult.success) {
-      setErrorMessage(registrationResult.message)
+      setErrorMessage(registrationResult.message ?? 'Unable to create account.')
+      setIsSubmitting(false)
       return
     }
 
-    writeSessionUser(registrationResult.sessionUser)
+    setIsSubmitting(false)
     router.replace('/profile')
   }
 
   const handleOpenSignInModal = () => {
     router.push('/')
     window.dispatchEvent(new Event(AUTH_OPEN_SIGN_IN_MODAL_EVENT))
+  }
+
+  const handleSignInWithGoogle = () => {
+    if (!googleOauthEnabled) {
+      setErrorMessage('Google OAuth is not enabled yet.')
+      return
+    }
+
+    window.location.assign(getGoogleOauthStartUrl('/profile'))
   }
 
   return (
@@ -102,9 +120,21 @@ const SignUpPage = () => {
                 type="submit"
                 className="w-full rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 py-2.5 text-sm font-bold uppercase tracking-[0.12em] text-black transition hover:brightness-110"
                 aria-label="Create account"
+                disabled={isSubmitting}
               >
-                Sign Up
+                {isSubmitting ? 'Creating Account...' : 'Sign Up'}
               </button>
+
+              {googleOauthEnabled ? (
+                <button
+                  type="button"
+                  onClick={handleSignInWithGoogle}
+                  className="w-full rounded-md border border-white/20 bg-white/5 px-4 py-2.5 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:border-ember-300 hover:text-ember-200"
+                  aria-label="Sign up with Google"
+                >
+                  Sign Up with Google
+                </button>
+              ) : null}
             </form>
 
             <p className="mt-4 text-xs text-white/70">

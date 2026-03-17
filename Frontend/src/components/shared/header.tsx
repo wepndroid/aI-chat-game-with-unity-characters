@@ -1,60 +1,25 @@
 'use client'
 
 import AuthInputField from '@/components/ui-elements/auth-input-field'
-import {
-  AUTH_SESSION_STORAGE_KEY,
-  AUTH_OPEN_SIGN_IN_MODAL_EVENT,
-  AUTH_SESSION_CHANGED_EVENT,
-  authenticateAuthUser,
-  clearSessionUser,
-  readSessionUser,
-  writeSessionUser
-} from '@/lib/auth-session'
-import type { SessionUser } from '@/lib/auth-session'
+import { useAuth } from '@/components/providers/auth-provider'
+import { getGoogleOauthStartUrl, isGoogleOauthEnabled } from '@/lib/auth-api'
+import { AUTH_OPEN_SIGN_IN_MODAL_EVENT } from '@/lib/auth-events'
 import Image from 'next/image'
 import Link from 'next/link'
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-
-const subscribeSessionUser = (onStoreChange: () => void) => {
-  if (typeof window === 'undefined') {
-    return () => undefined
-  }
-
-  window.addEventListener(AUTH_SESSION_CHANGED_EVENT, onStoreChange)
-  window.addEventListener('storage', onStoreChange)
-
-  return () => {
-    window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, onStoreChange)
-    window.removeEventListener('storage', onStoreChange)
-  }
-}
-
-const readClientSessionSnapshot = () => {
-  if (typeof window === 'undefined') {
-    return null
-  }
-
-  return localStorage.getItem(AUTH_SESSION_STORAGE_KEY)
-}
-
-const readServerSessionSnapshot = () => null
+import { useEffect, useState } from 'react'
 
 const Header = () => {
+  const googleOauthEnabled = isGoogleOauthEnabled()
+  const { sessionUser, isAuthLoading, loginUser, logoutUser, clearAuthError } = useAuth()
   const [isSignInModalOpen, setIsSignInModalOpen] = useState(false)
-  const sessionSnapshot = useSyncExternalStore<string | null>(subscribeSessionUser, readClientSessionSnapshot, readServerSessionSnapshot)
-  const sessionUser = useMemo<SessionUser | null>(() => {
-    if (!sessionSnapshot) {
-      return null
-    }
-
-    return readSessionUser()
-  }, [sessionSnapshot])
-  const [usernameInputValue, setUsernameInputValue] = useState('')
   const [emailInputValue, setEmailInputValue] = useState('')
   const [passwordInputValue, setPasswordInputValue] = useState('')
+  const [isSigningIn, setIsSigningIn] = useState(false)
+  const [isSigningOut, setIsSigningOut] = useState(false)
   const [signInErrorMessage, setSignInErrorMessage] = useState<string | null>(null)
 
   const handleOpenSignInModal = () => {
+    clearAuthError()
     setSignInErrorMessage(null)
     setIsSignInModalOpen(true)
   }
@@ -71,31 +36,45 @@ const Header = () => {
     handleCloseSignInModal()
   }
 
-  const handleSignOut = () => {
-    clearSessionUser()
+  const handleSignOut = async () => {
+    setIsSigningOut(true)
+    await logoutUser()
+    setIsSigningOut(false)
   }
 
-  const handleSignInSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSignInSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
     const normalizedEmail = emailInputValue.trim().toLowerCase()
     const normalizedPassword = passwordInputValue.trim()
+    setIsSigningIn(true)
+    setSignInErrorMessage(null)
 
-    const authenticationResult = authenticateAuthUser(normalizedEmail, normalizedPassword)
+    const authenticationResult = await loginUser({
+      email: normalizedEmail,
+      password: normalizedPassword
+    })
 
     if (!authenticationResult.success) {
-      setSignInErrorMessage(authenticationResult.message)
+      setSignInErrorMessage(authenticationResult.message ?? 'Unable to sign in.')
+      setIsSigningIn(false)
       return
     }
 
-    const nextSessionUser: SessionUser = authenticationResult.sessionUser
-
-    writeSessionUser(nextSessionUser)
-    setUsernameInputValue('')
     setEmailInputValue('')
     setPasswordInputValue('')
     setSignInErrorMessage(null)
+    setIsSigningIn(false)
     handleCloseSignInModal()
+  }
+
+  const handleSignInWithGoogle = () => {
+    if (!googleOauthEnabled) {
+      setSignInErrorMessage('Google OAuth is not enabled yet.')
+      return
+    }
+
+    window.location.assign(getGoogleOauthStartUrl('/profile'))
   }
 
   useEffect(() => {
@@ -104,7 +83,7 @@ const Header = () => {
         return
       }
 
-      handleCloseSignInModal()
+      setIsSignInModalOpen(false)
     }
 
     window.addEventListener('keydown', handleDocumentKeyDown)
@@ -116,6 +95,7 @@ const Header = () => {
 
   useEffect(() => {
     const handleOpenSignInModalEvent = () => {
+      clearAuthError()
       setSignInErrorMessage(null)
       setIsSignInModalOpen(true)
     }
@@ -125,7 +105,7 @@ const Header = () => {
     return () => {
       window.removeEventListener(AUTH_OPEN_SIGN_IN_MODAL_EVENT, handleOpenSignInModalEvent)
     }
-  }, [])
+  }, [clearAuthError])
 
   return (
     <>
@@ -150,7 +130,7 @@ const Header = () => {
                 Profile
               </Link>
             ) : null}
-            {sessionUser?.role === 'admin' ? (
+            {sessionUser?.role === 'ADMIN' ? (
               <Link href="/admin/dashboard" className="transition hover:text-ember-300" aria-label="Go to admin dashboard">
                 Admin
               </Link>
@@ -160,15 +140,16 @@ const Header = () => {
           {sessionUser ? (
             <div className="flex items-center gap-3">
               <p className="hidden text-[11px] font-semibold uppercase tracking-[0.08em] text-white/80 md:block">
-                {sessionUser.username} ({sessionUser.role})
+                {sessionUser.username} ({sessionUser.role.toLowerCase()})
               </p>
               <button
                 type="button"
                 className="rounded-md border border-white/30 bg-transparent px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:border-ember-300 hover:text-ember-200"
                 aria-label="Sign out"
                 onClick={handleSignOut}
+                disabled={isSigningOut}
               >
-                Sign Out
+                {isSigningOut ? 'Signing Out...' : 'Sign Out'}
               </button>
             </div>
           ) : (
@@ -177,6 +158,7 @@ const Header = () => {
               className="rounded-md border border-ember-500/65 bg-[#2b160f]/85 px-5 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-ember-100 transition hover:bg-[#3a1d13]"
               aria-label="Open sign in modal"
               onClick={handleOpenSignInModal}
+              disabled={isAuthLoading}
             >
               Sign In
             </button>
@@ -207,15 +189,6 @@ const Header = () => {
             </div>
 
             <form className="space-y-4" aria-label="Sign in form" onSubmit={handleSignInSubmit}>
-              <AuthInputField
-                label="Username"
-                name="username"
-                type="text"
-                ariaLabel="Username"
-                value={usernameInputValue}
-                onChange={setUsernameInputValue}
-                autoComplete="username"
-              />
               <AuthInputField
                 label="Email Address"
                 name="email"
@@ -264,13 +237,21 @@ const Header = () => {
                 type="submit"
                 className="w-full rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 py-2.5 text-sm font-bold uppercase tracking-[0.12em] text-black transition hover:brightness-110"
                 aria-label="Sign in to account"
+                disabled={isSigningIn}
               >
-                Sign In
+                {isSigningIn ? 'Signing In...' : 'Sign In'}
               </button>
 
-              <p className="text-[11px] leading-5 text-white/60">
-                Admin demo login: <span className="text-ember-300">admin@secretwaifu.com / admin123</span>
-              </p>
+              {googleOauthEnabled ? (
+                <button
+                  type="button"
+                  className="w-full rounded-md border border-white/20 bg-white/5 px-4 py-2.5 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:border-ember-300 hover:text-ember-200"
+                  aria-label="Sign in with Google"
+                  onClick={handleSignInWithGoogle}
+                >
+                  Sign In with Google
+                </button>
+              ) : null}
             </form>
           </div>
         </div>

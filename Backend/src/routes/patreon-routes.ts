@@ -5,23 +5,14 @@ import { z } from 'zod'
 import { exchangeAuthorizationCode } from '../lib/patreon-client'
 import { getPatreonConfig, isPatreonOauthEnabled } from '../lib/patreon-config'
 import { syncPatreonMembership } from '../lib/patreon-sync'
+import { requireAuth } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
 
 const patreonRoutes = Router()
 
 const connectQuerySchema = z.object({
-  email: z.string().email(),
-  username: z.string().trim().min(1).max(40).optional(),
   redirectAfter: z.string().trim().optional(),
   mode: z.enum(['json', 'redirect']).optional()
-})
-
-const statusQuerySchema = z.object({
-  email: z.string().email()
-})
-
-const syncBodySchema = z.object({
-  email: z.string().email()
 })
 
 const sanitizeRedirectAfter = (value: string | undefined) => {
@@ -54,46 +45,7 @@ const buildPatreonAuthorizationUrl = (stateToken: string) => {
   return url.toString()
 }
 
-const ensureUser = async (email: string, usernameInput: string | undefined) => {
-  const normalizedEmail = email.trim().toLowerCase()
-  const normalizedUsernameBase =
-    (usernameInput?.trim() || normalizedEmail.split('@')[0] || 'user').replace(/[^a-zA-Z0-9_]/g, '_') || 'user'
-
-  const existingUser = await prisma.user.findUnique({
-    where: {
-      email: normalizedEmail
-    }
-  })
-
-  if (existingUser) {
-    return existingUser
-  }
-
-  let usernameCandidate = normalizedUsernameBase
-
-  for (let index = 0; index < 5; index += 1) {
-    try {
-      const createdUser = await prisma.user.create({
-        data: {
-          email: normalizedEmail,
-          username: usernameCandidate
-        }
-      })
-
-      return createdUser
-    } catch (error) {
-      if (!(error instanceof Error) || !('code' in error)) {
-        throw error
-      }
-
-      usernameCandidate = `${normalizedUsernameBase}${randomBytes(2).toString('hex')}`
-    }
-  }
-
-  throw new Error('Failed to create a unique user for Patreon connection.')
-}
-
-patreonRoutes.get('/patreon/connect', async (request, response, next) => {
+patreonRoutes.get('/patreon/connect', requireAuth, async (request, response, next) => {
   try {
     if (!isPatreonOauthEnabled()) {
       response.status(503).json({
@@ -102,8 +54,16 @@ patreonRoutes.get('/patreon/connect', async (request, response, next) => {
       return
     }
 
+    const authUser = request.authUser
+
+    if (!authUser) {
+      response.status(401).json({
+        message: 'Authentication required.'
+      })
+      return
+    }
+
     const query = connectQuerySchema.parse(request.query)
-    const user = await ensureUser(query.email, query.username)
     const redirectAfter = sanitizeRedirectAfter(query.redirectAfter)
     const stateToken = randomBytes(24).toString('hex')
     const expiresAt = new Date(Date.now() + 1000 * 60 * 10)
@@ -111,7 +71,7 @@ patreonRoutes.get('/patreon/connect', async (request, response, next) => {
     await prisma.patreonOAuthState.create({
       data: {
         stateToken,
-        userId: user.id,
+        userId: authUser.userId,
         redirectAfter,
         expiresAt
       }
@@ -198,12 +158,20 @@ patreonRoutes.get('/patreon/oauth/callback', async (request, response, next) => 
   }
 })
 
-patreonRoutes.get('/patreon/status', async (request, response, next) => {
+patreonRoutes.get('/patreon/status', requireAuth, async (request, response, next) => {
   try {
-    const query = statusQuerySchema.parse(request.query)
+    const authUser = request.authUser
+
+    if (!authUser) {
+      response.status(401).json({
+        message: 'Authentication required.'
+      })
+      return
+    }
+
     const user = await prisma.user.findUnique({
       where: {
-        email: query.email.toLowerCase()
+        id: authUser.userId
       },
       include: {
         patreonAccount: true,
@@ -252,7 +220,7 @@ patreonRoutes.get('/patreon/status', async (request, response, next) => {
   }
 })
 
-patreonRoutes.post('/patreon/sync', async (request, response, next) => {
+patreonRoutes.post('/patreon/sync', requireAuth, async (request, response, next) => {
   try {
     if (!isPatreonOauthEnabled()) {
       response.status(503).json({
@@ -261,22 +229,33 @@ patreonRoutes.post('/patreon/sync', async (request, response, next) => {
       return
     }
 
-    const payload = syncBodySchema.parse(request.body)
-    const user = await prisma.user.findUnique({
+    const authUser = request.authUser
+
+    if (!authUser) {
+      response.status(401).json({
+        message: 'Authentication required.'
+      })
+      return
+    }
+
+    const existingUser = await prisma.user.findUnique({
       where: {
-        email: payload.email.toLowerCase()
+        id: authUser.userId
+      },
+      select: {
+        id: true
       }
     })
 
-    if (!user) {
+    if (!existingUser) {
       response.status(404).json({
-        message: 'User not found for Patreon sync.'
+        message: 'Session user not found for Patreon sync.'
       })
       return
     }
 
     const syncResult = await syncPatreonMembership({
-      userId: user.id
+      userId: authUser.userId
     })
 
     response.json({
@@ -287,18 +266,29 @@ patreonRoutes.post('/patreon/sync', async (request, response, next) => {
   }
 })
 
-patreonRoutes.post('/patreon/disconnect', async (request, response, next) => {
+patreonRoutes.post('/patreon/disconnect', requireAuth, async (request, response, next) => {
   try {
-    const payload = syncBodySchema.parse(request.body)
-    const user = await prisma.user.findUnique({
+    const authUser = request.authUser
+
+    if (!authUser) {
+      response.status(401).json({
+        message: 'Authentication required.'
+      })
+      return
+    }
+
+    const existingUser = await prisma.user.findUnique({
       where: {
-        email: payload.email.toLowerCase()
+        id: authUser.userId
+      },
+      select: {
+        id: true
       }
     })
 
-    if (!user) {
+    if (!existingUser) {
       response.status(404).json({
-        message: 'User not found for Patreon disconnect.'
+        message: 'Session user not found for Patreon disconnect.'
       })
       return
     }
@@ -306,17 +296,17 @@ patreonRoutes.post('/patreon/disconnect', async (request, response, next) => {
     await prisma.$transaction([
       prisma.patreonOAuthState.deleteMany({
         where: {
-          userId: user.id
+          userId: authUser.userId
         }
       }),
       prisma.patreonAccount.deleteMany({
         where: {
-          userId: user.id
+          userId: authUser.userId
         }
       }),
       prisma.entitlement.updateMany({
         where: {
-          userId: user.id,
+          userId: authUser.userId,
           source: 'PATREON'
         },
         data: {

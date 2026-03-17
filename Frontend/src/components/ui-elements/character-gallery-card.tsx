@@ -1,15 +1,40 @@
 import Link from 'next/link'
 
 type CharacterGalleryCardProps = {
-  id: string
+  routeId: string
   name: string
   likes: string
   chats: string
   gradientClassName: string
   description?: string
+  isPatreonGated?: boolean
+  hasGatedAccess?: boolean
+  requiredTierCents?: number | null
 }
 
-const CharacterGalleryCard = ({ id, name, likes, chats, gradientClassName, description }: CharacterGalleryCardProps) => {
+const formatTierLabel = (tierCents?: number | null) => {
+  if (!tierCents || tierCents <= 0) {
+    return 'Patreon required'
+  }
+
+  return `EUR ${(tierCents / 100).toFixed(2)}+ tier`
+}
+
+const CharacterGalleryCard = ({
+  routeId,
+  name,
+  likes,
+  chats,
+  gradientClassName,
+  description,
+  isPatreonGated = false,
+  hasGatedAccess = true,
+  requiredTierCents
+}: CharacterGalleryCardProps) => {
+  const isLocked = isPatreonGated && !hasGatedAccess
+  const actionHref = isLocked ? '/members' : `/characters/${routeId}`
+  const actionLabel = isLocked ? 'Unlock on Patreon' : 'Chat Now'
+
   return (
     <article className="overflow-hidden rounded-xl border border-white/15 bg-[#111111]">
       <div className={`relative h-[272px] bg-gradient-to-b ${gradientClassName}`}>
@@ -25,6 +50,11 @@ const CharacterGalleryCard = ({ id, name, likes, chats, gradientClassName, descr
             {chats}
           </span>
         </div>
+        {isPatreonGated ? (
+          <div className="absolute left-2 top-2 rounded-full border border-white/20 bg-black/50 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.08em] text-white/90">
+            {isLocked ? `Locked | ${formatTierLabel(requiredTierCents)}` : 'Patreon unlocked'}
+          </div>
+        ) : null}
 
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#fb8f47]/90 via-[#fb8f47]/58 to-transparent p-3">
           <p className="text-center font-[family-name:var(--font-heading)] text-[35px] font-semibold italic leading-none text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.45)]">
@@ -33,11 +63,11 @@ const CharacterGalleryCard = ({ id, name, likes, chats, gradientClassName, descr
           {description ? <p className="mt-1.5 text-center text-[10px] leading-[1.35] text-white/85">{description}</p> : null}
           <div className="mt-2 flex justify-center">
             <Link
-              href={`/characters/${id}`}
+              href={actionHref}
               className="inline-flex h-6 min-w-[96px] items-center justify-center rounded border border-black/30 bg-[#121212] px-4 text-[9px] font-bold uppercase tracking-[0.08em] text-white transition hover:border-ember-300 hover:text-ember-200"
-              aria-label={`Open ${name} profile`}
+              aria-label={`${actionLabel} for ${name}`}
             >
-              Chat Now
+              {actionLabel}
             </Link>
           </div>
         </div>

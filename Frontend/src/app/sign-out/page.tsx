@@ -1,17 +1,21 @@
 'use client'
 
-import { clearSessionUser } from '@/lib/auth-session'
+import { useAuth } from '@/components/providers/auth-provider'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useEffect } from 'react'
 
 const SignOutPage = () => {
+  const { logoutUser } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
-    clearSessionUser()
-    router.replace('/')
-  }, [router])
+    logoutUser()
+      .catch(() => undefined)
+      .finally(() => {
+        router.replace('/')
+      })
+  }, [logoutUser, router])
 
   return (
     <main className="relative overflow-hidden bg-[#030303] text-white">
