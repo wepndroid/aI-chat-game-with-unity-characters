@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { exchangeAuthorizationCode } from '../lib/patreon-client'
 import { getPatreonConfig, isPatreonOauthEnabled } from '../lib/patreon-config'
 import { syncPatreonMembership } from '../lib/patreon-sync'
-import { requireAuth } from '../middleware/auth-middleware'
+import { requireAuth, requireVerifiedEmail } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
 
 const patreonRoutes = Router()
@@ -45,7 +45,7 @@ const buildPatreonAuthorizationUrl = (stateToken: string) => {
   return url.toString()
 }
 
-patreonRoutes.get('/patreon/connect', requireAuth, async (request, response, next) => {
+patreonRoutes.get('/patreon/connect', requireVerifiedEmail, async (request, response, next) => {
   try {
     if (!isPatreonOauthEnabled()) {
       response.status(503).json({
@@ -220,7 +220,7 @@ patreonRoutes.get('/patreon/status', requireAuth, async (request, response, next
   }
 })
 
-patreonRoutes.post('/patreon/sync', requireAuth, async (request, response, next) => {
+patreonRoutes.post('/patreon/sync', requireVerifiedEmail, async (request, response, next) => {
   try {
     if (!isPatreonOauthEnabled()) {
       response.status(503).json({
@@ -266,7 +266,7 @@ patreonRoutes.post('/patreon/sync', requireAuth, async (request, response, next)
   }
 })
 
-patreonRoutes.post('/patreon/disconnect', requireAuth, async (request, response, next) => {
+patreonRoutes.post('/patreon/disconnect', requireVerifiedEmail, async (request, response, next) => {
   try {
     const authUser = request.authUser
 

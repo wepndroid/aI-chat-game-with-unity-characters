@@ -13,6 +13,7 @@ type AuthenticatedSessionUser = {
   userId: string
   email: string
   role: UserRole
+  isEmailVerified: boolean
   sessionId: string
 }
 
@@ -67,7 +68,8 @@ const resolveAuthenticatedSessionUser = async (rawSessionToken: string): Promise
       user: {
         select: {
           email: true,
-          role: true
+          role: true,
+          isEmailVerified: true
         }
       }
     }
@@ -90,6 +92,7 @@ const resolveAuthenticatedSessionUser = async (rawSessionToken: string): Promise
     userId: existingSession.userId,
     email: existingSession.user.email,
     role: existingSession.user.role,
+    isEmailVerified: existingSession.user.isEmailVerified,
     sessionId: existingSession.id
   }
 }

@@ -5,7 +5,7 @@ type MembersLayoutProps = Readonly<{
 }>
 
 const MembersLayout = ({ children }: MembersLayoutProps) => {
-  return <RouteAccessGuard>{children}</RouteAccessGuard>
+  return <RouteAccessGuard requireVerifiedEmail>{children}</RouteAccessGuard>
 }
 
 export default MembersLayout

@@ -5,7 +5,7 @@ type YourCharactersLayoutProps = Readonly<{
 }>
 
 const YourCharactersLayout = ({ children }: YourCharactersLayoutProps) => {
-  return <RouteAccessGuard>{children}</RouteAccessGuard>
+  return <RouteAccessGuard requireVerifiedEmail>{children}</RouteAccessGuard>
 }
 
 export default YourCharactersLayout
