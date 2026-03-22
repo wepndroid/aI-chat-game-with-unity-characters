@@ -5,7 +5,7 @@ type UploadVrmLayoutProps = Readonly<{
 }>
 
 const UploadVrmLayout = ({ children }: UploadVrmLayoutProps) => {
-  return <RouteAccessGuard>{children}</RouteAccessGuard>
+  return <RouteAccessGuard requireVerifiedEmail>{children}</RouteAccessGuard>
 }
 
 export default UploadVrmLayout

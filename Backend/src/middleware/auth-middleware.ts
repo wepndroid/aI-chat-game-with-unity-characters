@@ -55,6 +55,13 @@ const requireAuth = (request: Request, response: Response, next: NextFunction) =
 
 const requireAdmin = (request: Request, response: Response, next: NextFunction) => {
   requireAuth(request, response, () => {
+    if (!request.authUser?.isEmailVerified) {
+      response.status(403).json({
+        message: 'Email verification required.'
+      })
+      return
+    }
+
     if (request.authUser?.role !== 'ADMIN') {
       response.status(403).json({
         message: 'Admin permission required.'
@@ -66,4 +73,17 @@ const requireAdmin = (request: Request, response: Response, next: NextFunction) 
   })
 }
 
-export { optionalAuth, requireAdmin, requireAuth }
+const requireVerifiedEmail = (request: Request, response: Response, next: NextFunction) => {
+  requireAuth(request, response, () => {
+    if (!request.authUser?.isEmailVerified) {
+      response.status(403).json({
+        message: 'Email verification required.'
+      })
+      return
+    }
+
+    next()
+  })
+}
+
+export { optionalAuth, requireAdmin, requireAuth, requireVerifiedEmail }

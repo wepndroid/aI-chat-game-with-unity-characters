@@ -2,7 +2,7 @@ import { CharacterStatus, CharacterVisibility } from '@prisma/client'
 import type { Request } from 'express'
 import { Router } from 'express'
 import { z } from 'zod'
-import { optionalAuth, requireAdmin, requireAuth } from '../middleware/auth-middleware'
+import { optionalAuth, requireAdmin, requireVerifiedEmail } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
 import { buildUniqueSlug } from '../lib/slug'
 import {
@@ -204,7 +204,7 @@ characterRoutes.get('/characters/:characterId', optionalAuth, async (request, re
   }
 })
 
-characterRoutes.post('/characters', requireAuth, async (request, response, next) => {
+characterRoutes.post('/characters', requireVerifiedEmail, async (request, response, next) => {
   try {
     const payload = createCharacterSchema.parse(request.body)
     const actor = toCharacterAccessActor(request)

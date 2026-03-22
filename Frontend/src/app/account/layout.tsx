@@ -5,7 +5,7 @@ type AccountLayoutProps = Readonly<{
 }>
 
 const AccountLayout = ({ children }: AccountLayoutProps) => {
-  return <RouteAccessGuard>{children}</RouteAccessGuard>
+  return <RouteAccessGuard requireVerifiedEmail>{children}</RouteAccessGuard>
 }
 
 export default AccountLayout

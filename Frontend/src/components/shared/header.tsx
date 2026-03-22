@@ -130,7 +130,7 @@ const Header = () => {
                 Profile
               </Link>
             ) : null}
-            {sessionUser?.role === 'ADMIN' ? (
+            {sessionUser?.role === 'ADMIN' && sessionUser.isEmailVerified ? (
               <Link href="/admin/dashboard" className="transition hover:text-ember-300" aria-label="Go to admin dashboard">
                 Admin
               </Link>

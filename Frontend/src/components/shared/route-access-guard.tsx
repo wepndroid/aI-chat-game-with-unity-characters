@@ -8,9 +8,10 @@ import { usePathname } from 'next/navigation'
 type RouteAccessGuardProps = {
   children: React.ReactNode
   requiredRole?: SessionUserRole
+  requireVerifiedEmail?: boolean
 }
 
-const RouteAccessGuard = ({ children, requiredRole }: RouteAccessGuardProps) => {
+const RouteAccessGuard = ({ children, requiredRole, requireVerifiedEmail = false }: RouteAccessGuardProps) => {
   const { sessionUser, isAuthLoading } = useAuth()
   const pathname = usePathname()
 
@@ -94,6 +95,43 @@ const RouteAccessGuard = ({ children, requiredRole }: RouteAccessGuardProps) => 
                   aria-label="Open profile page"
                 >
                   Open Profile
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    )
+  }
+
+  if (requireVerifiedEmail && !sessionUser.isEmailVerified) {
+    return (
+      <main className="relative overflow-hidden bg-[#030303] text-white">
+        <section className="relative min-h-[calc(100vh-140px)] border-b border-white/10 px-5 py-10 md:px-8">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(244,99,19,0.12),transparent_35%)]" />
+          <div className="relative z-10 mx-auto w-full max-w-[900px] pt-24">
+            <div className="rounded-xl border border-amber-300/25 bg-[#151214]/95 p-7">
+              <h1 className="font-[family-name:var(--font-heading)] text-4xl font-normal italic leading-none text-white">
+                Verification Required
+              </h1>
+              <p className="mt-3 max-w-[680px] text-sm leading-7 text-white/72">
+                Your account must have a verified email before accessing this section.
+              </p>
+              <p className="mt-3 text-xs uppercase tracking-[0.09em] text-white/55">Requested path: {pathname}</p>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Link
+                  href="/profile"
+                  className="inline-flex h-10 items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 text-[11px] font-bold uppercase tracking-[0.08em] text-black transition hover:brightness-110"
+                  aria-label="Open profile and verify email"
+                >
+                  Verify on Profile
+                </Link>
+                <Link
+                  href="/"
+                  className="inline-flex h-10 items-center justify-center rounded-md border border-white/20 px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-white transition hover:border-ember-300 hover:text-ember-200"
+                  aria-label="Return to home"
+                >
+                  Go Home
                 </Link>
               </div>
             </div>
