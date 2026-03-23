@@ -15,21 +15,38 @@ const connectQuerySchema = z.object({
   mode: z.enum(['json', 'redirect']).optional()
 })
 
+const defaultPatreonRedirectAfter = '/members?patreon=connected'
+
 const sanitizeRedirectAfter = (value: string | undefined) => {
   if (!value) {
-    return '/members?patreon=connected'
+    return defaultPatreonRedirectAfter
   }
 
-  if (!value.startsWith('/')) {
-    return '/members?patreon=connected'
+  const trimmed = value.trim()
+
+  if (!trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.includes('\\')) {
+    return defaultPatreonRedirectAfter
   }
 
-  return value
+  try {
+    const config = getPatreonConfig()
+    const frontendOrigin = new URL(config.frontendUrl).origin
+    const normalizedUrl = new URL(trimmed, config.frontendUrl)
+
+    if (normalizedUrl.origin !== frontendOrigin) {
+      return defaultPatreonRedirectAfter
+    }
+
+    return `${normalizedUrl.pathname}${normalizedUrl.search}${normalizedUrl.hash}`
+  } catch {
+    return defaultPatreonRedirectAfter
+  }
 }
 
 const buildCallbackRedirectUrl = (path: string) => {
   const config = getPatreonConfig()
-  return `${config.frontendUrl}${path}`
+  const safePath = sanitizeRedirectAfter(path)
+  return new URL(safePath, config.frontendUrl).toString()
 }
 
 const buildPatreonAuthorizationUrl = (stateToken: string) => {

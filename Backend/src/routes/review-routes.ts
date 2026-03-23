@@ -47,7 +47,7 @@ reviewRoutes.get('/characters/:characterId/reviews', async (request, response, n
 
     const character = await getCharacterForReviewOrThrow(characterId)
 
-    if (character.status !== 'APPROVED') {
+    if (character.status !== 'APPROVED' || character.visibility !== 'PUBLIC') {
       response.status(404).json({
         message: 'Character not found.'
       })

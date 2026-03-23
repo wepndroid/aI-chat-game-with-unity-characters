@@ -29,6 +29,15 @@ type VerifyEmailCodePayload = {
   code: string
 }
 
+type ForgotPasswordPayload = {
+  email: string
+}
+
+type ResetPasswordPayload = {
+  token: string
+  password: string
+}
+
 const registerWithPassword = async (payload: RegisterAuthPayload) => {
   return apiPost<RegisterAuthResponse>('/auth/register', payload)
 }
@@ -53,6 +62,14 @@ const verifyEmailCode = async (payload: VerifyEmailCodePayload) => {
   return apiPost<{ data: { verified: boolean } }>('/auth/verify-email-code', payload)
 }
 
+const requestPasswordResetLink = async (payload: ForgotPasswordPayload) => {
+  return apiPost<{ data: { sent: boolean } }>('/auth/forgot-password', payload)
+}
+
+const resetPasswordWithToken = async (payload: ResetPasswordPayload) => {
+  return apiPost<{ data: { reset: boolean } }>('/auth/reset-password', payload)
+}
+
 const getGoogleOauthStartUrl = (redirectAfter = '/profile') => {
   const query = new URLSearchParams({
     redirectAfter
@@ -63,5 +80,23 @@ const getGoogleOauthStartUrl = (redirectAfter = '/profile') => {
 
 const isGoogleOauthEnabled = () => process.env.NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED === 'true'
 
-export { getCurrentSessionUser, getGoogleOauthStartUrl, isGoogleOauthEnabled, loginWithPassword, logoutSession, registerWithPassword, resendVerificationCode, verifyEmailCode }
-export type { LoginAuthPayload, RegisterAuthPayload, RegisterAuthResponse, VerifyEmailCodePayload }
+export {
+  getCurrentSessionUser,
+  getGoogleOauthStartUrl,
+  isGoogleOauthEnabled,
+  loginWithPassword,
+  logoutSession,
+  registerWithPassword,
+  requestPasswordResetLink,
+  resendVerificationCode,
+  resetPasswordWithToken,
+  verifyEmailCode
+}
+export type {
+  ForgotPasswordPayload,
+  LoginAuthPayload,
+  RegisterAuthPayload,
+  RegisterAuthResponse,
+  ResetPasswordPayload,
+  VerifyEmailCodePayload
+}

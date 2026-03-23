@@ -146,7 +146,7 @@ const ProfilePage = () => {
                 aria-label="Connect Patreon account"
                 disabled={!sessionUser}
               >
-                Connect With Patreon o
+                Connect With Patreon
               </button>
             </div>
           </div>
