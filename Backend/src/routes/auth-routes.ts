@@ -75,12 +75,30 @@ const buildTokenLink = (baseUrl: string, rawToken: string) => {
   return url.toString()
 }
 
+const frontendOrigin = new URL(oauthConfig.frontendPublicUrl).origin
+
 const sanitizeRedirectAfter = (value: string | undefined) => {
-  if (!value || !value.startsWith('/')) {
+  if (!value) {
     return oauthConfig.defaultRedirectAfter
   }
 
-  return value
+  const trimmed = value.trim()
+
+  if (!trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.includes('\\')) {
+    return oauthConfig.defaultRedirectAfter
+  }
+
+  try {
+    const normalizedUrl = new URL(trimmed, oauthConfig.frontendPublicUrl)
+
+    if (normalizedUrl.origin !== frontendOrigin) {
+      return oauthConfig.defaultRedirectAfter
+    }
+
+    return `${normalizedUrl.pathname}${normalizedUrl.search}${normalizedUrl.hash}`
+  } catch {
+    return oauthConfig.defaultRedirectAfter
+  }
 }
 
 const buildFrontendRedirectUrl = (pathValue: string, extraParams: Record<string, string | undefined> = {}) => {

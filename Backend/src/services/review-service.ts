@@ -1,4 +1,4 @@
-import type { CharacterStatus, Prisma, UserRole } from '@prisma/client'
+import type { CharacterStatus, CharacterVisibility, Prisma, UserRole } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 
 class ReviewVerificationError extends Error {
@@ -14,6 +14,7 @@ type ReviewCharacter = {
   id: string
   ownerId: string
   status: CharacterStatus
+  visibility: CharacterVisibility
   isPatreonGated: boolean
   minimumTierCents: number | null
 }
@@ -71,6 +72,7 @@ const getCharacterForReviewOrThrow = async (characterId: string): Promise<Review
       id: true,
       ownerId: true,
       status: true,
+      visibility: true,
       isPatreonGated: true,
       minimumTierCents: true
     }
@@ -141,8 +143,8 @@ const assertReviewRatingEligibility = async (userId: string, characterId: string
     throw new ReviewVerificationError(403, 'Please verify your e-mail before posting a rating.')
   }
 
-  if (character.status !== 'APPROVED') {
-    throw new ReviewVerificationError(403, 'This character is not approved for public reviews.')
+  if (character.status !== 'APPROVED' || character.visibility !== 'PUBLIC') {
+    throw new ReviewVerificationError(403, 'This character is not available for public reviews.')
   }
 
   if (character.ownerId === userId) {
