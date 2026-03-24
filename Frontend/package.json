@@ -10,14 +10,17 @@
     "lint": "eslint . --max-warnings=0"
   },
   "dependencies": {
+    "@pixiv/three-vrm": "^3.5.1",
     "next": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "three": "^0.183.2"
   },
   "devDependencies": {
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "^0.183.1",
     "autoprefixer": "^10.4.21",
     "eslint": "^9",
     "eslint-config-next": "latest",

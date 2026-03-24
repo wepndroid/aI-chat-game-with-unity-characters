@@ -88,4 +88,44 @@ const apiPost = async <T>(path: string, body?: unknown) => {
   }
 }
 
-export { apiGet, apiPost, buildApiUrl, getApiBaseUrl }
+const apiPatch = async <T>(path: string, body?: unknown) => {
+  const requestSignal = createRequestSignal()
+
+  try {
+    const response = await fetch(buildApiUrl(path), {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: requestSignal.signal
+    })
+
+    return parseApiResponse<T>(response)
+  } catch (error) {
+    throw new Error(toNetworkErrorMessage(error))
+  } finally {
+    requestSignal.clear()
+  }
+}
+
+const apiDelete = async <T>(path: string) => {
+  const requestSignal = createRequestSignal()
+
+  try {
+    const response = await fetch(buildApiUrl(path), {
+      method: 'DELETE',
+      credentials: 'include',
+      signal: requestSignal.signal
+    })
+
+    return parseApiResponse<T>(response)
+  } catch (error) {
+    throw new Error(toNetworkErrorMessage(error))
+  } finally {
+    requestSignal.clear()
+  }
+}
+
+export { apiDelete, apiGet, apiPatch, apiPost, buildApiUrl, getApiBaseUrl }

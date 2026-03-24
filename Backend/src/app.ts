@@ -6,6 +6,7 @@ import { ZodError } from 'zod'
 import authRoutes from './routes/auth-routes'
 import characterRoutes from './routes/character-routes'
 import healthRoutes from './routes/health-routes'
+import legacyRoutes from './routes/legacy-routes'
 import patreonRoutes from './routes/patreon-routes'
 import reviewRoutes from './routes/review-routes'
 import statsRoutes from './routes/stats-routes'
@@ -53,6 +54,7 @@ app.use('/api', characterRoutes)
 app.use('/api', reviewRoutes)
 app.use('/api', statsRoutes)
 app.use('/api', patreonRoutes)
+app.use('/', legacyRoutes)
 
 app.use((_request, response) => {
   response.status(404).json({

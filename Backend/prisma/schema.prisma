@@ -56,6 +56,7 @@ model User {
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
   characters        Character[]
+  hearts            CharacterHeart[]
   reviews           Review[]
   patreonAccount    PatreonAccount?
   patreonOauthState PatreonOAuthState[]
@@ -70,10 +71,18 @@ model Character {
   id               String              @id @default(cuid())
   slug             String              @unique
   name             String
+  fullName         String?
   tagline          String?
   description      String?
+  personality      String?
+  scenario         String?
+  firstMessage     String?
+  exampleDialogs   String?
   vroidFileUrl     String?
   previewImageUrl  String?
+  legacyFileHash   String?
+  legacyTier       Int?
+  legacyHeyWaifu   Int?
   status           CharacterStatus     @default(DRAFT)
   visibility       CharacterVisibility @default(PRIVATE)
   isPatreonGated   Boolean             @default(false)
@@ -84,12 +93,37 @@ model Character {
   ownerId          String
   owner            User                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   reviews          Review[]
+  hearts           CharacterHeart[]
+  screenshots      CharacterScreenshot[]
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
   publishedAt      DateTime?
 
   @@index([ownerId, status])
   @@index([status, visibility])
+}
+
+model CharacterHeart {
+  id          String    @id @default(cuid())
+  userId      String
+  characterId String
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, characterId])
+  @@index([characterId])
+}
+
+model CharacterScreenshot {
+  id          String    @id @default(cuid())
+  characterId String
+  imageUrl    String
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@index([characterId, sortOrder])
 }
 
 model Review {
