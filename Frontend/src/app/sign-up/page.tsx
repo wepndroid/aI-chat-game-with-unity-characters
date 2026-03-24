@@ -56,7 +56,7 @@ const SignUpPage = () => {
       return
     }
 
-    window.location.assign(getGoogleOauthStartUrl('/profile'))
+    window.location.assign(getGoogleOauthStartUrl('/profile', 'signup'))
   }
 
   return (
@@ -125,16 +125,14 @@ const SignUpPage = () => {
                 {isSubmitting ? 'Creating Account...' : 'Sign Up'}
               </button>
 
-              {googleOauthEnabled ? (
-                <button
-                  type="button"
-                  onClick={handleSignInWithGoogle}
-                  className="w-full rounded-md border border-white/20 bg-white/5 px-4 py-2.5 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:border-ember-300 hover:text-ember-200"
-                  aria-label="Sign up with Google"
-                >
-                  Sign Up with Google
-                </button>
-              ) : null}
+              <button
+                type="button"
+                onClick={handleSignInWithGoogle}
+                className="w-full rounded-md border border-white/20 bg-white/5 px-4 py-2.5 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:border-ember-300 hover:text-ember-200"
+                aria-label="Sign up with Google"
+              >
+                Sign Up with Google
+              </button>
             </form>
 
             <p className="mt-4 text-xs text-white/70">

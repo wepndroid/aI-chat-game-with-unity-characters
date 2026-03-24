@@ -9,6 +9,7 @@ type OAuthStatePayload = {
   stateToken: string
   provider: OAuthProviderKey
   redirectAfter: string
+  intent: 'signin' | 'signup'
   issuedAtMs: number
 }
 
@@ -16,6 +17,7 @@ const oAuthStateSchema = z.object({
   stateToken: z.string().min(10),
   provider: z.enum(['google']),
   redirectAfter: z.string().min(1),
+  intent: z.enum(['signin', 'signup']),
   issuedAtMs: z.number().int().nonnegative()
 })
 
@@ -48,13 +50,19 @@ const clearOAuthStateCookie = (response: Response) => {
   })
 }
 
-const issueOAuthState = (response: Response, provider: OAuthProviderKey, redirectAfter: string) => {
+const issueOAuthState = (
+  response: Response,
+  provider: OAuthProviderKey,
+  redirectAfter: string,
+  intent: 'signin' | 'signup'
+) => {
   const stateToken = randomBytes(24).toString('hex')
 
   setOAuthStateCookie(response, {
     stateToken,
     provider,
     redirectAfter,
+    intent,
     issuedAtMs: Date.now()
   })
 

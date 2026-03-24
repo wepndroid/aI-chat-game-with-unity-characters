@@ -38,6 +38,8 @@ type ResetPasswordPayload = {
   password: string
 }
 
+type GoogleOAuthIntent = 'signin' | 'signup'
+
 const registerWithPassword = async (payload: RegisterAuthPayload) => {
   return apiPost<RegisterAuthResponse>('/auth/register', payload)
 }
@@ -70,9 +72,10 @@ const resetPasswordWithToken = async (payload: ResetPasswordPayload) => {
   return apiPost<{ data: { reset: boolean } }>('/auth/reset-password', payload)
 }
 
-const getGoogleOauthStartUrl = (redirectAfter = '/profile') => {
+const getGoogleOauthStartUrl = (redirectAfter = '/profile', intent: GoogleOAuthIntent = 'signin') => {
   const query = new URLSearchParams({
-    redirectAfter
+    redirectAfter,
+    intent
   })
 
   return buildApiUrl(`/auth/oauth/google/start?${query.toString()}`)
@@ -94,6 +97,7 @@ export {
 }
 export type {
   ForgotPasswordPayload,
+  GoogleOAuthIntent,
   LoginAuthPayload,
   RegisterAuthPayload,
   RegisterAuthResponse,

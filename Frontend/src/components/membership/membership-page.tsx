@@ -108,6 +108,46 @@ const mapEntitlements = (entitlements: PatreonEntitlementApiRecord[]): Membershi
   }))
 }
 
+const mapPatreonCallbackErrorMessage = (rawMessage: string | null) => {
+  const normalized = (rawMessage ?? '').trim().toLowerCase()
+
+  if (!normalized) {
+    return 'Patreon connection failed. Please try again.'
+  }
+
+  if (normalized.includes('invalid oauth state') || normalized.includes('oauth state expired')) {
+    return 'Your Patreon connection session expired. Please sign in and click Connect Patreon again.'
+  }
+
+  if (normalized.includes('missing oauth code or state')) {
+    return 'Patreon authorization was incomplete. Please try connecting again.'
+  }
+
+  return rawMessage ?? 'Patreon connection failed. Please try again.'
+}
+
+const mapMembershipActionErrorMessage = (rawMessage: string | null) => {
+  const normalized = (rawMessage ?? '').trim().toLowerCase()
+
+  if (normalized.includes('authentication required')) {
+    return 'Please sign in to SecretWaifu first, then click Connect Patreon.'
+  }
+
+  if (normalized.includes('email verification required')) {
+    return 'Please verify your email on the Profile page, then connect Patreon.'
+  }
+
+  if (normalized.includes('patreon oauth is not enabled')) {
+    return 'Patreon connection is not enabled in this environment yet.'
+  }
+
+  if (normalized.includes('temporarily unavailable') || normalized.includes('oauth redirect configuration')) {
+    return 'Patreon connection is temporarily unavailable due to server configuration. Please try again later or contact support.'
+  }
+
+  return rawMessage ?? 'Unable to complete Patreon action.'
+}
+
 const MembershipPage = () => {
   const { sessionUser, isAuthLoading } = useAuth()
   const patreonExternalUrl = process.env.NEXT_PUBLIC_PATREON_URL ?? 'https://www.patreon.com'
@@ -130,7 +170,7 @@ const MembershipPage = () => {
     if (patreonState === 'connected') {
       setMembershipMessage('Patreon connected successfully.')
     } else if (patreonState === 'error') {
-      setMembershipMessage(errorMessage ?? 'Patreon connection failed.')
+      setMembershipMessage(mapPatreonCallbackErrorMessage(errorMessage))
     }
 
     if (patreonState || errorMessage) {
@@ -168,7 +208,8 @@ const MembershipPage = () => {
     }
 
     loadMembershipStatus().catch((error) => {
-      setMembershipMessage(error instanceof Error ? error.message : 'Failed to load membership status.')
+      const rawMessage = error instanceof Error ? error.message : null
+      setMembershipMessage(mapMembershipActionErrorMessage(rawMessage))
       setConnectionStatus('not-connected')
     })
   }, [isAuthLoading, loadMembershipStatus])
@@ -176,6 +217,11 @@ const MembershipPage = () => {
   const handleConnectPatreon = async () => {
     if (!sessionUser) {
       setMembershipMessage('Please sign in before connecting Patreon.')
+      return
+    }
+
+    if (!sessionUser.isEmailVerified) {
+      setMembershipMessage('Please verify your email on the Profile page before connecting Patreon.')
       return
     }
 
@@ -193,10 +239,31 @@ const MembershipPage = () => {
         throw new Error('Unable to start Patreon connection.')
       }
 
-      window.location.assign(payload.data.authorizationUrl)
+      const patreonWindow = window.open(payload.data.authorizationUrl, '_blank', 'noopener,noreferrer')
+
+      if (!patreonWindow) {
+        const blockedPopupMessage = 'Unable to open Patreon authorization window.'
+        setConnectionStatus('not-connected')
+        setMembershipMessage(blockedPopupMessage)
+        return
+      }
+
+      try {
+        patreonWindow.blur()
+        window.focus()
+      } catch {
+        // Ignore focus-management failures caused by browser policies.
+      }
+
+      setConnectionStatus('not-connected')
+      const redirectedMessage =
+        'Patreon opened in a new tab. Complete authorization there, then return here and click Recheck Tier. If Patreon shows "Redirect URI not supported", please contact support.'
+      setMembershipMessage(redirectedMessage)
     } catch (error) {
       setConnectionStatus('not-connected')
-      setMembershipMessage(error instanceof Error ? error.message : 'Unable to start Patreon connection.')
+      const rawMessage = error instanceof Error ? error.message : null
+      const mappedMessage = mapMembershipActionErrorMessage(rawMessage)
+      setMembershipMessage(mappedMessage)
     }
   }
 
@@ -215,7 +282,8 @@ const MembershipPage = () => {
       setMembershipMessage('Membership synced successfully.')
     } catch (error) {
       setConnectionStatus('expired')
-      setMembershipMessage(error instanceof Error ? error.message : 'Unable to refresh Patreon status.')
+      const rawMessage = error instanceof Error ? error.message : null
+      setMembershipMessage(mapMembershipActionErrorMessage(rawMessage))
     }
   }
 
@@ -239,7 +307,8 @@ const MembershipPage = () => {
       setMembershipMessage('Patreon account disconnected.')
     } catch (error) {
       setConnectionStatus('canceled')
-      setMembershipMessage(error instanceof Error ? error.message : 'Unable to disconnect Patreon.')
+      const rawMessage = error instanceof Error ? error.message : null
+      setMembershipMessage(mapMembershipActionErrorMessage(rawMessage))
     }
   }
 
@@ -349,7 +418,7 @@ const MembershipPage = () => {
                   <button
                     type="button"
                     onClick={handleConnectPatreon}
-                    disabled={connectionStatus === 'syncing'}
+                    disabled={!sessionUser || !sessionUser.isEmailVerified || connectionStatus === 'syncing'}
                     className="inline-flex h-10 items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
                     aria-label="Connect Patreon and verify membership"
                   >
@@ -386,6 +455,16 @@ const MembershipPage = () => {
                     {membershipAccessState === 'connected-inactive' ? 'Upgrade Tier' : 'Open Patreon'}
                   </Link>
                 </div>
+                {!sessionUser ? (
+                  <p className="mt-3 text-[11px] uppercase tracking-[0.08em] text-amber-100">
+                    Sign in to connect Patreon.
+                  </p>
+                ) : null}
+                {sessionUser && !sessionUser.isEmailVerified ? (
+                  <p className="mt-3 text-[11px] uppercase tracking-[0.08em] text-amber-100">
+                    Verify your email on the Profile page before connecting Patreon.
+                  </p>
+                ) : null}
               </article>
 
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -492,6 +571,7 @@ const MembershipPage = () => {
           </div>
         </div>
       </section>
+
     </main>
   )
 }

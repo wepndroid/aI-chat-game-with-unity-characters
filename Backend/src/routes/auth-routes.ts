@@ -55,7 +55,8 @@ const resetPasswordSchema = z.object({
 })
 
 const oauthStartQuerySchema = z.object({
-  redirectAfter: z.string().trim().optional()
+  redirectAfter: z.string().trim().optional(),
+  intent: z.enum(['signin', 'signup']).optional()
 })
 
 const oauthCallbackQuerySchema = z.object({
@@ -167,7 +168,8 @@ authRoutes.get('/auth/oauth/:provider/start', optionalAuth, async (request, resp
     }
 
     const redirectAfter = sanitizeRedirectAfter(query.redirectAfter)
-    const stateToken = issueOAuthState(response, provider, redirectAfter)
+    const intent = query.intent ?? 'signin'
+    const stateToken = issueOAuthState(response, provider, redirectAfter, intent)
     const authorizationUrl = oauthProviderClient.buildAuthorizationUrl(stateToken)
 
     response.redirect(302, authorizationUrl)
@@ -239,7 +241,8 @@ authRoutes.get('/auth/oauth/:provider/callback', optionalAuth, async (request, r
     const resolvedUser = await resolveUserForOAuthAuthentication({
       provider: socialProvider,
       profile: oauthProfile,
-      authenticatedUserId: request.authUser?.userId ?? null
+      authenticatedUserId: request.authUser?.userId ?? null,
+      intent: oauthStatePayload.intent
     })
 
     const rawSessionToken = await createOpaqueSessionForUser(resolvedUser.id, extractSessionClientMeta(request))
