@@ -20,6 +20,30 @@ const Header = () => {
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [signInErrorMessage, setSignInErrorMessage] = useState<string | null>(null)
   const signInQueryFlagKey = 'openSignIn'
+  const oauthQueryFlagKey = 'oauth'
+  const oauthMessageQueryFlagKey = 'message'
+
+  const normalizeOAuthErrorMessage = (rawMessage: string | null) => {
+    if (!rawMessage) {
+      return 'Google sign-in did not complete. Please try again.'
+    }
+
+    const normalized = rawMessage.trim().toLowerCase()
+
+    if (normalized.includes('state') || normalized.includes('expired')) {
+      return 'Google sign-in session expired. Please try again.'
+    }
+
+    if (normalized.includes('not completed') || normalized.includes('missing oauth callback code')) {
+      return 'Google sign-in was canceled or incomplete. Please try again.'
+    }
+
+    if (normalized.includes('not available') || normalized.includes('not enabled')) {
+      return 'Google sign-in is temporarily unavailable. Please contact support.'
+    }
+
+    return rawMessage
+  }
 
   const handleOpenSignInModal = () => {
     const redirectUrl = new URL(window.location.origin)
@@ -29,6 +53,7 @@ const Header = () => {
 
   const handleCloseSignInModal = () => {
     setIsSignInModalOpen(false)
+    setSignInErrorMessage(null)
   }
 
   const handleModalContainerClick = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -103,15 +128,21 @@ const Header = () => {
 
     const url = new URL(window.location.href)
     const shouldOpenSignIn = url.searchParams.get(signInQueryFlagKey) === '1'
+    const oauthStatus = url.searchParams.get(oauthQueryFlagKey)
+    const oauthMessage = url.searchParams.get(oauthMessageQueryFlagKey)
+    const shouldHandleOAuthError = oauthStatus === 'error'
 
-    if (!shouldOpenSignIn) {
+    if (!shouldOpenSignIn && !shouldHandleOAuthError) {
       return
     }
 
     clearAuthError()
-    setSignInErrorMessage(null)
+    setSignInErrorMessage(shouldHandleOAuthError ? normalizeOAuthErrorMessage(oauthMessage) : null)
     setIsSignInModalOpen(true)
     url.searchParams.delete(signInQueryFlagKey)
+    url.searchParams.delete(oauthQueryFlagKey)
+    url.searchParams.delete(oauthMessageQueryFlagKey)
+    url.searchParams.delete('provider')
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
   }, [pathname])
 

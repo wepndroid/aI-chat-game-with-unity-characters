@@ -179,12 +179,23 @@ authRoutes.get('/auth/oauth/:provider/start', optionalAuth, async (request, resp
 })
 
 authRoutes.get('/auth/oauth/:provider/callback', optionalAuth, async (request, response, next) => {
+  const resolveOAuthErrorRedirectPath = (redirectAfter: string | undefined) => {
+    if (!request.authUser) {
+      return '/'
+    }
+
+    return redirectAfter ?? oauthConfig.defaultRedirectAfter
+  }
+
   const redirectWithError = (redirectAfter: string | undefined, message: string) => {
+    const redirectPath = resolveOAuthErrorRedirectPath(redirectAfter)
+
     response.redirect(
       302,
-      buildFrontendRedirectUrl(redirectAfter ?? oauthConfig.defaultRedirectAfter, {
+      buildFrontendRedirectUrl(redirectPath, {
         oauth: 'error',
-        message
+        message,
+        openSignIn: request.authUser ? undefined : '1'
       })
     )
   }
