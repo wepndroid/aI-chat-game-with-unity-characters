@@ -25,9 +25,10 @@ const PlayDemoPage = () => {
                 <iframe
                   src={webglEmbedUrl}
                   title="AI Chat Game WebGL Demo"
-                  className="h-full w-full"
+                  className="h-full w-full overflow-hidden border-0"
                   loading="lazy"
                   allow="fullscreen; gamepad; autoplay"
+                  scrolling="no"
                 />
               ) : (
                 <div className="flex h-full w-full flex-col items-center justify-center px-6 text-center">
