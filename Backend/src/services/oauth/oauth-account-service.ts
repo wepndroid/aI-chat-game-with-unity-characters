@@ -209,11 +209,28 @@ const resolveUserForOAuthAuthentication = async (params: {
       })
     }
 
-    return existingByEmail
-  }
+    // Trust verified e-mail from OAuth provider and align account flags.
+    if (emailIsVerifiedByProvider && !existingByEmail.isEmailVerified) {
+      const updatedUser = await prisma.user.update({
+        where: {
+          id: existingByEmail.id
+        },
+        data: {
+          isEmailVerified: true
+        },
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          role: true,
+          isEmailVerified: true
+        }
+      })
 
-  if (params.intent === 'signin') {
-    throw new Error('No account exists for this Google profile. Please use Sign Up with Google first.')
+      return updatedUser
+    }
+
+    return existingByEmail
   }
 
   const nextUsername = await generateUniqueUsername(params.profile.displayName, normalizedEmail)

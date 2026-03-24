@@ -77,7 +77,8 @@ const Header = () => {
       return
     }
 
-    window.location.assign(getGoogleOauthStartUrl('/profile', 'signin'))
+    // Use signup intent so first-time Google users can be provisioned seamlessly.
+    window.location.assign(getGoogleOauthStartUrl('/profile', 'signup'))
   }
 
   useEffect(() => {
