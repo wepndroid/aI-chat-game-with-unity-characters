@@ -37,8 +37,16 @@ const ProfilePage = () => {
     setVerificationMessage(null)
 
     try {
-      await resendVerificationCode()
-      setVerificationMessage('Verification code sent. Please check your Gmail inbox.')
+      const payload = await resendVerificationCode()
+
+      if (payload.data.alreadyVerified) {
+        await refreshSessionUser()
+        setVerificationMessage('Your email is already verified.')
+        return
+      }
+
+      setVerificationCodeInputValue('')
+      setVerificationMessage('A new verification code was sent. Previous codes are now invalid.')
     } catch (error) {
       setVerificationMessage(error instanceof Error ? error.message : 'Unable to send verification code.')
     } finally {
@@ -70,7 +78,14 @@ const ProfilePage = () => {
       setVerificationCodeInputValue('')
       setVerificationMessage('Email verified successfully.')
     } catch (error) {
-      setVerificationMessage(error instanceof Error ? error.message : 'Verification failed.')
+      const rawMessage = error instanceof Error ? error.message : 'Verification failed.'
+      const normalizedMessage = rawMessage.trim().toLowerCase()
+
+      if (normalizedMessage.includes('invalid') || normalizedMessage.includes('expired')) {
+        setVerificationMessage('Code is invalid or expired. Click Resend Code to get a fresh code.')
+      } else {
+        setVerificationMessage(rawMessage)
+      }
     } finally {
       setIsVerificationBusy(false)
     }

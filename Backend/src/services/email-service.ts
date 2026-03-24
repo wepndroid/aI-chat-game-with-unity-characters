@@ -21,6 +21,37 @@ interface EmailService {
   sendPasswordResetEmail(payload: PasswordResetEmailPayload): Promise<void>
 }
 
+const parseDuration = (value: string | undefined, fallbackValue: number) => {
+  const parsed = Number.parseInt(value ?? '', 10)
+
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    return fallbackValue
+  }
+
+  return parsed
+}
+
+const emailSendTimeoutMs = parseDuration(process.env.EMAIL_SEND_TIMEOUT_MS, 6000)
+
+const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(new Error(`Email send timed out after ${timeoutMs}ms.`))
+        }, timeoutMs)
+      })
+    ])
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle)
+    }
+  }
+}
+
 class EnvironmentEmailService implements EmailService {
   private readonly smtpConfigured: boolean
   private readonly transporter: nodemailer.Transporter | null
@@ -36,6 +67,9 @@ class EnvironmentEmailService implements EmailService {
           host: emailConfig.smtpHost,
           port: emailConfig.smtpPort,
           secure: emailConfig.smtpSecure,
+          connectionTimeout: emailSendTimeoutMs,
+          greetingTimeout: emailSendTimeoutMs,
+          socketTimeout: emailSendTimeoutMs,
           auth: {
             user: emailConfig.smtpUser,
             pass: emailConfig.smtpPass
@@ -46,13 +80,16 @@ class EnvironmentEmailService implements EmailService {
 
   private async sendMessage(toEmail: string, subject: string, text: string, html: string) {
     if (this.smtpConfigured && this.transporter) {
-      await this.transporter.sendMail({
-        from: emailConfig.from,
-        to: toEmail,
-        subject,
-        text,
-        html
-      })
+      await withTimeout(
+        this.transporter.sendMail({
+          from: emailConfig.from,
+          to: toEmail,
+          subject,
+          text,
+          html
+        }),
+        emailSendTimeoutMs
+      )
       return
     }
 

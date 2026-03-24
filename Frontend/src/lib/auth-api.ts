@@ -64,6 +64,11 @@ const verifyEmailCode = async (payload: VerifyEmailCodePayload) => {
   return apiPost<{ data: { verified: boolean } }>('/auth/verify-email-code', payload)
 }
 
+const verifyEmailWithToken = async (token: string) => {
+  const query = new URLSearchParams({ token })
+  return apiGet<{ data: { verified: boolean } }>(`/auth/verify-email?${query.toString()}`)
+}
+
 const requestPasswordResetLink = async (payload: ForgotPasswordPayload) => {
   return apiPost<{ data: { sent: boolean } }>('/auth/forgot-password', payload)
 }
@@ -93,6 +98,7 @@ export {
   requestPasswordResetLink,
   resendVerificationCode,
   resetPasswordWithToken,
+  verifyEmailWithToken,
   verifyEmailCode
 }
 export type {
