@@ -36,7 +36,7 @@ const authConfig = {
   // One-time token lifetimes for email verification and password reset.
   emailVerificationTokenTtlMs: parseDuration(process.env.AUTH_EMAIL_VERIFICATION_TOKEN_TTL_MS, 24 * 60 * 60 * 1000),
   passwordResetTokenTtlMs: parseDuration(process.env.AUTH_PASSWORD_RESET_TOKEN_TTL_MS, 60 * 60 * 1000),
-  verifyEmailUrlBase: process.env.AUTH_VERIFY_EMAIL_URL_BASE?.trim() || `${backendPublicUrl}/api/auth/verify-email`,
+  verifyEmailUrlBase: process.env.AUTH_VERIFY_EMAIL_URL_BASE?.trim() || `${frontendPublicUrl}/auth/verify-email`,
   resetPasswordUrlBase: process.env.AUTH_RESET_PASSWORD_URL_BASE?.trim() || `${frontendPublicUrl}/auth/reset-password`
 }
 

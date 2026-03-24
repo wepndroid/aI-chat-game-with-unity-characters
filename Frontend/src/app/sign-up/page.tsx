@@ -21,6 +21,10 @@ const SignUpPage = () => {
   const handleSignUpSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
+    if (isSubmitting) {
+      return
+    }
+
     if (passwordInputValue.trim() !== confirmPasswordInputValue.trim()) {
       setErrorMessage('Passwords do not match.')
       return
