@@ -11,6 +11,8 @@ type ResolvedOAuthUser = {
   isEmailVerified: boolean
 }
 
+type OAuthAuthenticationIntent = 'signin' | 'signup'
+
 const sanitizeUsernameBase = (inputValue: string) => {
   const normalized = inputValue
     .trim()
@@ -82,6 +84,7 @@ const resolveUserForOAuthAuthentication = async (params: {
   provider: SocialProvider
   profile: OAuthProviderProfile
   authenticatedUserId: string | null
+  intent: OAuthAuthenticationIntent
 }): Promise<ResolvedOAuthUser> => {
   const normalizedEmail = params.profile.email?.trim().toLowerCase() || null
   const emailIsVerifiedByProvider = params.profile.emailVerified
@@ -209,6 +212,10 @@ const resolveUserForOAuthAuthentication = async (params: {
     return existingByEmail
   }
 
+  if (params.intent === 'signin') {
+    throw new Error('No account exists for this Google profile. Please use Sign Up with Google first.')
+  }
+
   const nextUsername = await generateUniqueUsername(params.profile.displayName, normalizedEmail)
 
   try {
@@ -247,4 +254,4 @@ const resolveUserForOAuthAuthentication = async (params: {
 }
 
 export { resolveUserForOAuthAuthentication }
-export type { ResolvedOAuthUser }
+export type { OAuthAuthenticationIntent, ResolvedOAuthUser }

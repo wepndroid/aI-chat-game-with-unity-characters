@@ -6,9 +6,11 @@ import { getGoogleOauthStartUrl, isGoogleOauthEnabled } from '@/lib/auth-api'
 import { AUTH_OPEN_SIGN_IN_MODAL_EVENT } from '@/lib/auth-events'
 import Image from 'next/image'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 const Header = () => {
+  const pathname = usePathname()
   const googleOauthEnabled = isGoogleOauthEnabled()
   const { sessionUser, isAuthLoading, loginUser, logoutUser, clearAuthError } = useAuth()
   const [isSignInModalOpen, setIsSignInModalOpen] = useState(false)
@@ -17,11 +19,12 @@ const Header = () => {
   const [isSigningIn, setIsSigningIn] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [signInErrorMessage, setSignInErrorMessage] = useState<string | null>(null)
+  const signInQueryFlagKey = 'openSignIn'
 
   const handleOpenSignInModal = () => {
-    clearAuthError()
-    setSignInErrorMessage(null)
-    setIsSignInModalOpen(true)
+    const redirectUrl = new URL(window.location.origin)
+    redirectUrl.searchParams.set(signInQueryFlagKey, '1')
+    window.location.assign(redirectUrl.toString())
   }
 
   const handleCloseSignInModal = () => {
@@ -74,24 +77,8 @@ const Header = () => {
       return
     }
 
-    window.location.assign(getGoogleOauthStartUrl('/profile'))
+    window.location.assign(getGoogleOauthStartUrl('/profile', 'signin'))
   }
-
-  useEffect(() => {
-    const handleDocumentKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') {
-        return
-      }
-
-      setIsSignInModalOpen(false)
-    }
-
-    window.addEventListener('keydown', handleDocumentKeyDown)
-
-    return () => {
-      window.removeEventListener('keydown', handleDocumentKeyDown)
-    }
-  }, [])
 
   useEffect(() => {
     const handleOpenSignInModalEvent = () => {
@@ -106,6 +93,26 @@ const Header = () => {
       window.removeEventListener(AUTH_OPEN_SIGN_IN_MODAL_EVENT, handleOpenSignInModalEvent)
     }
   }, [clearAuthError])
+
+  useEffect(() => {
+    if (pathname !== '/') {
+      setIsSignInModalOpen(false)
+      return
+    }
+
+    const url = new URL(window.location.href)
+    const shouldOpenSignIn = url.searchParams.get(signInQueryFlagKey) === '1'
+
+    if (!shouldOpenSignIn) {
+      return
+    }
+
+    clearAuthError()
+    setSignInErrorMessage(null)
+    setIsSignInModalOpen(true)
+    url.searchParams.delete(signInQueryFlagKey)
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+  }, [pathname])
 
   return (
     <>
@@ -174,18 +181,13 @@ const Header = () => {
           role="presentation"
         >
           <div className="w-full max-w-md rounded-2xl border border-ember-300/20 bg-[#171411]/95 p-6 shadow-ember backdrop-blur md:p-8">
-            <div className="mb-5 flex items-start justify-between gap-3">
+            <div className="mb-5">
               <h2 className="font-[family-name:var(--font-heading)] text-4xl font-extrabold uppercase tracking-wider text-white">
                 Welcome Back
               </h2>
-              <button
-                type="button"
-                className="rounded-md border border-ember-300/30 px-2 py-1 text-xs font-semibold uppercase tracking-[0.1em] text-ember-200 transition hover:border-ember-200 hover:text-white"
-                onClick={handleCloseSignInModal}
-                aria-label="Close sign in modal"
-              >
-                Close
-              </button>
+              <p className="mt-2 text-xs font-semibold uppercase tracking-[0.08em] text-white/55">
+                Click outside this panel to close.
+              </p>
             </div>
 
             <form className="space-y-4" aria-label="Sign in form" onSubmit={handleSignInSubmit}>
@@ -242,16 +244,14 @@ const Header = () => {
                 {isSigningIn ? 'Signing In...' : 'Sign In'}
               </button>
 
-              {googleOauthEnabled ? (
-                <button
-                  type="button"
-                  className="w-full rounded-md border border-white/20 bg-white/5 px-4 py-2.5 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:border-ember-300 hover:text-ember-200"
-                  aria-label="Sign in with Google"
-                  onClick={handleSignInWithGoogle}
-                >
-                  Sign In with Google
-                </button>
-              ) : null}
+              <button
+                type="button"
+                className="w-full rounded-md border border-white/20 bg-white/5 px-4 py-2.5 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:border-ember-300 hover:text-ember-200"
+                aria-label="Sign in with Google"
+                onClick={handleSignInWithGoogle}
+              >
+                Sign In with Google
+              </button>
             </form>
           </div>
         </div>

@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { EntitlementStatus } from '@prisma/client'
 import { Router } from 'express'
 import { z } from 'zod'
-import { exchangeAuthorizationCode } from '../lib/patreon-client'
+import { exchangeAuthorizationCode, probePatreonAuthorizeConfiguration } from '../lib/patreon-client'
 import { getPatreonConfig, isPatreonOauthEnabled } from '../lib/patreon-config'
 import { syncPatreonMembership } from '../lib/patreon-sync'
 import { requireAuth, requireVerifiedEmail } from '../middleware/auth-middleware'
@@ -79,6 +79,8 @@ patreonRoutes.get('/patreon/connect', requireVerifiedEmail, async (request, resp
       })
       return
     }
+
+    await probePatreonAuthorizeConfiguration()
 
     const query = connectQuerySchema.parse(request.query)
     const redirectAfter = sanitizeRedirectAfter(query.redirectAfter)
