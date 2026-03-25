@@ -12,6 +12,7 @@ type AdminReviewQueueCardProps = {
   onApprove: (recordId: string) => void
   onReject: (recordId: string) => void
   onViewDetails: (recordId: string) => void
+  isBusy?: boolean
 }
 
 const CheckIcon = () => {
@@ -58,7 +59,7 @@ const ScanBadge = ({ queueRecord }: { queueRecord: AdminReviewQueueCardRecord })
   )
 }
 
-const AdminReviewQueueCard = ({ queueRecord, onApprove, onReject, onViewDetails }: AdminReviewQueueCardProps) => {
+const AdminReviewQueueCard = ({ queueRecord, onApprove, onReject, onViewDetails, isBusy = false }: AdminReviewQueueCardProps) => {
   const handleApproveClick = () => {
     onApprove(queueRecord.id)
   }
@@ -101,6 +102,7 @@ const AdminReviewQueueCard = ({ queueRecord, onApprove, onReject, onViewDetails 
             onClick={handleApproveClick}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/15 text-sm font-normal text-emerald-300 transition hover:brightness-110"
             aria-label={`Approve ${queueRecord.title}`}
+            disabled={isBusy}
           >
             <CheckIcon />
             Approve
@@ -111,6 +113,7 @@ const AdminReviewQueueCard = ({ queueRecord, onApprove, onReject, onViewDetails 
             onClick={handleRejectClick}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-rose-500/40 bg-rose-500/15 text-sm font-normal text-rose-300 transition hover:brightness-110"
             aria-label={`Reject ${queueRecord.title}`}
+            disabled={isBusy}
           >
             <RejectIcon />
             Reject
@@ -121,6 +124,7 @@ const AdminReviewQueueCard = ({ queueRecord, onApprove, onReject, onViewDetails 
             onClick={handleViewDetailsClick}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-white/10 bg-[#232833]/90 text-sm font-normal text-[#d0d7e6] transition hover:bg-[#2d3441]"
             aria-label={`View details for ${queueRecord.title}`}
+            disabled={isBusy}
           >
             <DotsIcon />
             Details

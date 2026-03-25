@@ -2,38 +2,86 @@
 
 import AdminPageShell from '@/components/shared/admin-page-shell'
 import AdminReviewQueueCard, { type AdminReviewQueueCardRecord } from '@/components/ui-elements/admin-review-queue-card'
-import { useMemo, useState } from 'react'
+import { listAdminReviewQueue, updateCharacterStatus, type AdminReviewQueueRecord } from '@/lib/character-api'
+import { useEffect, useMemo, useState } from 'react'
 
-const initialQueueRecordList: AdminReviewQueueCardRecord[] = [
-  {
-    id: 'rq-1',
-    title: 'Shy Maid Cafe Girl',
-    uploader: 'reKengator2',
-    uploadedAgoLabel: '2 hours ago',
-    scanState: 'clean',
-    scanMessage: 'System scans passed'
-  },
-  {
-    id: 'rq-2',
-    title: 'Dark Elf Queen',
-    uploader: 'FantasyLover',
-    uploadedAgoLabel: '5 hours ago',
-    scanState: 'flagged',
-    scanMessage: 'System flagged 2 potential issues (NSFW Check)'
-  },
-  {
-    id: 'rq-3',
-    title: 'NSFW_Test_Do_Not_Approve',
-    uploader: 'AnonUser123',
-    uploadedAgoLabel: '1 day ago',
-    scanState: 'flagged',
-    scanMessage: 'System flagged 5 potential issues (NSFW Check)'
+const formatRelativeTimeLabel = (isoValue: string) => {
+  const targetMs = Date.parse(isoValue)
+
+  if (Number.isNaN(targetMs)) {
+    return 'unknown'
   }
-]
+
+  const diffMs = Date.now() - targetMs
+  const diffMinutes = Math.max(1, Math.floor(diffMs / 60000))
+
+  if (diffMinutes < 60) {
+    return `${diffMinutes} minutes ago`
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60)
+
+  if (diffHours < 24) {
+    return `${diffHours} hours ago`
+  }
+
+  const diffDays = Math.floor(diffHours / 24)
+  return `${diffDays} days ago`
+}
+
+const toQueueCardRecord = (queueRecord: AdminReviewQueueRecord): AdminReviewQueueCardRecord => {
+  const normalizedDescription = queueRecord.description?.toLowerCase() ?? ''
+  const looksFlagged = normalizedDescription.includes('nsfw') || normalizedDescription.includes('naked')
+
+  return {
+    id: queueRecord.id,
+    title: queueRecord.name,
+    uploader: queueRecord.owner.username,
+    uploadedAgoLabel: formatRelativeTimeLabel(queueRecord.updatedAt),
+    scanState: looksFlagged ? 'flagged' : 'clean',
+    scanMessage: looksFlagged ? 'System flagged potential NSFW keywords' : 'System scans passed'
+  }
+}
 
 const ReviewQueuePage = () => {
-  const [queueRecordList, setQueueRecordList] = useState<AdminReviewQueueCardRecord[]>(initialQueueRecordList)
-  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(initialQueueRecordList[0]?.id ?? null)
+  const [queueRecordList, setQueueRecordList] = useState<AdminReviewQueueRecord[]>([])
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [busyRecordId, setBusyRecordId] = useState<string | null>(null)
+
+  useEffect(() => {
+    let isCancelled = false
+
+    Promise.resolve().then(async () => {
+      setIsLoading(true)
+      setErrorMessage(null)
+
+      try {
+        const payload = await listAdminReviewQueue()
+
+        if (isCancelled) {
+          return
+        }
+
+        setQueueRecordList(payload.data)
+        setSelectedRecordId(payload.data[0]?.id ?? null)
+      } catch (error) {
+        if (!isCancelled) {
+          setErrorMessage(error instanceof Error ? error.message : 'Failed to load review queue.')
+          setQueueRecordList([])
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoading(false)
+        }
+      }
+    })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [])
 
   const pendingReviewCount = queueRecordList.length
 
@@ -59,11 +107,31 @@ const ReviewQueuePage = () => {
   }
 
   const handleApproveRecord = (recordId: string) => {
-    handleRemoveRecordFromQueue(recordId)
+    Promise.resolve().then(async () => {
+      try {
+        setBusyRecordId(recordId)
+        await updateCharacterStatus(recordId, 'APPROVED')
+        handleRemoveRecordFromQueue(recordId)
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to approve character.')
+      } finally {
+        setBusyRecordId(null)
+      }
+    })
   }
 
   const handleRejectRecord = (recordId: string) => {
-    handleRemoveRecordFromQueue(recordId)
+    Promise.resolve().then(async () => {
+      try {
+        setBusyRecordId(recordId)
+        await updateCharacterStatus(recordId, 'REJECTED')
+        handleRemoveRecordFromQueue(recordId)
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to reject character.')
+      } finally {
+        setBusyRecordId(null)
+      }
+    })
   }
 
   const handleViewRecordDetails = (recordId: string) => {
@@ -87,7 +155,17 @@ const ReviewQueuePage = () => {
       </div>
 
       <div className="mt-6 space-y-4">
-        {queueRecordList.length === 0 ? (
+        {isLoading ? (
+          <section className="rounded-2xl border border-white/10 bg-[#0d1219]/95 px-6 py-16 text-center">
+            <p className="text-[18px] font-[family-name:var(--font-heading)] font-normal text-white">Loading review queue...</p>
+          </section>
+        ) : null}
+
+        {errorMessage ? (
+          <section className="rounded-2xl border border-rose-300/25 bg-rose-300/10 px-4 py-3 text-sm text-rose-100">{errorMessage}</section>
+        ) : null}
+
+        {!isLoading && queueRecordList.length === 0 ? (
           <section className="rounded-2xl border border-white/10 bg-[#0d1219]/95 px-6 py-16 text-center">
             <p className="text-[18px] font-[family-name:var(--font-heading)] font-normal text-white">Queue is clear</p>
             <p className="mt-1 text-[14px] font-[family-name:var(--font-heading)] font-normal text-[#97a8c4]">No pending community reviews right now.</p>
@@ -96,10 +174,11 @@ const ReviewQueuePage = () => {
           queueRecordList.map((queueRecord) => (
             <AdminReviewQueueCard
               key={queueRecord.id}
-              queueRecord={queueRecord}
+              queueRecord={toQueueCardRecord(queueRecord)}
               onApprove={handleApproveRecord}
               onReject={handleRejectRecord}
               onViewDetails={handleViewRecordDetails}
+              isBusy={busyRecordId === queueRecord.id}
             />
           ))
         )}
@@ -109,12 +188,12 @@ const ReviewQueuePage = () => {
         <section className="mt-4 rounded-2xl border border-white/10 bg-[#0f141d]/95 px-5 py-4">
           <p className="text-[13px] font-normal uppercase tracking-[0.09em] text-[#8da0c0]">Selected Details</p>
           <p className="mt-2 font-[family-name:var(--font-heading)] text-[19px] font-normal leading-none text-white">
-            {selectedQueueRecord.title}
+            {selectedQueueRecord.name}
           </p>
           <p className="mt-1 text-[14px] font-[family-name:var(--font-heading)] font-normal text-[#9cb0cc]">
-            Uploaded by <span className="text-ember-300">{selectedQueueRecord.uploader}</span> - {selectedQueueRecord.uploadedAgoLabel}
+            Uploaded by <span className="text-ember-300">{selectedQueueRecord.owner.username}</span> - {formatRelativeTimeLabel(selectedQueueRecord.updatedAt)}
           </p>
-          <p className="mt-2 text-[16px] text-white/80">{selectedQueueRecord.scanMessage}</p>
+          <p className="mt-2 text-[16px] text-white/80">{selectedQueueRecord.description || 'No submission description provided.'}</p>
         </section>
       ) : null}
     </AdminPageShell>

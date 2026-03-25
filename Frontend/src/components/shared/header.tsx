@@ -9,41 +9,64 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
+const signInQueryFlagKey = 'openSignIn'
+const oauthQueryFlagKey = 'oauth'
+const oauthMessageQueryFlagKey = 'message'
+const isAdminBypassForTestingEnabled = process.env.NEXT_PUBLIC_ADMIN_TEST_BYPASS === 'true'
+
+const normalizeOAuthErrorMessage = (rawMessage: string | null) => {
+  if (!rawMessage) {
+    return 'Google sign-in did not complete. Please try again.'
+  }
+
+  const normalized = rawMessage.trim().toLowerCase()
+
+  if (normalized.includes('state') || normalized.includes('expired')) {
+    return 'Google sign-in session expired. Please try again.'
+  }
+
+  if (normalized.includes('not completed') || normalized.includes('missing oauth callback code')) {
+    return 'Google sign-in was canceled or incomplete. Please try again.'
+  }
+
+  if (normalized.includes('not available') || normalized.includes('not enabled')) {
+    return 'Google sign-in is temporarily unavailable. Please contact support.'
+  }
+
+  return rawMessage
+}
+
+const readInitialSignInModalState = (pathname: string | null) => {
+  if (typeof window === 'undefined' || pathname !== '/') {
+    return {
+      shouldOpen: false,
+      errorMessage: null as string | null
+    }
+  }
+
+  const url = new URL(window.location.href)
+  const shouldOpenSignIn = url.searchParams.get(signInQueryFlagKey) === '1'
+  const oauthStatus = url.searchParams.get(oauthQueryFlagKey)
+  const oauthMessage = url.searchParams.get(oauthMessageQueryFlagKey)
+  const shouldHandleOAuthError = oauthStatus === 'error'
+
+  return {
+    shouldOpen: shouldOpenSignIn || shouldHandleOAuthError,
+    errorMessage: shouldHandleOAuthError ? normalizeOAuthErrorMessage(oauthMessage) : null
+  }
+}
+
 const Header = () => {
   const pathname = usePathname()
   const googleOauthEnabled = isGoogleOauthEnabled()
   const { sessionUser, isAuthLoading, loginUser, logoutUser, clearAuthError } = useAuth()
-  const [isSignInModalOpen, setIsSignInModalOpen] = useState(false)
+  const [initialSignInModalState] = useState(() => readInitialSignInModalState(pathname))
+  const [isSignInModalOpen, setIsSignInModalOpen] = useState(initialSignInModalState.shouldOpen)
   const [emailInputValue, setEmailInputValue] = useState('')
   const [passwordInputValue, setPasswordInputValue] = useState('')
   const [isSigningIn, setIsSigningIn] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
-  const [signInErrorMessage, setSignInErrorMessage] = useState<string | null>(null)
-  const signInQueryFlagKey = 'openSignIn'
-  const oauthQueryFlagKey = 'oauth'
-  const oauthMessageQueryFlagKey = 'message'
-
-  const normalizeOAuthErrorMessage = (rawMessage: string | null) => {
-    if (!rawMessage) {
-      return 'Google sign-in did not complete. Please try again.'
-    }
-
-    const normalized = rawMessage.trim().toLowerCase()
-
-    if (normalized.includes('state') || normalized.includes('expired')) {
-      return 'Google sign-in session expired. Please try again.'
-    }
-
-    if (normalized.includes('not completed') || normalized.includes('missing oauth callback code')) {
-      return 'Google sign-in was canceled or incomplete. Please try again.'
-    }
-
-    if (normalized.includes('not available') || normalized.includes('not enabled')) {
-      return 'Google sign-in is temporarily unavailable. Please contact support.'
-    }
-
-    return rawMessage
-  }
+  const [signInErrorMessage, setSignInErrorMessage] = useState<string | null>(initialSignInModalState.errorMessage)
 
   const handleOpenSignInModal = () => {
     const redirectUrl = new URL(window.location.origin)
@@ -122,14 +145,12 @@ const Header = () => {
 
   useEffect(() => {
     if (pathname !== '/') {
-      setIsSignInModalOpen(false)
       return
     }
 
     const url = new URL(window.location.href)
     const shouldOpenSignIn = url.searchParams.get(signInQueryFlagKey) === '1'
     const oauthStatus = url.searchParams.get(oauthQueryFlagKey)
-    const oauthMessage = url.searchParams.get(oauthMessageQueryFlagKey)
     const shouldHandleOAuthError = oauthStatus === 'error'
 
     if (!shouldOpenSignIn && !shouldHandleOAuthError) {
@@ -137,14 +158,12 @@ const Header = () => {
     }
 
     clearAuthError()
-    setSignInErrorMessage(shouldHandleOAuthError ? normalizeOAuthErrorMessage(oauthMessage) : null)
-    setIsSignInModalOpen(true)
     url.searchParams.delete(signInQueryFlagKey)
     url.searchParams.delete(oauthQueryFlagKey)
     url.searchParams.delete(oauthMessageQueryFlagKey)
     url.searchParams.delete('provider')
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
-  }, [pathname])
+  }, [pathname, clearAuthError])
 
   return (
     <>
@@ -169,7 +188,7 @@ const Header = () => {
                 Profile
               </Link>
             ) : null}
-            {sessionUser?.role === 'ADMIN' && sessionUser.isEmailVerified ? (
+            {(sessionUser?.role === 'ADMIN' && sessionUser.isEmailVerified) || (isAdminBypassForTestingEnabled && sessionUser) ? (
               <Link href="/admin/dashboard" className="transition hover:text-ember-300" aria-label="Go to admin dashboard">
                 Admin
               </Link>
@@ -205,7 +224,7 @@ const Header = () => {
         </div>
       </header>
 
-      {isSignInModalOpen ? (
+      {pathname === '/' && isSignInModalOpen ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-5"
           onClick={handleModalContainerClick}

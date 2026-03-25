@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 
 type CharacterGalleryCardProps = {
   routeId: string
@@ -7,6 +8,7 @@ type CharacterGalleryCardProps = {
   chats: string
   gradientClassName: string
   description?: string
+  previewImageUrl?: string | null
   isPatreonGated?: boolean
   hasGatedAccess?: boolean
   requiredTierCents?: number | null
@@ -27,6 +29,7 @@ const CharacterGalleryCard = ({
   chats,
   gradientClassName,
   description,
+  previewImageUrl,
   isPatreonGated = false,
   hasGatedAccess = true,
   requiredTierCents
@@ -38,6 +41,12 @@ const CharacterGalleryCard = ({
   return (
     <article className="overflow-hidden rounded-xl border border-white/15 bg-[#111111]">
       <div className={`relative h-[272px] bg-gradient-to-b ${gradientClassName}`}>
+        {previewImageUrl ? (
+          <>
+            <Image src={previewImageUrl} alt={`${name} preview`} fill unoptimized className="object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-black/10 to-transparent" />
+          </>
+        ) : null}
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_8%,rgba(255,255,255,0.32),transparent_50%)]" />
 
         <div className="absolute right-2 top-2 flex items-center gap-1">

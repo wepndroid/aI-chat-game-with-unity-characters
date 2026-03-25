@@ -28,6 +28,42 @@
     <script src="Build/4e04d1a0f3ecc0a902304b9ea797f0c5.loader.js"></script>
     <script>
       var canvas = document.querySelector("#unity-canvas");
+      var postToParent = function(type, payload) {
+        if (!window.parent || window.parent === window) {
+          return;
+        }
+
+        try {
+          window.parent.postMessage(
+            Object.assign(
+              {
+                type: "secretwaifu-webgl:" + type
+              },
+              payload || {}
+            ),
+            "*"
+          );
+        } catch (error) {
+          console.warn("Unable to post WebGL progress to parent window.", error);
+        }
+      };
+
+      // Some browsers or iframe permission policies can throw on Permissions API checks.
+      // Keep Unity running by degrading to "prompt" state instead of crashing.
+      if (navigator.permissions && typeof navigator.permissions.query === 'function') {
+        var originalPermissionsQuery = navigator.permissions.query.bind(navigator.permissions);
+        navigator.permissions.query = function(permissionDescriptor) {
+          try {
+            return originalPermissionsQuery(permissionDescriptor).catch(function(error) {
+              console.warn('Permissions query failed, using fallback state.', error);
+              return Promise.resolve({ state: 'prompt', onchange: null });
+            });
+          } catch (error) {
+            console.warn('Permissions query threw, using fallback state.', error);
+            return Promise.resolve({ state: 'prompt', onchange: null });
+          }
+        };
+      }
 
       if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
         // Mobile device style: fill the whole browser client area with the game canvas:
@@ -40,18 +76,25 @@
         canvas.style.height = "100%";
       }
 
-      createUnityInstance(canvas, {
-        arguments: [],
-        dataUrl: "Build/adeaf0ef10f609f98fb47678bccddb6f.data",
-        frameworkUrl: "Build/4ab1a6dd50d9d5b7f3dae4757a88ad5a.framework.js",
-        codeUrl: "Build/1bd2838295f5a6220a0aeb1e26c27f3d.wasm",
-        streamingAssetsUrl: "StreamingAssets",
-        companyName: "Squircle Games",
-        productName: "SecretWaifu",
-        productVersion: "0.27",
-        // matchWebGLToCanvasSize: false, // Uncomment this to separately control WebGL canvas render size and DOM element size.
-        // devicePixelRatio: 1, // Uncomment this to override low DPI rendering on high DPI displays.
-      }).then((unityInstance) => {
+      createUnityInstance(
+        canvas,
+        {
+          arguments: [],
+          dataUrl: "Build/adeaf0ef10f609f98fb47678bccddb6f.data",
+          frameworkUrl: "Build/4ab1a6dd50d9d5b7f3dae4757a88ad5a.framework.js",
+          codeUrl: "Build/1bd2838295f5a6220a0aeb1e26c27f3d.wasm",
+          streamingAssetsUrl: "StreamingAssets",
+          companyName: "Squircle Games",
+          productName: "SecretWaifu",
+          productVersion: "0.27",
+          // matchWebGLToCanvasSize: false, // Uncomment this to separately control WebGL canvas render size and DOM element size.
+          // devicePixelRatio: 1, // Uncomment this to override low DPI rendering on high DPI displays.
+        },
+        function(progress) {
+          postToParent("progress", { progress: progress });
+        }
+      ).then((unityInstance) => {
+        postToParent("ready", { progress: 1 });
       }).catch((message) => {
         alert(message);
       });

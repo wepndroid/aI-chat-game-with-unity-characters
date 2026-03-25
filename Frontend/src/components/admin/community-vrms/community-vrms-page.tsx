@@ -1,15 +1,18 @@
 'use client'
 
 import AdminPageShell from '@/components/shared/admin-page-shell'
-import AdminCommunityVrmRow, { type AdminCommunityVrmRecord } from '@/components/ui-elements/admin-community-vrm-row'
-import type { AdminVrmVisibilityStatus } from '@/components/ui-elements/admin-vrm-status-pill'
-import { useMemo, useState } from 'react'
+import { listCharacters, updateCharacterStatus, updateCharacterVisibility, type CharacterListRecord } from '@/lib/character-api'
+import { useEffect, useMemo, useState } from 'react'
 
-const allCommunityVrmRecords: AdminCommunityVrmRecord[] = [
-  { id: '1', code: 'V-8821', name: 'Airi Akizuki', uploader: 'AdminSenpai', hearts: 2400, chats: 1300, status: 'public' },
-  { id: '2', code: 'V-8822', name: 'Cyberpunk Lucy', uploader: 'reKengator2', hearts: 892, chats: 450, status: 'public' },
-  { id: '3', code: 'V-8823', name: 'Test Dummy', uploader: 'Weeblord99', hearts: 0, chats: 2, status: 'private' },
-  { id: '4', code: 'V-8824', name: 'RuleBreaker101', uploader: 'TrollAccountXX', hearts: 12, chats: 55, status: 'removed' }
+type StatusFilterValue = 'all' | 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'
+
+const statusFilterOptions: Array<{ value: StatusFilterValue; label: string }> = [
+  { value: 'all', label: 'All Status' },
+  { value: 'PENDING', label: 'Pending' },
+  { value: 'APPROVED', label: 'Approved' },
+  { value: 'REJECTED', label: 'Rejected' },
+  { value: 'DRAFT', label: 'Draft' },
+  { value: 'ARCHIVED', label: 'Archived' }
 ]
 
 const SearchIcon = () => {
@@ -21,22 +24,67 @@ const SearchIcon = () => {
   )
 }
 
-const statusFilterOptions: Array<{ value: 'all' | AdminVrmVisibilityStatus; label: string }> = [
-  { value: 'all', label: 'All Status' },
-  { value: 'public', label: 'Public' },
-  { value: 'private', label: 'Private' },
-  { value: 'removed', label: 'Removed' }
-]
-
 const CommunityVrmsPage = () => {
-  const [statusFilter, setStatusFilter] = useState<'all' | AdminVrmVisibilityStatus>('all')
+  const [statusFilter, setStatusFilter] = useState<StatusFilterValue>('all')
   const [searchValue, setSearchValue] = useState('')
+  const [isLoading, setIsLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [characterList, setCharacterList] = useState<CharacterListRecord[]>([])
+  const [busyCharacterId, setBusyCharacterId] = useState<string | null>(null)
 
-  const filteredCommunityVrmRecords = useMemo(() => {
+  const loadCharacters = async (withSpinner = true) => {
+    if (withSpinner) {
+      setIsLoading(true)
+    }
+    setErrorMessage(null)
+
+    try {
+      const payload = await listCharacters(searchValue)
+      setCharacterList(payload.data)
+    } catch (error) {
+      setCharacterList([])
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to load characters.')
+    } finally {
+      if (withSpinner) {
+        setIsLoading(false)
+      }
+    }
+  }
+
+  useEffect(() => {
+    let isCancelled = false
+
+    Promise.resolve().then(async () => {
+      setIsLoading(true)
+      setErrorMessage(null)
+
+      try {
+        const payload = await listCharacters('')
+        if (!isCancelled) {
+          setCharacterList(payload.data)
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          setCharacterList([])
+          setErrorMessage(error instanceof Error ? error.message : 'Failed to load characters.')
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoading(false)
+        }
+      }
+    })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [])
+
+  const filteredCharacterList = useMemo(() => {
     const normalizedSearchValue = searchValue.trim().toLowerCase()
 
-    return allCommunityVrmRecords.filter((vrmRecord) => {
-      if (statusFilter !== 'all' && vrmRecord.status !== statusFilter) {
+    return characterList.filter((characterRecord) => {
+      if (statusFilter !== 'all' && characterRecord.status !== statusFilter) {
         return false
       }
 
@@ -45,19 +93,77 @@ const CommunityVrmsPage = () => {
       }
 
       return (
-        vrmRecord.name.toLowerCase().includes(normalizedSearchValue) ||
-        vrmRecord.code.toLowerCase().includes(normalizedSearchValue) ||
-        vrmRecord.uploader.toLowerCase().includes(normalizedSearchValue)
+        characterRecord.name.toLowerCase().includes(normalizedSearchValue) ||
+        (characterRecord.tagline ?? '').toLowerCase().includes(normalizedSearchValue) ||
+        characterRecord.owner.username.toLowerCase().includes(normalizedSearchValue) ||
+        characterRecord.slug.toLowerCase().includes(normalizedSearchValue)
       )
     })
-  }, [searchValue, statusFilter])
+  }, [characterList, searchValue, statusFilter])
 
-  const handleStatusFilterChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    setStatusFilter(event.target.value as 'all' | AdminVrmVisibilityStatus)
+  const handleApprove = (characterId: string) => {
+    Promise.resolve().then(async () => {
+      setBusyCharacterId(characterId)
+      setErrorMessage(null)
+
+      try {
+        await updateCharacterStatus(characterId, 'APPROVED')
+        await updateCharacterVisibility(characterId, 'PUBLIC')
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to approve character.')
+      } finally {
+        await loadCharacters(false)
+        setBusyCharacterId(null)
+      }
+    })
   }
 
-  const handleSearchValueChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchValue(event.target.value)
+  const handleReject = (characterId: string) => {
+    Promise.resolve().then(async () => {
+      setBusyCharacterId(characterId)
+      setErrorMessage(null)
+
+      try {
+        await updateCharacterStatus(characterId, 'REJECTED')
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to reject character.')
+      } finally {
+        await loadCharacters(false)
+        setBusyCharacterId(null)
+      }
+    })
+  }
+
+  const handlePublish = (characterId: string) => {
+    Promise.resolve().then(async () => {
+      setBusyCharacterId(characterId)
+      setErrorMessage(null)
+
+      try {
+        await updateCharacterVisibility(characterId, 'PUBLIC')
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to publish character.')
+      } finally {
+        await loadCharacters(false)
+        setBusyCharacterId(null)
+      }
+    })
+  }
+
+  const handleUnpublish = (characterId: string) => {
+    Promise.resolve().then(async () => {
+      setBusyCharacterId(characterId)
+      setErrorMessage(null)
+
+      try {
+        await updateCharacterVisibility(characterId, 'PRIVATE')
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to unpublish character.')
+      } finally {
+        await loadCharacters(false)
+        setBusyCharacterId(null)
+      }
+    })
   }
 
   return (
@@ -69,8 +175,8 @@ const CommunityVrmsPage = () => {
           <label className="inline-flex h-11 items-center rounded-lg border border-ember-500/55 bg-[#12151b] px-3">
             <select
               value={statusFilter}
-              onChange={handleStatusFilterChange}
-              aria-label="Filter community VRMs by status"
+              onChange={(event) => setStatusFilter(event.target.value as StatusFilterValue)}
+              aria-label="Filter VRMs by status"
               className="h-full bg-transparent text-base text-[#9cb0cc] outline-none"
             >
               {statusFilterOptions.map((statusOption) => (
@@ -88,38 +194,110 @@ const CommunityVrmsPage = () => {
             <input
               type="search"
               value={searchValue}
-              onChange={handleSearchValueChange}
+              onChange={(event) => setSearchValue(event.target.value)}
               placeholder="Search VRMs..."
-              aria-label="Search community VRMs"
+              aria-label="Search VRMs"
               className="w-full bg-transparent text-sm text-white outline-none placeholder:text-[#7585a1]"
             />
           </label>
         </div>
       </div>
 
+      {errorMessage ? (
+        <section className="mt-5 rounded-lg border border-rose-300/30 bg-rose-300/10 px-4 py-3 text-sm text-rose-100">{errorMessage}</section>
+      ) : null}
+
       <section className="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-[#0b0f14]/95">
         <div className="overflow-x-auto">
           <table className="min-w-full">
             <thead>
               <tr className="border-b border-white/10 bg-[#181b21]/85">
-                <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">ID / Name</th>
+                <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Name</th>
                 <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Uploader</th>
                 <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Metrics</th>
                 <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Status</th>
+                <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Visibility</th>
                 <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Actions</th>
               </tr>
             </thead>
 
             <tbody>
-              {filteredCommunityVrmRecords.length === 0 ? (
+              {isLoading ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-[#7c8aa3]">
-                    No community VRMs match your filters.
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-[#7c8aa3]">
+                    Loading characters...
                   </td>
                 </tr>
-              ) : (
-                filteredCommunityVrmRecords.map((vrmRecord) => <AdminCommunityVrmRow key={vrmRecord.id} vrmRecord={vrmRecord} />)
-              )}
+              ) : null}
+
+              {!isLoading && filteredCharacterList.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-[#7c8aa3]">
+                    No VRMs match your filters.
+                  </td>
+                </tr>
+              ) : null}
+
+              {!isLoading
+                ? filteredCharacterList.map((characterRecord) => (
+                    <tr key={characterRecord.id} className="border-t border-white/10">
+                      <td className="px-4 py-4 align-middle">
+                        <p className="font-[family-name:var(--font-heading)] text-[17px] font-normal leading-none text-white">{characterRecord.name}</p>
+                        <p className="mt-1 text-sm text-[#6f809d]">{characterRecord.slug}</p>
+                      </td>
+                      <td className="px-4 py-4 align-middle text-[15px] font-[family-name:var(--font-heading)] font-normal text-[#9ca9c2]">
+                        {characterRecord.owner.username}
+                      </td>
+                      <td className="px-4 py-4 align-middle text-xs text-[#a8b6d0]">
+                        <p>Hearts: {characterRecord.heartsCount}</p>
+                        <p>Views: {characterRecord.viewsCount}</p>
+                        <p>Rating: {characterRecord.averageRating.toFixed(1)}</p>
+                      </td>
+                      <td className="px-4 py-4 align-middle text-xs uppercase tracking-[0.08em] text-white/80">{characterRecord.status}</td>
+                      <td className="px-4 py-4 align-middle text-xs uppercase tracking-[0.08em] text-white/80">{characterRecord.visibility}</td>
+                      <td className="px-4 py-4 align-middle">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="rounded-md border border-emerald-500/40 bg-emerald-500/15 px-2 py-1 text-[10px] uppercase text-emerald-200 disabled:opacity-60"
+                            aria-label={`Approve ${characterRecord.name}`}
+                            onClick={() => handleApprove(characterRecord.id)}
+                            disabled={busyCharacterId === characterRecord.id}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-md border border-rose-500/40 bg-rose-500/15 px-2 py-1 text-[10px] uppercase text-rose-200 disabled:opacity-60"
+                            aria-label={`Reject ${characterRecord.name}`}
+                            onClick={() => handleReject(characterRecord.id)}
+                            disabled={busyCharacterId === characterRecord.id}
+                          >
+                            Reject
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-md border border-amber-500/40 bg-amber-500/15 px-2 py-1 text-[10px] uppercase text-amber-200 disabled:opacity-60"
+                            aria-label={`Publish ${characterRecord.name}`}
+                            onClick={() => handlePublish(characterRecord.id)}
+                            disabled={busyCharacterId === characterRecord.id || characterRecord.status !== 'APPROVED'}
+                          >
+                            Publish
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-md border border-white/20 bg-white/5 px-2 py-1 text-[10px] uppercase text-white/80 disabled:opacity-60"
+                            aria-label={`Unpublish ${characterRecord.name}`}
+                            onClick={() => handleUnpublish(characterRecord.id)}
+                            disabled={busyCharacterId === characterRecord.id}
+                          >
+                            Unpublish
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                : null}
             </tbody>
           </table>
         </div>

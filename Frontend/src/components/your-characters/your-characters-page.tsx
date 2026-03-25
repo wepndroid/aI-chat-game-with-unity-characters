@@ -5,8 +5,9 @@ import DashboardStatCard from '@/components/ui-elements/dashboard-stat-card'
 import MyCharacterCard, { type CharacterModerationStatus, type MyCharacterCardRecord } from '@/components/ui-elements/my-character-card'
 import SearchField from '@/components/ui-elements/search-field'
 import SelectField from '@/components/ui-elements/select-field'
+import { listMyCharacters, submitCharacterForReview, type CharacterMineRecord } from '@/lib/character-api'
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 type CharacterStatusFilter = 'all' | CharacterModerationStatus
 type CharacterSortOption = 'recent' | 'most-viewed' | 'most-hearted' | 'top-rated' | 'needs-action'
@@ -27,65 +28,6 @@ const sortOptions: Array<{ value: CharacterSortOption; label: string }> = [
   { value: 'needs-action', label: 'Needs Action First' }
 ]
 
-const initialCharacterRecords: MyCharacterCardRecord[] = [
-  {
-    id: 'my-character-1',
-    slug: 'airi-akizuki',
-    title: 'Airi Akizuki',
-    summary: 'Main launch character with Patreon gated premium voice scenes and polished greeting dialogue.',
-    moderationStatus: 'approved',
-    visibility: 'public',
-    nsfwLevel: 'mild',
-    updatedAtLabel: '2h ago',
-    views: 4210,
-    hearts: 1893,
-    rating: 4.8,
-    pledgeAccess: 'patreon'
-  },
-  {
-    id: 'my-character-2',
-    slug: 'cafe-reina',
-    title: 'Cafe Reina',
-    summary: 'Casual chat-focused companion profile currently waiting in the moderation queue.',
-    moderationStatus: 'pending',
-    visibility: 'unlisted',
-    nsfwLevel: 'none',
-    updatedAtLabel: '5h ago',
-    views: 922,
-    hearts: 347,
-    rating: 4.4,
-    pledgeAccess: 'free'
-  },
-  {
-    id: 'my-character-3',
-    slug: 'luna-captain',
-    title: 'Luna Captain',
-    summary: 'Gameplay helper archetype still in draft while personality and scenario prompts are being refined.',
-    moderationStatus: 'draft',
-    visibility: 'private',
-    nsfwLevel: 'none',
-    updatedAtLabel: '1d ago',
-    views: 112,
-    hearts: 24,
-    rating: 0,
-    pledgeAccess: 'free'
-  },
-  {
-    id: 'my-character-4',
-    slug: 'ahri-night',
-    title: 'Ahri Night',
-    summary: 'Revision needed after moderation feedback about missing preview screenshots and unclear summary copy.',
-    moderationStatus: 'rejected',
-    visibility: 'private',
-    nsfwLevel: 'mild',
-    updatedAtLabel: '2d ago',
-    views: 84,
-    hearts: 12,
-    rating: 0,
-    pledgeAccess: 'patreon'
-  }
-]
-
 const statusPriorityMap: Record<CharacterModerationStatus, number> = {
   rejected: 0,
   draft: 1,
@@ -93,11 +35,95 @@ const statusPriorityMap: Record<CharacterModerationStatus, number> = {
   approved: 3
 }
 
+const formatRelativeTimeLabel = (isoValue: string) => {
+  const targetMs = Date.parse(isoValue)
+
+  if (Number.isNaN(targetMs)) {
+    return 'unknown'
+  }
+
+  const diffMs = Date.now() - targetMs
+  const diffMinutes = Math.max(1, Math.floor(diffMs / 60000))
+
+  if (diffMinutes < 60) {
+    return `${diffMinutes}m ago`
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60)
+
+  if (diffHours < 24) {
+    return `${diffHours}h ago`
+  }
+
+  const diffDays = Math.floor(diffHours / 24)
+  return `${diffDays}d ago`
+}
+
+const toCardRecord = (characterRecord: CharacterMineRecord): MyCharacterCardRecord => {
+  const normalizedStatus = characterRecord.status.toLowerCase()
+  const mappedStatus: CharacterModerationStatus =
+    normalizedStatus === 'approved' || normalizedStatus === 'pending' || normalizedStatus === 'rejected'
+      ? (normalizedStatus as CharacterModerationStatus)
+      : 'draft'
+
+  const normalizedVisibility = characterRecord.visibility.toLowerCase()
+  const mappedVisibility = normalizedVisibility === 'public' || normalizedVisibility === 'unlisted' ? normalizedVisibility : 'private'
+
+  return {
+    id: characterRecord.id,
+    slug: characterRecord.slug,
+    title: characterRecord.name,
+    summary: characterRecord.tagline?.trim() || 'No tagline yet. Update this character to improve discoverability.',
+    moderationStatus: mappedStatus,
+    visibility: mappedVisibility,
+    nsfwLevel: 'none',
+    updatedAtLabel: formatRelativeTimeLabel(characterRecord.updatedAt),
+    views: characterRecord.viewsCount,
+    hearts: characterRecord.heartsCount,
+    rating: characterRecord.averageRating,
+    pledgeAccess: characterRecord.isPatreonGated ? 'patreon' : 'free'
+  }
+}
+
 const YourCharactersPage = () => {
-  const [characterRecords, setCharacterRecords] = useState<MyCharacterCardRecord[]>(initialCharacterRecords)
+  const [characterRecords, setCharacterRecords] = useState<MyCharacterCardRecord[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [searchValue, setSearchValue] = useState('')
   const [statusFilter, setStatusFilter] = useState<CharacterStatusFilter>('all')
   const [sortOption, setSortOption] = useState<CharacterSortOption>('recent')
+
+  useEffect(() => {
+    let isCancelled = false
+
+    Promise.resolve().then(async () => {
+      setIsLoading(true)
+      setErrorMessage(null)
+
+      try {
+        const payload = await listMyCharacters()
+
+        if (isCancelled) {
+          return
+        }
+
+        setCharacterRecords(payload.data.map(toCardRecord))
+      } catch (error) {
+        if (!isCancelled) {
+          setErrorMessage(error instanceof Error ? error.message : 'Failed to load your characters.')
+          setCharacterRecords([])
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoading(false)
+        }
+      }
+    })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [])
 
   const handleSearchChange = (value: string) => {
     setSearchValue(value)
@@ -112,19 +138,26 @@ const YourCharactersPage = () => {
   }
 
   const handleSubmitForReview = (characterId: string) => {
-    setCharacterRecords((previousRecords) =>
-      previousRecords.map((characterItem) => {
-        if (characterItem.id !== characterId) {
-          return characterItem
-        }
+    Promise.resolve().then(async () => {
+      try {
+        await submitCharacterForReview(characterId)
+        setCharacterRecords((previousRecords) =>
+          previousRecords.map((characterItem) => {
+            if (characterItem.id !== characterId) {
+              return characterItem
+            }
 
-        return {
-          ...characterItem,
-          moderationStatus: 'pending',
-          updatedAtLabel: 'Just now'
-        }
-      })
-    )
+            return {
+              ...characterItem,
+              moderationStatus: 'pending',
+              updatedAtLabel: 'Just now'
+            }
+          })
+        )
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to submit character for review.')
+      }
+    })
   }
 
   const filteredAndSortedCharacters = useMemo(() => {
@@ -249,16 +282,26 @@ const YourCharactersPage = () => {
                   </div>
                 </div>
 
+                {errorMessage ? (
+                  <p className="mt-4 rounded-md border border-rose-300/30 bg-rose-300/10 px-3 py-2 text-xs text-rose-100">{errorMessage}</p>
+                ) : null}
+
                 <div className="mt-5 space-y-3">
-                  {filteredAndSortedCharacters.length === 0 ? (
+                  {isLoading ? (
+                    <div className="rounded-lg border border-dashed border-white/20 bg-[#100f11] p-6 text-center">
+                      <p className="text-sm text-white/75">Loading your characters...</p>
+                    </div>
+                  ) : null}
+
+                  {!isLoading && filteredAndSortedCharacters.length === 0 ? (
                     <div className="rounded-lg border border-dashed border-white/20 bg-[#100f11] p-6 text-center">
                       <p className="text-sm text-white/75">No characters match your current filter settings.</p>
                     </div>
-                  ) : (
+                  ) : !isLoading ? (
                     filteredAndSortedCharacters.map((characterItem) => (
                       <MyCharacterCard key={characterItem.id} characterRecord={characterItem} onSubmitForReview={handleSubmitForReview} />
                     ))
-                  )}
+                  ) : null}
                 </div>
               </div>
             </div>

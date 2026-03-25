@@ -11,11 +11,20 @@ import { resolveAvailableTierCents, type PatreonStatusSnapshot } from '@/lib/pat
 import { useEffect, useMemo, useState } from 'react'
 
 type CharacterCategory = 'official' | 'community' | 'your-characters'
+type CharacterSortOption = 'newest' | 'most-hearted' | 'top-rated' | 'most-viewed' | 'name-az'
 
 const categoryTabs: Array<{ key: CharacterCategory; label: string }> = [
   { key: 'official', label: 'Official' },
   { key: 'community', label: 'Community' },
   { key: 'your-characters', label: 'Your Characters' }
+]
+
+const sortOptions: Array<{ value: CharacterSortOption; label: string }> = [
+  { value: 'newest', label: 'Newest' },
+  { value: 'most-hearted', label: 'Most Hearted' },
+  { value: 'top-rated', label: 'Top Rated' },
+  { value: 'most-viewed', label: 'Most Viewed' },
+  { value: 'name-az', label: 'Name A-Z' }
 ]
 
 const defaultGradientVariants = [
@@ -77,6 +86,7 @@ const CharactersPage = () => {
   const { sessionUser, isAuthLoading } = useAuth()
   const sessionUserId = sessionUser?.id ?? null
   const [activeCategory, setActiveCategory] = useState<CharacterCategory>('official')
+  const [activeSortOption, setActiveSortOption] = useState<CharacterSortOption>('newest')
   const [searchValue, setSearchValue] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [isCharactersLoading, setIsCharactersLoading] = useState(true)
@@ -199,9 +209,9 @@ const CharactersPage = () => {
     setCurrentPage(1)
   }
 
-  const filteredCharacters = useMemo(() => {
+  const filteredAndSortedCharacters = useMemo(() => {
     const normalizedSearchValue = searchValue.trim().toLowerCase()
-    return characterList.filter((characterItem) => {
+    const filteredCharacters = characterList.filter((characterItem) => {
       const category = resolveCharacterCategory(characterItem, sessionUserId)
 
       if (category !== activeCategory) {
@@ -217,16 +227,38 @@ const CharactersPage = () => {
         (characterItem.tagline ?? '').toLowerCase().includes(normalizedSearchValue)
       )
     })
-  }, [activeCategory, characterList, searchValue, sessionUserId])
+
+    return [...filteredCharacters].sort((firstCharacter, secondCharacter) => {
+      if (activeSortOption === 'most-hearted') {
+        return secondCharacter.heartsCount - firstCharacter.heartsCount
+      }
+
+      if (activeSortOption === 'top-rated') {
+        return secondCharacter.averageRating - firstCharacter.averageRating
+      }
+
+      if (activeSortOption === 'most-viewed') {
+        return secondCharacter.viewsCount - firstCharacter.viewsCount
+      }
+
+      if (activeSortOption === 'name-az') {
+        return firstCharacter.name.localeCompare(secondCharacter.name)
+      }
+
+      const firstCreatedAtMs = Date.parse(firstCharacter.createdAt)
+      const secondCreatedAtMs = Date.parse(secondCharacter.createdAt)
+      return secondCreatedAtMs - firstCreatedAtMs
+    })
+  }, [activeCategory, activeSortOption, characterList, searchValue, sessionUserId])
 
   const itemsPerPage = 12
-  const totalPages = Math.max(1, Math.ceil(filteredCharacters.length / itemsPerPage))
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedCharacters.length / itemsPerPage))
   const visiblePage = Math.min(currentPage, totalPages)
 
   const paginatedCharacters = useMemo(() => {
     const offset = (visiblePage - 1) * itemsPerPage
-    return filteredCharacters.slice(offset, offset + itemsPerPage)
-  }, [filteredCharacters, visiblePage])
+    return filteredAndSortedCharacters.slice(offset, offset + itemsPerPage)
+  }, [filteredAndSortedCharacters, visiblePage])
 
   return (
     <main className="relative overflow-hidden bg-[#030303] text-white">
@@ -240,16 +272,36 @@ const CharactersPage = () => {
           </h1>
 
           <div className="mt-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-4 border-b border-white/15 pb-2">
-              {categoryTabs.map((tabItem) => (
-                <FilterTab
-                  key={tabItem.key}
-                  label={tabItem.label}
-                  isActive={activeCategory === tabItem.key}
-                  onClick={() => handleCategoryChange(tabItem.key)}
-                  ariaLabel={`Filter by ${tabItem.label}`}
-                />
-              ))}
+            <div className="flex flex-col gap-3 md:flex-row md:items-center">
+              <div className="flex items-center gap-4 border-b border-white/15 pb-2">
+                {categoryTabs.map((tabItem) => (
+                  <FilterTab
+                    key={tabItem.key}
+                    label={tabItem.label}
+                    isActive={activeCategory === tabItem.key}
+                    onClick={() => handleCategoryChange(tabItem.key)}
+                    ariaLabel={`Filter by ${tabItem.label}`}
+                  />
+                ))}
+              </div>
+              <label className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-white/75">
+                Sort
+                <select
+                  value={activeSortOption}
+                  onChange={(event) => {
+                    setActiveSortOption(event.target.value as CharacterSortOption)
+                    setCurrentPage(1)
+                  }}
+                  className="h-9 min-w-[160px] rounded-md border border-white/20 bg-black/35 px-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-white outline-none transition focus:border-ember-300"
+                  aria-label="Sort characters"
+                >
+                  {sortOptions.map((sortOption) => (
+                    <option key={sortOption.value} value={sortOption.value} className="bg-[#101014]">
+                      {sortOption.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
 
             <div className="w-full md:max-w-[430px]">
@@ -287,6 +339,7 @@ const CharactersPage = () => {
                       chats={formatCompactNumber(characterItem.viewsCount)}
                       gradientClassName={defaultGradientVariants[index % defaultGradientVariants.length]}
                       description={characterItem.tagline ?? undefined}
+                      previewImageUrl={characterItem.previewImageUrl}
                       isPatreonGated={characterItem.isPatreonGated}
                       hasGatedAccess={hasGatedAccess}
                       requiredTierCents={characterItem.minimumTierCents}
@@ -298,7 +351,7 @@ const CharactersPage = () => {
 
           <div className="mt-10 flex flex-col items-center justify-center gap-4 text-center md:flex-row md:gap-6">
             <p className="text-xs text-white/75">
-              {filteredCharacters.length} VRM characters
+              {filteredAndSortedCharacters.length} VRM characters
               {isPatreonLoading ? ' | Syncing membership...' : ''}
             </p>
             <PaginationControls currentPage={visiblePage} totalPages={totalPages} onPageChange={setCurrentPage} />

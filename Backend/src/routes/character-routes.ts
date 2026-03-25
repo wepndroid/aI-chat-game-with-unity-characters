@@ -1,8 +1,9 @@
 import { CharacterStatus, CharacterVisibility } from '@prisma/client'
+import { isIP } from 'node:net'
 import type { Request } from 'express'
 import { Router } from 'express'
 import { z } from 'zod'
-import { optionalAuth, requireAdmin, requireVerifiedEmail } from '../middleware/auth-middleware'
+import { optionalAuth, requireAdmin, requireAuth, requireVerifiedEmail } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
 import { buildUniqueSlug } from '../lib/slug'
 import {
@@ -35,6 +36,30 @@ const createCharacterSchema = z.object({
   visibility: z.nativeEnum(CharacterVisibility).optional()
 })
 
+const updateCharacterSchema = z
+  .object({
+    name: z.string().trim().min(2).max(120).optional(),
+    fullName: z.string().trim().max(160).nullable().optional(),
+    tagline: z.string().trim().max(160).nullable().optional(),
+    description: z.string().trim().max(5000).nullable().optional(),
+    personality: z.string().trim().max(8000).nullable().optional(),
+    scenario: z.string().trim().max(8000).nullable().optional(),
+    firstMessage: z.string().trim().max(8000).nullable().optional(),
+    exampleDialogs: z.string().trim().max(12000).nullable().optional(),
+    vroidFileUrl: z.string().url().nullable().optional(),
+    previewImageUrl: z.string().url().nullable().optional(),
+    screenshotUrls: z.array(z.string().url().max(2048)).max(16).optional(),
+    legacyFileHash: z.string().trim().regex(/^[a-fA-F0-9]{64}$/).nullable().optional(),
+    legacyTier: z.number().int().min(0).max(9).nullable().optional(),
+    legacyHeyWaifu: z.number().int().min(0).max(1).nullable().optional(),
+    isPatreonGated: z.boolean().optional(),
+    minimumTierCents: z.number().int().min(0).nullable().optional(),
+    visibility: z.nativeEnum(CharacterVisibility).optional()
+  })
+  .refine((payload) => Object.keys(payload).length > 0, {
+    message: 'At least one field must be provided.'
+  })
+
 const listCharactersQuerySchema = z.object({
   status: z.nativeEnum(CharacterStatus).optional(),
   visibility: z.nativeEnum(CharacterVisibility).optional(),
@@ -50,9 +75,98 @@ const updateCharacterStatusSchema = z.object({
   status: z.nativeEnum(CharacterStatus)
 })
 
+const updateCharacterVisibilitySchema = z.object({
+  visibility: z.nativeEnum(CharacterVisibility)
+})
+
 const characterParamsSchema = z.object({
   characterId: z.string().min(1)
 })
+
+const reviewQueueQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50)
+})
+
+const isSafeExternalUrl = (rawUrl: string) => {
+  try {
+    const parsed = new URL(rawUrl)
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return false
+    }
+
+    const hostname = parsed.hostname.toLowerCase()
+
+    if (!hostname || hostname === 'localhost' || hostname.endsWith('.localhost')) {
+      return false
+    }
+
+    if (parsed.username || parsed.password) {
+      return false
+    }
+
+    const ipType = isIP(hostname)
+
+    if (ipType === 4) {
+      const [firstOctet, secondOctet] = hostname.split('.').map((segment) => Number.parseInt(segment, 10))
+
+      if (
+        Number.isNaN(firstOctet) ||
+        Number.isNaN(secondOctet) ||
+        firstOctet === 10 ||
+        firstOctet === 127 ||
+        firstOctet === 0 ||
+        (firstOctet === 169 && secondOctet === 254) ||
+        (firstOctet === 172 && secondOctet >= 16 && secondOctet <= 31) ||
+        (firstOctet === 192 && secondOctet === 168)
+      ) {
+        return false
+      }
+    }
+
+    if (ipType === 6) {
+      if (hostname === '::1' || hostname.startsWith('fc') || hostname.startsWith('fd') || hostname.startsWith('fe80:')) {
+        return false
+      }
+    }
+
+    return true
+  } catch {
+    return false
+  }
+}
+
+const assertSafeAssetUrl = (rawUrl: string | null | undefined, fieldLabel: string, allowedExtensions: string[]) => {
+  if (!rawUrl) {
+    return
+  }
+
+  const normalizedUrl = rawUrl.trim()
+
+  if (!isSafeExternalUrl(normalizedUrl)) {
+    throw new Error(`${fieldLabel} must be a safe public http(s) URL.`)
+  }
+
+  const parsedUrl = new URL(normalizedUrl)
+  const normalizedPath = parsedUrl.pathname.toLowerCase()
+
+  if (!allowedExtensions.some((extension) => normalizedPath.endsWith(extension))) {
+    throw new Error(`${fieldLabel} must use one of: ${allowedExtensions.join(', ')}`)
+  }
+}
+
+const assertSafeCharacterAssetUrls = (payload: {
+  vroidFileUrl?: string | null
+  previewImageUrl?: string | null
+  screenshotUrls?: string[]
+}) => {
+  assertSafeAssetUrl(payload.vroidFileUrl, 'VRM file URL', ['.vrm'])
+  assertSafeAssetUrl(payload.previewImageUrl, 'Preview image URL', ['.png', '.jpg', '.jpeg', '.webp', '.gif'])
+
+  for (const screenshotUrl of payload.screenshotUrls ?? []) {
+    assertSafeAssetUrl(screenshotUrl, 'Screenshot URL', ['.png', '.jpg', '.jpeg', '.webp', '.gif'])
+  }
+}
 
 const normalizeScreenshotUrls = (screenshotUrlList: string[] | undefined) => {
   if (!screenshotUrlList) {
@@ -131,6 +245,91 @@ characterRoutes.get('/characters', optionalAuth, async (request, response, next)
       data: characterList
     })
   } catch (error) {
+    if (error instanceof Error && error.message.toLowerCase().includes('url')) {
+      response.status(400).json({
+        message: error.message
+      })
+      return
+    }
+
+    next(error)
+  }
+})
+
+characterRoutes.get('/characters/mine', requireAuth, async (request, response, next) => {
+  try {
+    const authUser = request.authUser
+
+    if (!authUser) {
+      response.status(401).json({
+        message: 'Authentication required.'
+      })
+      return
+    }
+
+    const query = listCharactersQuerySchema.parse(request.query)
+    const normalizedSearch = query.search?.trim()
+
+    const myCharacterList = await prisma.character.findMany({
+      where: {
+        ownerId: authUser.userId,
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.visibility ? { visibility: query.visibility } : {}),
+        ...(normalizedSearch
+          ? {
+              OR: [
+                {
+                  name: {
+                    contains: normalizedSearch
+                  }
+                },
+                {
+                  slug: {
+                    contains: normalizedSearch
+                  }
+                },
+                {
+                  tagline: {
+                    contains: normalizedSearch
+                  }
+                }
+              ]
+            }
+          : {})
+      },
+      take: query.limit,
+      orderBy: {
+        updatedAt: 'desc'
+      },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        tagline: true,
+        status: true,
+        visibility: true,
+        isPatreonGated: true,
+        minimumTierCents: true,
+        heartsCount: true,
+        averageRating: true,
+        viewsCount: true,
+        previewImageUrl: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    })
+
+    response.json({
+      data: myCharacterList
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message.toLowerCase().includes('url')) {
+      response.status(400).json({
+        message: error.message
+      })
+      return
+    }
+
     next(error)
   }
 })
@@ -282,6 +481,11 @@ characterRoutes.get('/characters/:characterId', optionalAuth, async (request, re
 characterRoutes.post('/characters', requireVerifiedEmail, async (request, response, next) => {
   try {
     const payload = createCharacterSchema.parse(request.body)
+    assertSafeCharacterAssetUrls({
+      vroidFileUrl: payload.vroidFileUrl,
+      previewImageUrl: payload.previewImageUrl,
+      screenshotUrls: payload.screenshotUrls
+    })
     const actor = toCharacterAccessActor(request)
 
     if (!canCreateCharacter(actor) || !actor) {
@@ -343,6 +547,196 @@ characterRoutes.post('/characters', requireVerifiedEmail, async (request, respon
 
     response.status(201).json({
       data: createdCharacter
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (request, response, next) => {
+  try {
+    const { characterId } = characterParamsSchema.parse(request.params)
+    const payload = updateCharacterSchema.parse(request.body)
+    assertSafeCharacterAssetUrls({
+      vroidFileUrl: payload.vroidFileUrl,
+      previewImageUrl: payload.previewImageUrl,
+      screenshotUrls: payload.screenshotUrls
+    })
+
+    const actor = toCharacterAccessActor(request)
+
+    if (!actor) {
+      response.status(401).json({
+        message: 'Authentication required.'
+      })
+      return
+    }
+
+    const existingCharacter = await prisma.character.findFirst({
+      where: {
+        OR: [{ id: characterId }, { slug: characterId }]
+      },
+      select: {
+        id: true,
+        ownerId: true,
+        status: true
+      }
+    })
+
+    if (!existingCharacter) {
+      response.status(404).json({
+        message: 'Character not found.'
+      })
+      return
+    }
+
+    if (actor.role !== 'ADMIN' && existingCharacter.ownerId !== actor.userId) {
+      response.status(403).json({
+        message: 'You are not allowed to edit this character.'
+      })
+      return
+    }
+
+    const normalizedScreenshotUrls = normalizeScreenshotUrls(payload.screenshotUrls)
+    const hasScreenshotPayload = payload.screenshotUrls !== undefined
+    const shouldResetStatusToPending =
+      actor.role !== 'ADMIN' && existingCharacter.status === 'APPROVED' && Object.keys(payload).length > 0
+
+    const updatedCharacter = await prisma.$transaction(async (transactionClient) => {
+      const nextCharacter = await transactionClient.character.update({
+        where: {
+          id: existingCharacter.id
+        },
+        data: {
+          ...(payload.name !== undefined ? { name: payload.name } : {}),
+          ...(payload.fullName !== undefined ? { fullName: payload.fullName } : {}),
+          ...(payload.tagline !== undefined ? { tagline: payload.tagline } : {}),
+          ...(payload.description !== undefined ? { description: payload.description } : {}),
+          ...(payload.personality !== undefined ? { personality: payload.personality } : {}),
+          ...(payload.scenario !== undefined ? { scenario: payload.scenario } : {}),
+          ...(payload.firstMessage !== undefined ? { firstMessage: payload.firstMessage } : {}),
+          ...(payload.exampleDialogs !== undefined ? { exampleDialogs: payload.exampleDialogs } : {}),
+          ...(payload.vroidFileUrl !== undefined ? { vroidFileUrl: payload.vroidFileUrl } : {}),
+          ...(payload.previewImageUrl !== undefined ? { previewImageUrl: payload.previewImageUrl } : {}),
+          ...(payload.legacyFileHash !== undefined ? { legacyFileHash: payload.legacyFileHash } : {}),
+          ...(payload.legacyTier !== undefined ? { legacyTier: payload.legacyTier } : {}),
+          ...(payload.legacyHeyWaifu !== undefined ? { legacyHeyWaifu: payload.legacyHeyWaifu } : {}),
+          ...(payload.isPatreonGated !== undefined ? { isPatreonGated: payload.isPatreonGated } : {}),
+          ...(payload.minimumTierCents !== undefined ? { minimumTierCents: payload.minimumTierCents } : {}),
+          ...(payload.visibility !== undefined ? { visibility: payload.visibility } : {}),
+          ...(shouldResetStatusToPending
+            ? {
+                status: 'PENDING',
+                publishedAt: null
+              }
+            : {})
+        },
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          status: true,
+          visibility: true,
+          updatedAt: true
+        }
+      })
+
+      if (hasScreenshotPayload) {
+        await transactionClient.characterScreenshot.deleteMany({
+          where: {
+            characterId: existingCharacter.id
+          }
+        })
+
+        if (normalizedScreenshotUrls.length > 0) {
+          await transactionClient.characterScreenshot.createMany({
+            data: normalizedScreenshotUrls.map((imageUrl, index) => ({
+              characterId: existingCharacter.id,
+              imageUrl,
+              sortOrder: index
+            }))
+          })
+        }
+      }
+
+      return nextCharacter
+    })
+
+    response.json({
+      data: updatedCharacter
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+characterRoutes.post('/characters/:characterId/submit', requireVerifiedEmail, async (request, response, next) => {
+  try {
+    const actor = toCharacterAccessActor(request)
+    const { characterId } = characterParamsSchema.parse(request.params)
+
+    if (!actor) {
+      response.status(401).json({
+        message: 'Authentication required.'
+      })
+      return
+    }
+
+    const existingCharacter = await prisma.character.findFirst({
+      where: {
+        OR: [{ id: characterId }, { slug: characterId }]
+      },
+      select: {
+        id: true,
+        ownerId: true,
+        status: true
+      }
+    })
+
+    if (!existingCharacter) {
+      response.status(404).json({
+        message: 'Character not found.'
+      })
+      return
+    }
+
+    if (existingCharacter.ownerId !== actor.userId && actor.role !== 'ADMIN') {
+      response.status(403).json({
+        message: 'You are not allowed to submit this character.'
+      })
+      return
+    }
+
+    if (existingCharacter.status === 'PENDING') {
+      response.json({
+        data: {
+          submitted: false,
+          status: existingCharacter.status
+        }
+      })
+      return
+    }
+
+    const updatedCharacter = await prisma.character.update({
+      where: {
+        id: existingCharacter.id
+      },
+      data: {
+        status: 'PENDING',
+        publishedAt: null
+      },
+      select: {
+        id: true,
+        status: true,
+        updatedAt: true
+      }
+    })
+
+    response.json({
+      data: {
+        submitted: true,
+        ...updatedCharacter
+      }
     })
   } catch (error) {
     next(error)
@@ -499,6 +893,90 @@ characterRoutes.patch('/characters/:characterId/status', requireAdmin, async (re
 
     response.json({
       data: updatedCharacter
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+characterRoutes.patch('/characters/:characterId/visibility', requireAdmin, async (request, response, next) => {
+  try {
+    const { characterId } = characterParamsSchema.parse(request.params)
+    const payload = updateCharacterVisibilitySchema.parse(request.body)
+
+    const existingCharacter = await prisma.character.findUnique({
+      where: {
+        id: characterId
+      },
+      select: {
+        id: true
+      }
+    })
+
+    if (!existingCharacter) {
+      response.status(404).json({
+        message: 'Character not found.'
+      })
+      return
+    }
+
+    const updatedCharacter = await prisma.character.update({
+      where: {
+        id: characterId
+      },
+      data: {
+        visibility: payload.visibility,
+        publishedAt: payload.visibility === 'PUBLIC' ? new Date() : null
+      },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        visibility: true,
+        publishedAt: true,
+        updatedAt: true
+      }
+    })
+
+    response.json({
+      data: updatedCharacter
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+characterRoutes.get('/admin/characters/review-queue', requireAdmin, async (request, response, next) => {
+  try {
+    const query = reviewQueueQuerySchema.parse(request.query)
+
+    const pendingCharacterList = await prisma.character.findMany({
+      where: {
+        status: 'PENDING'
+      },
+      take: query.limit,
+      orderBy: {
+        updatedAt: 'asc'
+      },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        previewImageUrl: true,
+        description: true,
+        createdAt: true,
+        updatedAt: true,
+        owner: {
+          select: {
+            id: true,
+            username: true
+          }
+        }
+      }
+    })
+
+    response.json({
+      data: pendingCharacterList
     })
   } catch (error) {
     next(error)
