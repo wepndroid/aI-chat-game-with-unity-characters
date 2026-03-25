@@ -155,14 +155,6 @@ const ProfilePage = () => {
                 </div>
               ) : null}
 
-              <button
-                type="button"
-                className="mt-12 inline-flex h-12 min-w-[250px] items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-6 text-[11px] font-bold uppercase tracking-[0.08em] text-white transition hover:brightness-110"
-                aria-label="Connect Patreon account"
-                disabled={!sessionUser}
-              >
-                Connect With Patreon
-              </button>
             </div>
           </div>
         </div>
