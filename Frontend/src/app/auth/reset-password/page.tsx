@@ -111,7 +111,7 @@ const ResetPasswordPage = () => {
               <Link href="/auth/forgot-password" className="font-semibold text-ember-300 transition hover:text-ember-200" aria-label="Request another reset link">
                 Request New Link
               </Link>
-              <Link href="/sign-up" className="font-semibold text-ember-300 transition hover:text-ember-200" aria-label="Go to sign in/sign up">
+              <Link href="/?openSignIn=1" className="font-semibold text-ember-300 transition hover:text-ember-200" aria-label="Open sign in modal">
                 Sign In
               </Link>
             </div>

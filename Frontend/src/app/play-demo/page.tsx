@@ -220,7 +220,7 @@ const PlayDemoPage = () => {
                         <div className="w-full max-w-[760px] rounded-2xl border border-[#a96f44]/65 bg-[linear-gradient(180deg,rgba(55,39,27,0.92),rgba(36,27,20,0.92))] px-4 py-4 shadow-[0_14px_34px_rgba(0,0,0,0.5)] sm:px-6 sm:py-5">
                         <div className="h-7 rounded-full border border-[#3f3125] bg-[#11141b] p-[3px] shadow-[inset_0_2px_6px_rgba(0,0,0,0.55)]">
                           <div
-                            className="relative h-full rounded-full bg-gradient-to-r from-[#bc7e4f] via-[#d79664] to-[#e5a773] shadow-[0_0_14px_rgba(230,161,105,0.42)] transition-[width] duration-200 ease-linear"
+                            className="relative h-full overflow-hidden rounded-full bg-gradient-to-r from-[#bc7e4f] via-[#d79664] to-[#e5a773] shadow-[0_0_14px_rgba(230,161,105,0.42)]"
                             style={{ width: `${Math.max(4, progressPercent)}%` }}
                           >
                             <div className="loader-stripe-layer absolute inset-0 rounded-full opacity-55" />
@@ -294,6 +294,8 @@ const PlayDemoPage = () => {
 
       <style jsx>{`
         .loader-stripe-layer {
+          left: -24px;
+          right: -24px;
           background-image: repeating-linear-gradient(
             -45deg,
             rgba(92, 57, 31, 0.9) 0px,
@@ -301,7 +303,7 @@ const PlayDemoPage = () => {
             rgba(173, 111, 65, 0.7) 12px,
             rgba(173, 111, 65, 0.7) 24px
           );
-          background-size: 48px 48px;
+          background-position: 0 0;
           animation: stripe-flow-right 1.1s linear infinite;
         }
 
@@ -323,7 +325,7 @@ const PlayDemoPage = () => {
             background-position: 0 0;
           }
           to {
-            background-position: 48px 0;
+            background-position: 24px 0;
           }
         }
 
