@@ -4,8 +4,12 @@ import Link from 'next/link'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-const resolveLoadingMessage = (progressValue: number, iframeLoaded: boolean) => {
-  if (iframeLoaded && progressValue >= 99) {
+const resolveLoadingMessage = (progressValue: number, iframeLoaded: boolean, hasUnityProgressFeed: boolean) => {
+  if (!hasUnityProgressFeed) {
+    return iframeLoaded ? 'Waiting for Unity progress feed...' : 'Loading WebGL frame...'
+  }
+
+  if (progressValue >= 99) {
     return 'Ready. Launching game...'
   }
 
@@ -117,32 +121,7 @@ const PlayDemoPage = () => {
   }, [webglEmbedUrl])
 
   useEffect(() => {
-    if (!webglEmbedUrl || hasUnityProgressFeed) {
-      return
-    }
-
-    const timerId = window.setInterval(() => {
-      setLoadingProgress((currentValue) => {
-        const targetValue = iframeLoaded ? 90 : 26
-
-        if (currentValue >= targetValue) {
-          return currentValue
-        }
-
-        const delta = iframeLoaded ? 0.36 : 0.18
-
-        const nextValue = Math.min(targetValue, currentValue + delta)
-        return Number(nextValue.toFixed(2))
-      })
-    }, 150)
-
-    return () => {
-      window.clearInterval(timerId)
-    }
-  }, [hasUnityProgressFeed, iframeLoaded, webglEmbedUrl])
-
-  useEffect(() => {
-    const canHideOverlay = hasUnityProgressFeed ? unityReady && loadingProgress >= 100 : iframeLoaded && loadingProgress >= 100
+    const canHideOverlay = unityReady && loadingProgress >= 100
 
     if (!canHideOverlay) {
       return
@@ -155,14 +134,14 @@ const PlayDemoPage = () => {
     return () => {
       window.clearTimeout(hideOverlayTimerId)
     }
-  }, [hasUnityProgressFeed, iframeLoaded, loadingProgress, unityReady])
+  }, [loadingProgress, unityReady])
 
   const clampedProgress = Math.max(0, Math.min(100, loadingProgress))
   const progressPercent = Math.max(0, Math.min(100, Math.floor(clampedProgress)))
   const overlayDropSpecs = useMemo(() => buildOverlayDropSpecs(34), [])
   const loadingMessage = useMemo(
-    () => resolveLoadingMessage(progressPercent, iframeLoaded),
-    [iframeLoaded, progressPercent]
+    () => resolveLoadingMessage(progressPercent, iframeLoaded, hasUnityProgressFeed),
+    [hasUnityProgressFeed, iframeLoaded, progressPercent]
   )
 
   return (
