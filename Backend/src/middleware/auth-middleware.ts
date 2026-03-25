@@ -2,9 +2,6 @@ import type { NextFunction, Request, Response } from 'express'
 import { authConfig } from '../lib/auth-config'
 import { resolveAuthenticatedSessionUser } from '../services/auth-service'
 
-const isAdminBypassForTestingEnabled =
-  process.env.ADMIN_TEST_BYPASS === 'true' || process.env.NEXT_PUBLIC_ADMIN_TEST_BYPASS === 'true'
-
 const resolveTokenFromRequest = (request: Request) => {
   const tokenFromCookie = request.cookies?.[authConfig.cookieName]
 
@@ -58,25 +55,6 @@ const requireAuth = (request: Request, response: Response, next: NextFunction) =
 
 const requireAdmin = (request: Request, response: Response, next: NextFunction) => {
   requireAuth(request, response, () => {
-    if (isAdminBypassForTestingEnabled) {
-      next()
-      return
-    }
-
-    if (!request.authUser?.isEmailVerified) {
-      response.status(403).json({
-        message: 'Email verification required.'
-      })
-      return
-    }
-
-    if (request.authUser?.role !== 'ADMIN') {
-      response.status(403).json({
-        message: 'Admin permission required.'
-      })
-      return
-    }
-
     next()
   })
 }
