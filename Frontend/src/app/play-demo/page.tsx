@@ -137,7 +137,8 @@ const PlayDemoPage = () => {
   }, [loadingProgress, unityReady])
 
   const clampedProgress = Math.max(0, Math.min(100, loadingProgress))
-  const progressPercent = Math.max(0, Math.min(100, Math.floor(clampedProgress)))
+  const displayedProgress = hasUnityProgressFeed ? clampedProgress : 0
+  const progressPercent = Math.max(0, Math.min(100, Math.floor(displayedProgress)))
   const overlayDropSpecs = useMemo(() => buildOverlayDropSpecs(34), [])
   const loadingMessage = useMemo(
     () => resolveLoadingMessage(progressPercent, iframeLoaded, hasUnityProgressFeed),
@@ -199,9 +200,9 @@ const PlayDemoPage = () => {
                         <div className="h-7 rounded-full border border-[#3f3125] bg-[#11141b] p-[3px] shadow-[inset_0_2px_6px_rgba(0,0,0,0.55)]">
                           <div
                             className="relative h-full overflow-hidden rounded-full bg-gradient-to-r from-[#bc7e4f] via-[#d79664] to-[#e5a773] shadow-[0_0_14px_rgba(230,161,105,0.42)] transition-[width] duration-200 ease-out"
-                            style={{ width: `${Math.max(4, clampedProgress).toFixed(2)}%` }}
+                            style={{ width: `${displayedProgress.toFixed(2)}%` }}
                           >
-                            <div className="loader-stripe-layer absolute inset-0 rounded-full opacity-55" />
+                            {displayedProgress > 0 ? <div className="loader-stripe-layer absolute inset-0 rounded-full opacity-55" /> : null}
                           </div>
                         </div>
                         <div className="mt-3 flex items-center justify-between gap-4">
