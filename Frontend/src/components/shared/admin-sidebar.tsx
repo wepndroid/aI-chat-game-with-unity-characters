@@ -1,7 +1,13 @@
-import AdminSidebarItem from '@/components/ui-elements/admin-sidebar-item'
-import type { ReactNode } from 'react'
+'use client'
 
-type AdminSidebarKey = 'dashboard' | 'users' | 'community-vrms' | 'official-vrms' | 'review-queue' | 'global-settings'
+import AdminSidebarItem from '@/components/ui-elements/admin-sidebar-item'
+import { useAuth } from '@/components/providers/auth-provider'
+import { apiGet } from '@/lib/api-client'
+import type { ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
+
+type AdminSidebarKey = 'dashboard' | 'activity' | 'users' | 'community-vrms' | 'official-vrms' | 'review-queue' | 'global-settings'
 
 type AdminSidebarEntry = {
   id: AdminSidebarKey
@@ -38,6 +44,15 @@ const UserGroupIcon = () => {
       <circle cx="9.2" cy="8.4" r="2.6" />
       <path d="M4.9 16.9c0-2.2 1.9-3.8 4.3-3.8s4.2 1.6 4.2 3.8" strokeLinecap="round" />
       <path d="M16.5 10.5c1.5.2 2.6 1.4 2.6 3M16.6 16.9v-.2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+const ActivityIcon = () => {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M3.8 12h3.4l2.2-4.3 3.2 8.7 2.3-4.5h5.3" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4 6.2h16M4 17.8h16" strokeLinecap="round" opacity="0.38" />
     </svg>
   )
 }
@@ -86,34 +101,110 @@ const ShieldIcon = () => {
   )
 }
 
-const sidebarGroupList: AdminSidebarGroup[] = [
-  {
-    id: 'management',
-    title: 'Management',
-    entryList: [
-      { id: 'dashboard', label: 'Dashboard', href: '/admin/dashboard', icon: <DashboardGridIcon /> },
-      { id: 'users', label: 'Users', href: '/admin/users', icon: <UserGroupIcon /> },
-      { id: 'community-vrms', label: 'Community VRMs', href: '/admin/community-vrms', icon: <ServerIcon /> }
-    ]
-  },
-  {
-    id: 'content',
-    title: 'Content',
-    entryList: [{ id: 'official-vrms', label: 'Official VRMs', href: '/admin/official-vrms', icon: <StarsIcon /> }]
-  },
-  {
-    id: 'moderation',
-    title: 'Moderation',
-    entryList: [{ id: 'review-queue', label: 'Review Queue', href: '/admin/review-queue', icon: <ClipboardIcon />, badgeText: '124' }]
-  },
-  {
-    id: 'system',
-    title: 'System',
-    entryList: [{ id: 'global-settings', label: 'Global Settings', href: '/admin/global-settings', icon: <CogIcon /> }]
-  }
-]
-
 const AdminSidebar = ({ activeKey }: AdminSidebarProps) => {
+  const router = useRouter()
+  const pathname = usePathname()
+  const { sessionUser, logoutUser } = useAuth()
+  const [isSigningOut, setIsSigningOut] = useState(false)
+  const [pendingReviewCount, setPendingReviewCount] = useState<number | null>(null)
+  const [signOutError, setSignOutError] = useState<string | null>(null)
+
+  const fetchPendingReviewCount = useCallback(async () => {
+    try {
+      const payload = await apiGet<{ data: { pendingCharacters: number } }>('/stats/overview')
+      return payload.data.pendingCharacters
+    } catch {
+      return null
+    }
+  }, [])
+
+  useEffect(() => {
+    let isCancelled = false
+
+    const syncPendingCount = async () => {
+      const count = await fetchPendingReviewCount()
+      if (!isCancelled) {
+        setPendingReviewCount(count)
+      }
+    }
+
+    Promise.resolve().then(async () => {
+      await syncPendingCount()
+    })
+
+    const refreshTimerId = window.setInterval(() => {
+      Promise.resolve().then(async () => {
+        await syncPendingCount()
+      })
+    }, 45000)
+
+    return () => {
+      isCancelled = true
+      window.clearInterval(refreshTimerId)
+    }
+  }, [fetchPendingReviewCount, pathname])
+
+  const sidebarGroupList = useMemo<AdminSidebarGroup[]>(
+    () => [
+      {
+        id: 'management',
+        title: 'Management',
+        entryList: [
+          { id: 'dashboard', label: 'Dashboard', href: '/admin/dashboard', icon: <DashboardGridIcon /> },
+          { id: 'activity', label: 'Activity', href: '/admin/activity', icon: <ActivityIcon /> },
+          { id: 'users', label: 'Users', href: '/admin/users', icon: <UserGroupIcon /> },
+          { id: 'community-vrms', label: 'Community VRMs', href: '/admin/community-vrms', icon: <ServerIcon /> }
+        ]
+      },
+      {
+        id: 'content',
+        title: 'Content',
+        entryList: [{ id: 'official-vrms', label: 'Official VRMs', href: '/admin/official-vrms', icon: <StarsIcon /> }]
+      },
+      {
+        id: 'moderation',
+        title: 'Moderation',
+        entryList: [
+          {
+            id: 'review-queue',
+            label: 'Review Queue',
+            href: '/admin/review-queue',
+            icon: <ClipboardIcon />,
+            badgeText: pendingReviewCount !== null ? String(pendingReviewCount) : undefined
+          }
+        ]
+      },
+      {
+        id: 'system',
+        title: 'System',
+        entryList: [{ id: 'global-settings', label: 'Global Settings', href: '/admin/global-settings', icon: <CogIcon /> }]
+      }
+    ],
+    [pendingReviewCount]
+  )
+
+  const handleSignOut = async () => {
+    if (isSigningOut) {
+      return
+    }
+
+    setSignOutError(null)
+    setIsSigningOut(true)
+
+    try {
+      await logoutUser()
+      router.push('/')
+    } catch {
+      setSignOutError('Sign out failed. Please try again.')
+    } finally {
+      setIsSigningOut(false)
+    }
+  }
+
+  const displayName = sessionUser?.username ?? 'Admin'
+  const displayRole = sessionUser?.role ?? 'ADMIN'
+  const initials = displayName.trim().slice(0, 1).toUpperCase() || 'A'
+
   return (
     <aside className="flex h-full flex-col border-r border-white/10 bg-[#070a10]/90">
       <div className="border-b border-white/10 p-6">
@@ -156,11 +247,11 @@ const AdminSidebar = ({ activeKey }: AdminSidebarProps) => {
         <div className="rounded-xl border border-white/15 bg-[#0f1218] p-3">
           <div className="inline-flex items-center gap-3">
             <span className="inline-flex size-9 items-center justify-center rounded-full bg-purple-500/25 text-[12px] font-normal text-purple-300">
-              A
+              {initials}
             </span>
             <div>
-              <p className="text-xs font-normal text-white">AdminSenpai</p>
-              <p className="text-[10px] font-normal text-purple-300">Superadmin</p>
+              <p className="text-xs font-normal text-white">{displayName}</p>
+              <p className="text-[10px] font-normal text-purple-300">{displayRole.toLowerCase()}</p>
             </div>
           </div>
         </div>
@@ -168,9 +259,12 @@ const AdminSidebar = ({ activeKey }: AdminSidebarProps) => {
           type="button"
           className="mt-3 inline-flex w-full items-center justify-center rounded-lg px-3 py-2 text-xs font-normal text-[#8a98b3] transition hover:bg-white/5 hover:text-white"
           aria-label="Sign out admin account"
+          onClick={handleSignOut}
+          disabled={isSigningOut}
         >
-          Sign Out
+          {isSigningOut ? 'Signing out...' : 'Sign Out'}
         </button>
+        {signOutError ? <p className="mt-2 text-xs text-rose-300">{signOutError}</p> : null}
       </div>
     </aside>
   )

@@ -2,18 +2,74 @@
 
 import AdminPageShell from '@/components/shared/admin-page-shell'
 import AdminUserTableRow, { type AdminUserTableRecord } from '@/components/ui-elements/admin-user-table-row'
-import { useMemo, useState } from 'react'
+import { apiGet, apiPatch } from '@/lib/api-client'
+import type { AdminUserRole } from '@/components/ui-elements/admin-user-role-pill'
+import { useEffect, useMemo, useState } from 'react'
 
-const allUserRecords: AdminUserTableRecord[] = [
-  { id: '1', username: 'Weeblord99', email: 'weeb@example.com', role: 'user', status: 'active', uploads: 4, joined: '2025-10-12' },
-  { id: '2', username: 'reKengator2', email: 'reken@example.com', role: 'creator', status: 'active', uploads: 12, joined: '2025-11-05' },
-  { id: '3', username: 'TrollAccountXX', email: 'troll@example.com', role: 'user', status: 'banned', uploads: 0, joined: '2026-01-20' },
-  { id: '4', username: 'AdminSenpai', email: 'admin@secretwaifu.com', role: 'admin', status: 'active', uploads: 105, joined: '2025-01-01' },
-  { id: '5', username: 'AiriLover7', email: 'airi7@example.com', role: 'user', status: 'active', uploads: 2, joined: '2025-12-18' },
-  { id: '6', username: 'MoonCat', email: 'mooncat@example.com', role: 'creator', status: 'active', uploads: 27, joined: '2025-08-03' },
-  { id: '7', username: 'NightRaven', email: 'raven@example.com', role: 'user', status: 'active', uploads: 1, joined: '2026-02-11' },
-  { id: '8', username: 'BannedBot12', email: 'bannedbot@example.com', role: 'user', status: 'banned', uploads: 0, joined: '2025-07-22' }
-]
+type UserRoleApi = 'USER' | 'CREATOR' | 'ADMIN'
+type UserFilterRole = 'ALL' | AdminUserRole
+
+type UsersListResponse = {
+  data: {
+    records: Array<{
+      id: string
+      email: string
+      username: string
+      role: UserRoleApi
+      isEmailVerified: boolean
+      createdAt: string
+      uploadsCount: number
+      lastSeenAt: string | null
+    }>
+    pagination: {
+      page: number
+      limit: number
+      total: number
+      totalPages: number
+    }
+  }
+}
+
+const roleUiToApiMap: Record<AdminUserRole, UserRoleApi> = {
+  user: 'USER',
+  creator: 'CREATOR',
+  admin: 'ADMIN'
+}
+
+const roleApiToUiMap: Record<UserRoleApi, AdminUserRole> = {
+  USER: 'user',
+  CREATOR: 'creator',
+  ADMIN: 'admin'
+}
+
+const formatDate = (isoDate: string) => {
+  return new Date(isoDate).toISOString().slice(0, 10)
+}
+
+const formatLastSeenLabel = (isoDate: string | null) => {
+  if (!isoDate) {
+    return 'Last seen: never'
+  }
+
+  return `Last seen: ${new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  }).format(new Date(isoDate))}`
+}
+
+const mapRecordToTable = (record: UsersListResponse['data']['records'][number]): AdminUserTableRecord => {
+  return {
+    id: record.id,
+    username: record.username,
+    email: record.email,
+    role: roleApiToUiMap[record.role],
+    status: record.isEmailVerified ? 'active' : 'unverified',
+    uploads: record.uploadsCount,
+    joined: formatDate(record.createdAt),
+    lastSeenLabel: formatLastSeenLabel(record.lastSeenAt)
+  }
+}
 
 const SearchIcon = () => {
   return (
@@ -25,37 +81,84 @@ const SearchIcon = () => {
 }
 
 const UsersPage = () => {
+  const [isLoading, setIsLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [searchValue, setSearchValue] = useState('')
+  const [roleFilter, setRoleFilter] = useState<UserFilterRole>('ALL')
   const [currentPage, setCurrentPage] = useState(1)
+  const [userRecords, setUserRecords] = useState<AdminUserTableRecord[]>([])
+  const [totalEntriesCount, setTotalEntriesCount] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
 
-  const itemsPerPage = 4
-  const totalEntriesCount = 14205
+  const itemsPerPage = 10
+  const safeCurrentPage = Math.max(1, Math.min(currentPage, totalPages))
 
-  const filteredUserRecords = useMemo(() => {
-    const normalizedSearchValue = searchValue.trim().toLowerCase()
-
-    if (normalizedSearchValue.length === 0) {
-      return allUserRecords
+  useEffect(() => {
+    if (currentPage !== safeCurrentPage) {
+      setCurrentPage(safeCurrentPage)
     }
+  }, [currentPage, safeCurrentPage])
 
-    return allUserRecords.filter((userRecord) => {
-      return (
-        userRecord.username.toLowerCase().includes(normalizedSearchValue) ||
-        userRecord.email.toLowerCase().includes(normalizedSearchValue)
-      )
-    })
-  }, [searchValue])
+  useEffect(() => {
+    let isCancelled = false
+    const timeoutId = setTimeout(() => {
+      Promise.resolve().then(async () => {
+        setIsLoading(true)
 
-  const totalPages = Math.max(1, Math.ceil(filteredUserRecords.length / itemsPerPage))
-  const safeCurrentPage = Math.min(currentPage, totalPages)
+        try {
+          const query = new URLSearchParams({
+            page: String(safeCurrentPage),
+            limit: String(itemsPerPage)
+          })
 
-  const paginatedUserRecords = useMemo(() => {
-    const offset = (safeCurrentPage - 1) * itemsPerPage
-    return filteredUserRecords.slice(offset, offset + itemsPerPage)
-  }, [filteredUserRecords, safeCurrentPage])
+          const normalizedSearchValue = searchValue.trim()
+          if (normalizedSearchValue.length > 0) {
+            query.set('search', normalizedSearchValue)
+          }
+
+          if (roleFilter !== 'ALL') {
+            query.set('role', roleUiToApiMap[roleFilter])
+          }
+
+          const payload = await apiGet<UsersListResponse>(`/users?${query.toString()}`)
+
+          if (isCancelled) {
+            return
+          }
+
+          setUserRecords(payload.data.records.map(mapRecordToTable))
+          setTotalEntriesCount(payload.data.pagination.total)
+          setTotalPages(Math.max(1, payload.data.pagination.totalPages))
+          setErrorMessage(null)
+        } catch (error) {
+          if (!isCancelled) {
+            setErrorMessage(error instanceof Error ? error.message : 'Failed to load users.')
+            setUserRecords([])
+            setTotalEntriesCount(0)
+            setTotalPages(1)
+          }
+        } finally {
+          if (!isCancelled) {
+            setIsLoading(false)
+          }
+        }
+      })
+    }, 220)
+
+    return () => {
+      isCancelled = true
+      clearTimeout(timeoutId)
+    }
+  }, [itemsPerPage, roleFilter, safeCurrentPage, searchValue])
 
   const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setSearchValue(event.target.value)
+    setCurrentPage(1)
+  }
+
+  const handleRoleFilterChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    setRoleFilter(event.target.value as UserFilterRole)
     setCurrentPage(1)
   }
 
@@ -75,28 +178,85 @@ const UsersPage = () => {
     setCurrentPage((previousPage) => previousPage + 1)
   }
 
-  const visibleStart = filteredUserRecords.length === 0 ? 0 : (safeCurrentPage - 1) * itemsPerPage + 1
-  const visibleEnd = Math.min(safeCurrentPage * itemsPerPage, filteredUserRecords.length)
+  const handleUpdateRole = async (userId: string, nextRole: AdminUserRole) => {
+    setUpdatingUserId(userId)
+    setErrorMessage(null)
+
+    try {
+      const payload = await apiPatch<{ data: { id: string; role: UserRoleApi } }>(`/users/${encodeURIComponent(userId)}/role`, {
+        role: roleUiToApiMap[nextRole]
+      })
+
+      setUserRecords((previousRecords) =>
+        previousRecords.map((record) => {
+          if (record.id !== payload.data.id) {
+            return record
+          }
+
+          return {
+            ...record,
+            role: roleApiToUiMap[payload.data.role]
+          }
+        })
+      )
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to update user role.')
+    } finally {
+      setUpdatingUserId(null)
+    }
+  }
+
+  const visibleStart = userRecords.length === 0 ? 0 : (safeCurrentPage - 1) * itemsPerPage + 1
+  const visibleEnd = Math.min(safeCurrentPage * itemsPerPage, totalEntriesCount)
+
+  const roleFilterOptionList = useMemo(
+    () =>
+      [
+        { value: 'ALL', label: 'All Roles' },
+        { value: 'user', label: 'User' },
+        { value: 'creator', label: 'Creator' },
+        { value: 'admin', label: 'Admin' }
+      ] as const,
+    []
+  )
 
   return (
     <AdminPageShell activeKey="users">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="font-[family-name:var(--font-heading)] text-[29px] font-normal leading-none text-white">User Management</h1>
 
-        <label className="group inline-flex h-11 w-full max-w-[330px] items-center gap-2 rounded-lg border border-white/15 bg-[#0f1218]/95 px-3 text-[#6e809d] transition focus-within:border-ember-300 sm:w-[330px]">
-          <span aria-hidden="true">
-            <SearchIcon />
-          </span>
-          <input
-            type="search"
-            value={searchValue}
-            onChange={handleSearchChange}
-            placeholder="Search users..."
-            aria-label="Search users"
-            className="w-full bg-transparent text-sm text-white outline-none placeholder:text-[#7585a1]"
-          />
-        </label>
+        <div className="flex w-full max-w-[520px] flex-col gap-3 sm:w-auto sm:flex-row">
+          <label className="group inline-flex h-11 w-full items-center gap-2 rounded-lg border border-white/15 bg-[#0f1218]/95 px-3 text-[#6e809d] transition focus-within:border-ember-300 sm:w-[330px]">
+            <span aria-hidden="true">
+              <SearchIcon />
+            </span>
+            <input
+              type="search"
+              value={searchValue}
+              onChange={handleSearchChange}
+              placeholder="Search users..."
+              aria-label="Search users"
+              className="w-full bg-transparent text-sm text-white outline-none placeholder:text-[#7585a1]"
+            />
+          </label>
+          <select
+            value={roleFilter}
+            onChange={handleRoleFilterChange}
+            className="h-11 rounded-lg border border-white/15 bg-[#0f1218]/95 px-3 text-sm text-white outline-none transition focus:border-ember-300 sm:w-[170px]"
+            aria-label="Filter users by role"
+          >
+            {roleFilterOptionList.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
+
+      {errorMessage ? (
+        <p className="mt-4 rounded-md border border-rose-300/30 bg-rose-300/10 px-3 py-2 text-sm text-rose-100">{errorMessage}</p>
+      ) : null}
 
       <section className="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-[#0b0f14]/95">
         <div className="overflow-x-auto">
@@ -113,14 +273,27 @@ const UsersPage = () => {
             </thead>
 
             <tbody>
-              {paginatedUserRecords.length === 0 ? (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-[#7c8aa3]">
+                    Loading users...
+                  </td>
+                </tr>
+              ) : userRecords.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-10 text-center text-sm text-[#7c8aa3]">
                     No users found for your search.
                   </td>
                 </tr>
               ) : (
-                paginatedUserRecords.map((userRecord) => <AdminUserTableRow key={userRecord.id} userRecord={userRecord} />)
+                userRecords.map((userRecord) => (
+                  <AdminUserTableRow
+                    key={`${userRecord.id}:${userRecord.role}`}
+                    userRecord={userRecord}
+                    isUpdatingRole={updatingUserId === userRecord.id}
+                    onUpdateRole={handleUpdateRole}
+                  />
+                ))
               )}
             </tbody>
           </table>

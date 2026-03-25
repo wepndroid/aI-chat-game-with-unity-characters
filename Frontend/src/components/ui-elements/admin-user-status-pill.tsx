@@ -1,4 +1,4 @@
-type AdminUserStatus = 'active' | 'banned'
+type AdminUserStatus = 'active' | 'unverified' | 'banned'
 
 type AdminUserStatusPillProps = {
   status: AdminUserStatus
@@ -6,11 +6,13 @@ type AdminUserStatusPillProps = {
 
 const statusLabelMap: Record<AdminUserStatus, string> = {
   active: 'Active',
+  unverified: 'Unverified',
   banned: 'Banned'
 }
 
 const statusClassNameMap: Record<AdminUserStatus, string> = {
   active: 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300',
+  unverified: 'border-amber-500/35 bg-amber-500/15 text-amber-200',
   banned: 'border-rose-500/35 bg-rose-500/15 text-rose-300'
 }
 

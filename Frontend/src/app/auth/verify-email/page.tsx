@@ -9,16 +9,20 @@ type VerificationStatus = 'loading' | 'success' | 'error'
 
 const VerifyEmailPage = () => {
   const { refreshSessionUser } = useAuth()
-  const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>('loading')
-  const [statusMessage, setStatusMessage] = useState('Verifying your email...')
+  const [token] = useState(() => {
+    if (typeof window === 'undefined') {
+      return ''
+    }
+
+    return new URLSearchParams(window.location.search).get('token')?.trim() ?? ''
+  })
+  const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>(token ? 'loading' : 'error')
+  const [statusMessage, setStatusMessage] = useState(
+    token ? 'Verifying your email...' : 'Verification token is missing. Please request a new verification email.'
+  )
 
   useEffect(() => {
-    const query = new URLSearchParams(window.location.search)
-    const token = query.get('token')?.trim() ?? ''
-
     if (!token) {
-      setVerificationStatus('error')
-      setStatusMessage('Verification token is missing. Please request a new verification email.')
       return
     }
 
@@ -38,7 +42,7 @@ const VerifyEmailPage = () => {
       setVerificationStatus('error')
       setStatusMessage('Verification failed. Please request a new code.')
     })
-  }, [refreshSessionUser])
+  }, [refreshSessionUser, token])
 
   return (
     <main className="relative overflow-hidden bg-[#030303] text-white">

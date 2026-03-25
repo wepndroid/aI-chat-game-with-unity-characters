@@ -3,9 +3,9 @@
 import AccountSideMenu from '@/components/shared/account-side-menu'
 import UploadDropzone from '@/components/ui-elements/upload-dropzone'
 import UploadField from '@/components/ui-elements/upload-field'
-import { createCharacter } from '@/lib/character-api'
-import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { createCharacter, getCharacterDetail, updateCharacter } from '@/lib/character-api'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useEffect, useMemo, useState } from 'react'
 
 type UploadVrmFormState = {
   fullName: string
@@ -43,9 +43,13 @@ const initialFormState: UploadVrmFormState = {
 
 const UploadVrmPage = () => {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const editCharacterId = searchParams.get('edit')?.trim() ?? ''
+  const isEditing = editCharacterId.length > 0
   const [formState, setFormState] = useState<UploadVrmFormState>(initialFormState)
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isEditLoading, setIsEditLoading] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -55,6 +59,63 @@ const UploadVrmPage = () => {
       [key]: value
     }))
   }
+
+  const pageHeadingLabel = useMemo(() => (isEditing ? 'Edit VRM Character' : 'Upload VRM'), [isEditing])
+
+  useEffect(() => {
+    if (!isEditing) {
+      setFormState(initialFormState)
+      setErrorMessage(null)
+      setStatusMessage(null)
+      setIsEditLoading(false)
+      return
+    }
+
+    let isCancelled = false
+
+    Promise.resolve().then(async () => {
+      setIsEditLoading(true)
+      setErrorMessage(null)
+      setStatusMessage(null)
+
+      try {
+        const payload = await getCharacterDetail(editCharacterId)
+
+        if (isCancelled) {
+          return
+        }
+
+        setFormState({
+          fullName: payload.data.name ?? '',
+          tagLine: payload.data.tagline ?? '',
+          vroidFileUrl: payload.data.vroidFileUrl ?? '',
+          previewImageUrl: payload.data.previewImageUrl ?? '',
+          screenshotUrlsRawText: payload.data.screenshots.map((screenshot) => screenshot.imageUrl).join('\n'),
+          description: payload.data.description ?? '',
+          personality: payload.data.personality ?? '',
+          scenario: payload.data.scenario ?? '',
+          firstMessage: payload.data.firstMessage ?? '',
+          exampleDialogue: payload.data.exampleDialogs ?? '',
+          legacyFileHash: payload.data.legacyFileHash ?? '',
+          legacyTier: payload.data.legacyTier !== null ? String(payload.data.legacyTier) : '',
+          legacyHeywaifu: payload.data.legacyHeyWaifu === 1,
+          isPublic: payload.data.visibility === 'PUBLIC'
+        })
+      } catch (error) {
+        if (!isCancelled) {
+          setErrorMessage(error instanceof Error ? error.message : 'Failed to load character for editing.')
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsEditLoading(false)
+        }
+      }
+    })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [editCharacterId, isEditing])
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -97,27 +158,53 @@ const UploadVrmPage = () => {
     setStatusMessage(null)
 
     try {
-      await createCharacter({
-        name: normalizedName,
-        fullName: normalizedName,
-        tagline: formState.tagLine.trim() || undefined,
-        description: formState.description.trim() || undefined,
-        personality: formState.personality.trim() || undefined,
-        scenario: formState.scenario.trim() || undefined,
-        firstMessage: formState.firstMessage.trim() || undefined,
-        exampleDialogs: formState.exampleDialogue.trim() || undefined,
-        vroidFileUrl: formState.vroidFileUrl.trim() || undefined,
-        previewImageUrl: formState.previewImageUrl.trim() || undefined,
-        screenshotUrls: screenshotUrls.length > 0 ? screenshotUrls : undefined,
-        legacyFileHash: formState.legacyFileHash.trim() || undefined,
-        legacyTier: parsedLegacyTier,
-        legacyHeyWaifu: formState.legacyHeywaifu ? 1 : 0,
-        isPatreonGated,
-        minimumTierCents,
-        visibility: formState.isPublic ? 'PUBLIC' : 'PRIVATE'
-      })
+      if (isEditing) {
+        await updateCharacter(editCharacterId, {
+          name: normalizedName,
+          fullName: normalizedName,
+          tagline: formState.tagLine.trim() || null,
+          description: formState.description.trim() || null,
+          personality: formState.personality.trim() || null,
+          scenario: formState.scenario.trim() || null,
+          firstMessage: formState.firstMessage.trim() || null,
+          exampleDialogs: formState.exampleDialogue.trim() || null,
+          vroidFileUrl: formState.vroidFileUrl.trim() || null,
+          previewImageUrl: formState.previewImageUrl.trim() || null,
+          screenshotUrls,
+          legacyFileHash: formState.legacyFileHash.trim() || null,
+          legacyTier: normalizedTierInput.length > 0 ? parsedLegacyTier ?? null : null,
+          legacyHeyWaifu: formState.legacyHeywaifu ? 1 : 0,
+          isPatreonGated,
+          minimumTierCents: isPatreonGated ? minimumTierCents ?? null : null,
+          visibility: formState.isPublic ? 'PUBLIC' : 'PRIVATE'
+        })
+      } else {
+        await createCharacter({
+          name: normalizedName,
+          fullName: normalizedName,
+          tagline: formState.tagLine.trim() || undefined,
+          description: formState.description.trim() || undefined,
+          personality: formState.personality.trim() || undefined,
+          scenario: formState.scenario.trim() || undefined,
+          firstMessage: formState.firstMessage.trim() || undefined,
+          exampleDialogs: formState.exampleDialogue.trim() || undefined,
+          vroidFileUrl: formState.vroidFileUrl.trim() || undefined,
+          previewImageUrl: formState.previewImageUrl.trim() || undefined,
+          screenshotUrls: screenshotUrls.length > 0 ? screenshotUrls : undefined,
+          legacyFileHash: formState.legacyFileHash.trim() || undefined,
+          legacyTier: parsedLegacyTier,
+          legacyHeyWaifu: formState.legacyHeywaifu ? 1 : 0,
+          isPatreonGated,
+          minimumTierCents,
+          visibility: formState.isPublic ? 'PUBLIC' : 'PRIVATE'
+        })
+      }
 
-      setStatusMessage('Character submitted successfully. It is now waiting for admin approval.')
+      setStatusMessage(
+        isEditing
+          ? 'Character updated successfully. If it was public, it may require re-approval before republishing.'
+          : 'Character submitted successfully. It is now waiting for admin approval.'
+      )
       setFormState(initialFormState)
       setSelectedFileName(null)
       window.setTimeout(() => {
@@ -138,13 +225,17 @@ const UploadVrmPage = () => {
 
         <div className="relative z-10 mx-auto w-full max-w-[1150px] pt-24">
           <h1 className="text-center font-[family-name:var(--font-heading)] text-4xl font-normal italic leading-none text-white md:text-5xl">
-            Upload VRM
+            {pageHeadingLabel}
           </h1>
 
           <div className="mt-10 grid gap-8 lg:grid-cols-[380px_1fr]">
             <AccountSideMenu activeKey="upload-vrm" />
 
             <form onSubmit={handleSubmit} className="rounded-md border border-white/10 bg-[#1a1414]/95 p-6 md:p-10">
+              {isEditLoading ? (
+                <p className="mb-4 rounded-md border border-white/20 bg-white/5 px-3 py-2 text-xs text-white/75">Loading character data...</p>
+              ) : null}
+
               <UploadDropzone onFileSelect={(file) => setSelectedFileName(file?.name ?? null)} selectedFileName={selectedFileName} />
 
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
@@ -271,9 +362,9 @@ const UploadVrmPage = () => {
                   type="submit"
                   className="inline-flex h-11 min-w-[220px] items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-6 text-[12px] font-bold uppercase tracking-[0.08em] text-white transition hover:brightness-110"
                   aria-label="Submit VRM upload"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isEditLoading}
                 >
-                  {isSubmitting ? 'Submitting...' : 'Submit'}
+                  {isSubmitting ? 'Submitting...' : isEditing ? 'Save Changes' : 'Submit'}
                 </button>
               </div>
             </form>

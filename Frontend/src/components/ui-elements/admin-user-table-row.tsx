@@ -1,5 +1,6 @@
 import AdminUserRolePill, { type AdminUserRole } from '@/components/ui-elements/admin-user-role-pill'
 import AdminUserStatusPill, { type AdminUserStatus } from '@/components/ui-elements/admin-user-status-pill'
+import { useState } from 'react'
 
 type AdminUserTableRecord = {
   id: string
@@ -9,30 +10,30 @@ type AdminUserTableRecord = {
   status: AdminUserStatus
   uploads: number
   joined: string
+  lastSeenLabel: string
 }
 
 type AdminUserTableRowProps = {
   userRecord: AdminUserTableRecord
+  isUpdatingRole?: boolean
+  onUpdateRole?: (userId: string, role: AdminUserRole) => void
 }
 
-const SettingsIcon = () => {
-  return (
-    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.9">
-      <circle cx="12" cy="12" r="2.4" />
-      <path d="m19 12.7.1-1.4-1.9-.7c-.1-.4-.3-.8-.5-1.2l1.1-1.8-1-1-1.8 1a4.8 4.8 0 0 0-1.2-.5l-.7-1.9h-1.4l-.7 1.9c-.4.1-.8.3-1.2.5l-1.8-1-1 1 1.1 1.8c-.2.4-.4.8-.5 1.2l-1.9.7.1 1.4 1.9.7c.1.4.3.8.5 1.2l-1.1 1.8 1 1 1.8-1.1c.4.3.8.4 1.2.5l.7 2h1.4l.7-2c.4-.1.8-.2 1.2-.5l1.8 1.1 1-1-1.1-1.8c.3-.4.4-.8.5-1.2l1.9-.7Z" />
-    </svg>
-  )
-}
+const roleOptionList: AdminUserRole[] = ['user', 'creator', 'admin']
 
-const ShieldIcon = () => {
-  return (
-    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.9">
-      <path d="M12 3.6 6.2 6v5.2c0 3.8 2.5 6.5 5.8 8.2 3.3-1.7 5.8-4.4 5.8-8.2V6L12 3.6Z" />
-    </svg>
-  )
-}
+const AdminUserTableRow = ({ userRecord, isUpdatingRole = false, onUpdateRole }: AdminUserTableRowProps) => {
+  const [nextRole, setNextRole] = useState<AdminUserRole>(userRecord.role)
 
-const AdminUserTableRow = ({ userRecord }: AdminUserTableRowProps) => {
+  const hasRoleChange = nextRole !== userRecord.role
+
+  const handleApplyRole = () => {
+    if (!hasRoleChange || !onUpdateRole || isUpdatingRole) {
+      return
+    }
+
+    onUpdateRole(userRecord.id, nextRole)
+  }
+
   return (
     <tr className="border-t border-white/10">
       <td className="px-4 py-4 align-middle">
@@ -46,22 +47,33 @@ const AdminUserTableRow = ({ userRecord }: AdminUserTableRowProps) => {
         <AdminUserStatusPill status={userRecord.status} />
       </td>
       <td className="px-4 py-4 align-middle text-base font-normal text-white/85">{userRecord.uploads}</td>
-      <td className="px-4 py-4 align-middle text-base text-[#7c8aa3]">{userRecord.joined}</td>
       <td className="px-4 py-4 align-middle">
-        <div className="inline-flex items-center gap-3">
+        <p className="text-base text-[#7c8aa3]">{userRecord.joined}</p>
+        <p className="mt-1 text-xs text-[#63748f]">{userRecord.lastSeenLabel}</p>
+      </td>
+      <td className="px-4 py-4 align-middle">
+        <div className="inline-flex items-center gap-2">
+          <select
+            value={nextRole}
+            onChange={(event) => setNextRole(event.target.value as AdminUserRole)}
+            className="h-8 rounded-md border border-white/15 bg-[#0f1218] px-2 text-xs text-white outline-none transition focus:border-ember-400"
+            aria-label={`Choose role for ${userRecord.username}`}
+            disabled={isUpdatingRole}
+          >
+            {roleOptionList.map((roleOption) => (
+              <option key={roleOption} value={roleOption}>
+                {roleOption.toUpperCase()}
+              </option>
+            ))}
+          </select>
           <button
             type="button"
-            className="inline-flex size-8 items-center justify-center rounded-md border border-transparent text-[#8c99b0] transition hover:border-white/15 hover:bg-white/5 hover:text-white"
-            aria-label={`Open settings for ${userRecord.username}`}
+            onClick={handleApplyRole}
+            disabled={!hasRoleChange || isUpdatingRole || !onUpdateRole}
+            className="inline-flex h-8 items-center justify-center rounded-md border border-ember-500/35 bg-ember-500/20 px-3 text-xs text-ember-200 transition hover:border-ember-400 hover:text-ember-100 disabled:cursor-not-allowed disabled:opacity-45"
+            aria-label={`Apply role update for ${userRecord.username}`}
           >
-            <SettingsIcon />
-          </button>
-          <button
-            type="button"
-            className="inline-flex size-8 items-center justify-center rounded-md border border-transparent text-[#8c99b0] transition hover:border-white/15 hover:bg-white/5 hover:text-white"
-            aria-label={`Open moderation action for ${userRecord.username}`}
-          >
-            <ShieldIcon />
+            {isUpdatingRole ? 'Saving...' : 'Apply'}
           </button>
         </div>
       </td>

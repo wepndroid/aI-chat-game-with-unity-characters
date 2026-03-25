@@ -16,7 +16,7 @@ import {
 } from '@/lib/review-api'
 import Image from 'next/image'
 import Link from 'next/link'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 type CharacterPageProps = {
   characterId?: string
@@ -51,7 +51,19 @@ const formatReviewDateLabel = (value: string) => {
 
 const renderReviewStars = (rating: number) => {
   const normalizedRating = Math.max(1, Math.min(5, Math.round(rating)))
-  return `★`.repeat(normalizedRating) + `☆`.repeat(5 - normalizedRating)
+  return `\u2605`.repeat(normalizedRating) + `\u2606`.repeat(5 - normalizedRating)
+}
+
+type VrmLike = {
+  scene: import('three').Object3D
+  update: (deltaTime: number) => void
+}
+
+type LoadedGltfLike = {
+  scene: import('three').Object3D
+  userData: {
+    vrm?: VrmLike
+  }
 }
 
 const CharacterPreviewVisual = ({ previewImageUrl, characterName }: { previewImageUrl: string | null; characterName: string }) => {
@@ -186,7 +198,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     setActiveScreenshotIndex(0)
   }, [characterRecord?.id])
 
-  const refreshReviewList = async (selectedCharacterId: string) => {
+  const refreshReviewList = useCallback(async (selectedCharacterId: string) => {
     setIsReviewsLoading(true)
     setReviewsErrorMessage(null)
 
@@ -199,18 +211,20 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     } finally {
       setIsReviewsLoading(false)
     }
-  }
+  }, [])
+
+  const selectedCharacterId = characterRecord?.id ?? null
 
   useEffect(() => {
-    if (!characterRecord) {
+    if (!selectedCharacterId) {
       return
     }
 
-    refreshReviewList(characterRecord.id).catch(() => {
+    refreshReviewList(selectedCharacterId).catch(() => {
       setReviewsErrorMessage('Failed to load reviews.')
       setIsReviewsLoading(false)
     })
-  }, [characterRecord?.id])
+  }, [refreshReviewList, selectedCharacterId])
 
   const ownReview = useMemo(() => {
     if (!sessionUser) {
@@ -229,7 +243,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
 
     setReviewInputRating(5)
     setReviewInputBody('')
-  }, [ownReview?.id])
+  }, [ownReview])
 
   const canAccessGatedContent = characterRecord?.gatedAccess.hasAccess ?? false
   const isPatreonGated = characterRecord?.isPatreonGated ?? false
@@ -392,8 +406,8 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     let isDisposed = false
     let frameRequestId = 0
     let resizeObserver: ResizeObserver | null = null
-    let renderer: any = null
-    let vrmInstance: any = null
+    let renderer: import('three').WebGLRenderer | null = null
+    let vrmInstance: VrmLike | null = null
 
     const bootstrapPreview = async () => {
       setIsThreePreviewLoading(true)
@@ -416,13 +430,14 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
         const camera = new PerspectiveCamera(30, 1, 0.1, 1000)
         camera.position.set(0, 1.45, 2.2)
 
-        renderer = new WebGLRenderer({
+        const previewRenderer = new WebGLRenderer({
           antialias: true,
           alpha: true
         })
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+        renderer = previewRenderer
+        previewRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
         containerElement.innerHTML = ''
-        containerElement.appendChild(renderer.domElement)
+        containerElement.appendChild(previewRenderer.domElement)
 
         const keyLight = new DirectionalLight('#ffffff', 1.2)
         keyLight.position.set(1, 1.5, 2)
@@ -449,10 +464,10 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
         loader.crossOrigin = 'anonymous'
         loader.register((parser) => new VRMLoaderPlugin(parser))
 
-        const loadedGltf = await new Promise<any>((resolve, reject) => {
+        const loadedGltf = await new Promise<LoadedGltfLike>((resolve, reject) => {
           loader.load(
             characterRecord.vroidFileUrl as string,
-            (gltf) => resolve(gltf),
+            (gltf) => resolve(gltf as LoadedGltfLike),
             undefined,
             (loadError) => reject(loadError)
           )
@@ -464,7 +479,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
 
         VRMUtils.removeUnnecessaryVertices(loadedGltf.scene)
         VRMUtils.removeUnnecessaryJoints(loadedGltf.scene)
-        vrmInstance = loadedGltf.userData.vrm
+        vrmInstance = loadedGltf.userData.vrm ?? null
 
         if (!vrmInstance) {
           throw new Error('No VRM model could be parsed from this file.')
@@ -476,7 +491,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
         const clock = new Clock()
 
         const runFrame = () => {
-          if (isDisposed || !renderer) {
+          if (isDisposed || !renderer || !vrmInstance) {
             return
           }
 
@@ -705,7 +720,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                     }`}
                     aria-label="Add to favorites"
                   >
-                    ♥
+                    {'\u2665'}
                   </button>
                 </div>
                 {characterActionMessage ? <p className="mt-3 text-xs text-white/70">{characterActionMessage}</p> : null}
