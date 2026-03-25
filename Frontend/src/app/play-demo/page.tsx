@@ -170,7 +170,7 @@ const PlayDemoPage = () => {
                     className={`h-full w-full overflow-hidden border-0 transition-opacity duration-500 ${
                       showLoadingOverlay ? 'opacity-0' : 'opacity-100'
                     }`}
-                    loading="lazy"
+                    loading="eager"
                     allow="fullscreen; gamepad; autoplay; microphone; camera; clipboard-read; clipboard-write"
                     scrolling="no"
                     onLoad={() => setIframeLoaded(true)}
