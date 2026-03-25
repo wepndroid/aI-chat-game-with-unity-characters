@@ -282,12 +282,47 @@ authRoutes.post('/auth/register', async (request, response, next) => {
   try {
     const payload = registerSchema.parse(request.body)
     const normalizedEmail = payload.email.trim().toLowerCase()
+    const normalizedUsername = payload.username.trim()
+
+    const [existingByEmail, existingByUsername] = await Promise.all([
+      prisma.user.findUnique({
+        where: {
+          email: normalizedEmail
+        },
+        select: {
+          id: true
+        }
+      }),
+      prisma.user.findUnique({
+        where: {
+          username: normalizedUsername
+        },
+        select: {
+          id: true
+        }
+      })
+    ])
+
+    if (existingByEmail) {
+      response.status(409).json({
+        message: 'An account with this e-mail already exists.'
+      })
+      return
+    }
+
+    if (existingByUsername) {
+      response.status(409).json({
+        message: 'This username is already taken.'
+      })
+      return
+    }
+
     const passwordHash = await hashPassword(payload.password)
 
     const createdUser = await prisma.user.create({
       data: {
         email: normalizedEmail,
-        username: payload.username.trim(),
+        username: normalizedUsername,
         passwordHash,
         role: 'USER',
         isEmailVerified: false
@@ -322,8 +357,24 @@ authRoutes.post('/auth/register', async (request, response, next) => {
     })
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      const conflictFields = Array.isArray(error.meta?.target) ? (error.meta.target as string[]) : []
+
+      if (conflictFields.includes('email')) {
+        response.status(409).json({
+          message: 'An account with this e-mail already exists.'
+        })
+        return
+      }
+
+      if (conflictFields.includes('username')) {
+        response.status(409).json({
+          message: 'This username is already taken.'
+        })
+        return
+      }
+
       response.status(409).json({
-        message: 'An account with this e-mail or username already exists.'
+        message: 'Account information is already in use.'
       })
       return
     }

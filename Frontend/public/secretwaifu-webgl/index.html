@@ -25,9 +25,86 @@
   </head>
   <body>
     <canvas id="unity-canvas" tabindex="-1"></canvas>
+    <script>
+      (function () {
+        var nativeAlert = window.alert ? window.alert.bind(window) : null;
+        var isSuppressedUnityPermissionError = function (value) {
+          var text = String(value || "").toLowerCase();
+          return text.includes("permissions check failed");
+        };
+
+        if (nativeAlert) {
+          window.alert = function (message) {
+            if (isSuppressedUnityPermissionError(message)) {
+              console.warn("Suppressed Unity permission popup.", message);
+              return;
+            }
+
+            nativeAlert(message);
+          };
+        }
+
+        window.addEventListener("error", function (event) {
+          if (!event || !isSuppressedUnityPermissionError(event.message)) {
+            return;
+          }
+
+          event.preventDefault();
+          console.warn("Suppressed Unity runtime permission error.", event.message);
+        });
+
+        window.addEventListener("unhandledrejection", function (event) {
+          var reasonText = event && event.reason ? String(event.reason) : "";
+          if (!isSuppressedUnityPermissionError(reasonText)) {
+            return;
+          }
+
+          event.preventDefault();
+          console.warn("Suppressed Unity permission rejection.", reasonText);
+        });
+      })();
+    </script>
     <script src="Build/4e04d1a0f3ecc0a902304b9ea797f0c5.loader.js"></script>
     <script>
       var canvas = document.querySelector("#unity-canvas");
+
+      function createFallbackPermissionStatus(state) {
+        return {
+          state: state || "prompt",
+          onchange: null,
+          addEventListener: function () {},
+          removeEventListener: function () {},
+          dispatchEvent: function () {
+            return false;
+          }
+        };
+      }
+
+      function normalizePermissionStatus(status) {
+        if (!status || typeof status !== "object") {
+          return createFallbackPermissionStatus("prompt");
+        }
+
+        if (typeof status.addEventListener !== "function") {
+          status.addEventListener = function () {};
+        }
+        if (typeof status.removeEventListener !== "function") {
+          status.removeEventListener = function () {};
+        }
+        if (typeof status.dispatchEvent !== "function") {
+          status.dispatchEvent = function () {
+            return false;
+          };
+        }
+        if (!("onchange" in status)) {
+          status.onchange = null;
+        }
+        if (!status.state || typeof status.state !== "string") {
+          status.state = "prompt";
+        }
+
+        return status;
+      }
       var postToParent = function(type, payload) {
         if (!window.parent || window.parent === window) {
           return;
@@ -49,18 +126,22 @@
       };
 
       // Some browsers or iframe permission policies can throw on Permissions API checks.
-      // Keep Unity running by degrading to "prompt" state instead of crashing.
+      // Keep Unity running by degrading to a PermissionStatus-like fallback.
       if (navigator.permissions && typeof navigator.permissions.query === 'function') {
         var originalPermissionsQuery = navigator.permissions.query.bind(navigator.permissions);
         navigator.permissions.query = function(permissionDescriptor) {
           try {
-            return originalPermissionsQuery(permissionDescriptor).catch(function(error) {
-              console.warn('Permissions query failed, using fallback state.', error);
-              return Promise.resolve({ state: 'prompt', onchange: null });
-            });
+            return originalPermissionsQuery(permissionDescriptor)
+              .then(function(status) {
+                return normalizePermissionStatus(status);
+              })
+              .catch(function(error) {
+                console.warn('Permissions query failed, using fallback state.', error);
+                return createFallbackPermissionStatus('prompt');
+              });
           } catch (error) {
             console.warn('Permissions query threw, using fallback state.', error);
-            return Promise.resolve({ state: 'prompt', onchange: null });
+            return Promise.resolve(createFallbackPermissionStatus('prompt'));
           }
         };
       }
@@ -96,7 +177,13 @@
       ).then((unityInstance) => {
         postToParent("ready", { progress: 1 });
       }).catch((message) => {
-        alert(message);
+        var errorText = String(message || "");
+        if (errorText.toLowerCase().includes("permissions check failed")) {
+          console.warn("Unity permissions check failed. Continuing with limited features.", errorText);
+          return;
+        }
+
+        alert(errorText);
       });
     </script>
   </body>
