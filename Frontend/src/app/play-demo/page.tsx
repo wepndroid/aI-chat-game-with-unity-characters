@@ -96,9 +96,9 @@ const PlayDemoPage = () => {
       }
 
       if (payload.type === 'secretwaifu-webgl:progress' && typeof payload.progress === 'number') {
-        const normalizedPercent = Math.max(0, Math.min(100, Math.round(payload.progress * 100)))
+        const normalizedPercent = Math.max(0, Math.min(100, payload.progress * 100))
         setHasUnityProgressFeed(true)
-        setLoadingProgress(normalizedPercent)
+        setLoadingProgress(Number(normalizedPercent.toFixed(2)))
         return
       }
 
@@ -123,20 +123,18 @@ const PlayDemoPage = () => {
 
     const timerId = window.setInterval(() => {
       setLoadingProgress((currentValue) => {
-        const targetValue = iframeLoaded ? 100 : 94
+        const targetValue = iframeLoaded ? 90 : 26
 
         if (currentValue >= targetValue) {
           return currentValue
         }
 
-        const delta = iframeLoaded
-          ? Math.max(0.9, (100 - currentValue) * 0.34)
-          : Math.max(0.35, (94 - currentValue) * 0.065)
+        const delta = iframeLoaded ? 0.36 : 0.18
 
         const nextValue = Math.min(targetValue, currentValue + delta)
         return Number(nextValue.toFixed(2))
       })
-    }, 140)
+    }, 150)
 
     return () => {
       window.clearInterval(timerId)
@@ -159,7 +157,8 @@ const PlayDemoPage = () => {
     }
   }, [hasUnityProgressFeed, iframeLoaded, loadingProgress, unityReady])
 
-  const progressPercent = Math.max(0, Math.min(100, Math.floor(loadingProgress)))
+  const clampedProgress = Math.max(0, Math.min(100, loadingProgress))
+  const progressPercent = Math.max(0, Math.min(100, Math.floor(clampedProgress)))
   const overlayDropSpecs = useMemo(() => buildOverlayDropSpecs(34), [])
   const loadingMessage = useMemo(
     () => resolveLoadingMessage(progressPercent, iframeLoaded),
@@ -220,8 +219,8 @@ const PlayDemoPage = () => {
                         <div className="w-full max-w-[760px] rounded-2xl border border-[#a96f44]/65 bg-[linear-gradient(180deg,rgba(55,39,27,0.92),rgba(36,27,20,0.92))] px-4 py-4 shadow-[0_14px_34px_rgba(0,0,0,0.5)] sm:px-6 sm:py-5">
                         <div className="h-7 rounded-full border border-[#3f3125] bg-[#11141b] p-[3px] shadow-[inset_0_2px_6px_rgba(0,0,0,0.55)]">
                           <div
-                            className="relative h-full overflow-hidden rounded-full bg-gradient-to-r from-[#bc7e4f] via-[#d79664] to-[#e5a773] shadow-[0_0_14px_rgba(230,161,105,0.42)]"
-                            style={{ width: `${Math.max(4, progressPercent)}%` }}
+                            className="relative h-full overflow-hidden rounded-full bg-gradient-to-r from-[#bc7e4f] via-[#d79664] to-[#e5a773] shadow-[0_0_14px_rgba(230,161,105,0.42)] transition-[width] duration-200 ease-out"
+                            style={{ width: `${Math.max(4, clampedProgress).toFixed(2)}%` }}
                           >
                             <div className="loader-stripe-layer absolute inset-0 rounded-full opacity-55" />
                           </div>
