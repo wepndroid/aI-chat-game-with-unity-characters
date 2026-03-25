@@ -12,7 +12,6 @@ import { useEffect, useState } from 'react'
 const signInQueryFlagKey = 'openSignIn'
 const oauthQueryFlagKey = 'oauth'
 const oauthMessageQueryFlagKey = 'message'
-const isAdminBypassForTestingEnabled = process.env.NEXT_PUBLIC_ADMIN_TEST_BYPASS === 'true'
 
 const normalizeOAuthErrorMessage = (rawMessage: string | null) => {
   if (!rawMessage) {
@@ -188,7 +187,7 @@ const Header = () => {
                 Profile
               </Link>
             ) : null}
-            {(sessionUser?.role === 'ADMIN' && sessionUser.isEmailVerified) || (isAdminBypassForTestingEnabled && sessionUser) ? (
+            {sessionUser ? (
               <Link href="/admin/dashboard" className="transition hover:text-ember-300" aria-label="Go to admin dashboard">
                 Admin
               </Link>
