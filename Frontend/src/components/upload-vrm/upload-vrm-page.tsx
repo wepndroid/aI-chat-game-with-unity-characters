@@ -1,6 +1,7 @@
 'use client'
 
 import AccountSideMenu from '@/components/shared/account-side-menu'
+import { useAuth } from '@/components/providers/auth-provider'
 import UploadDropzone from '@/components/ui-elements/upload-dropzone'
 import UploadField from '@/components/ui-elements/upload-field'
 import { createCharacter, getCharacterDetail, updateCharacter } from '@/lib/character-api'
@@ -22,6 +23,7 @@ type UploadVrmFormState = {
   legacyTier: string
   legacyHeywaifu: boolean
   isPublic: boolean
+  officialCurated: boolean
 }
 
 const initialFormState: UploadVrmFormState = {
@@ -38,10 +40,12 @@ const initialFormState: UploadVrmFormState = {
   legacyFileHash: '',
   legacyTier: '',
   legacyHeywaifu: false,
-  isPublic: false
+  isPublic: false,
+  officialCurated: false
 }
 
 const UploadVrmPage = () => {
+  const { sessionUser } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
   const editCharacterId = searchParams.get('edit')?.trim() ?? ''
@@ -99,7 +103,8 @@ const UploadVrmPage = () => {
           legacyFileHash: payload.data.legacyFileHash ?? '',
           legacyTier: payload.data.legacyTier !== null ? String(payload.data.legacyTier) : '',
           legacyHeywaifu: payload.data.legacyHeyWaifu === 1,
-          isPublic: payload.data.visibility === 'PUBLIC'
+          isPublic: payload.data.visibility === 'PUBLIC',
+          officialCurated: payload.data.officialListing
         })
       } catch (error) {
         if (!isCancelled) {
@@ -157,6 +162,9 @@ const UploadVrmPage = () => {
     setErrorMessage(null)
     setStatusMessage(null)
 
+    const adminOfficialPayload =
+      sessionUser?.role === 'ADMIN' ? { officialListing: formState.officialCurated } : {}
+
     try {
       if (isEditing) {
         await updateCharacter(editCharacterId, {
@@ -176,7 +184,8 @@ const UploadVrmPage = () => {
           legacyHeyWaifu: formState.legacyHeywaifu ? 1 : 0,
           isPatreonGated,
           minimumTierCents: isPatreonGated ? minimumTierCents ?? null : null,
-          visibility: formState.isPublic ? 'PUBLIC' : 'PRIVATE'
+          visibility: formState.isPublic ? 'PUBLIC' : 'PRIVATE',
+          ...adminOfficialPayload
         })
       } else {
         await createCharacter({
@@ -196,7 +205,8 @@ const UploadVrmPage = () => {
           legacyHeyWaifu: formState.legacyHeywaifu ? 1 : 0,
           isPatreonGated,
           minimumTierCents,
-          visibility: formState.isPublic ? 'PUBLIC' : 'PRIVATE'
+          visibility: formState.isPublic ? 'PUBLIC' : 'PRIVATE',
+          ...adminOfficialPayload
         })
       }
 
@@ -344,6 +354,21 @@ const UploadVrmPage = () => {
                 />
                 <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/55">Make Character Public</span>
               </label>
+
+              {sessionUser?.role === 'ADMIN' ? (
+                <label className="mt-3 inline-flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={formState.officialCurated}
+                    onChange={(event) => handleFieldChange('officialCurated', event.target.checked)}
+                    className="size-4 rounded border border-white/30 bg-transparent text-ember-400 focus:ring-ember-300"
+                    aria-label="Curated official listing"
+                  />
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/55">
+                    Curated (official gallery — admin only)
+                  </span>
+                </label>
+              ) : null}
 
               {statusMessage ? (
                 <p className="mt-3 rounded-md border border-emerald-300/30 bg-emerald-300/10 px-3 py-2 text-xs text-emerald-100">

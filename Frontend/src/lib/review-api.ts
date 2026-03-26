@@ -2,7 +2,6 @@ import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api-client'
 
 type CharacterReviewRecord = {
   id: string
-  rating: number
   body: string
   createdAt: string
   updatedAt: string
@@ -17,7 +16,6 @@ type CharacterReviewListResponse = {
 }
 
 type CreateCharacterReviewPayload = {
-  rating: number
   body: string
 }
 
@@ -25,32 +23,27 @@ type CreateCharacterReviewResponse = {
   data: {
     review: {
       id: string
-      rating: number
       body: string
       characterId: string
       createdAt: string
       updatedAt: string
     }
-    averageRating: number
   }
 }
 
 type UpdateCharacterReviewPayload = {
-  rating?: number
-  body?: string
+  body: string
 }
 
 type UpdateCharacterReviewResponse = {
   data: {
     review: {
       id: string
-      rating: number
       body: string
       characterId: string
       createdAt: string
       updatedAt: string
     }
-    averageRating: number
   }
 }
 
@@ -58,7 +51,6 @@ type DeleteCharacterReviewResponse = {
   data: {
     deleted: boolean
     characterId: string
-    averageRating: number
   }
 }
 

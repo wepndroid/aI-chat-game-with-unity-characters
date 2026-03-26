@@ -85,10 +85,11 @@ model Character {
   legacyHeyWaifu   Int?
   status           CharacterStatus     @default(DRAFT)
   visibility       CharacterVisibility @default(PRIVATE)
+  /// When true, character is listed under Curated (official) gallery; otherwise Community.
+  officialListing  Boolean             @default(false)
   isPatreonGated   Boolean             @default(false)
   minimumTierCents Int?
   heartsCount      Int                 @default(0)
-  averageRating    Float               @default(0)
   viewsCount       Int                 @default(0)
   ownerId          String
   owner            User                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
@@ -128,7 +129,6 @@ model CharacterScreenshot {
 
 model Review {
   id          String    @id @default(cuid())
-  rating      Int
   body        String
   userId      String
   characterId String

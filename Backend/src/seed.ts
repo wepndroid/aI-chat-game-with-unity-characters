@@ -52,7 +52,7 @@ const run = async () => {
           legacyTier: 0,
           legacyHeyWaifu: 0,
           heartsCount: 2400,
-          averageRating: 4.8,
+          officialListing: true,
           viewsCount: 8900,
           publishedAt: new Date()
         },
@@ -72,7 +72,7 @@ const run = async () => {
           legacyTier: 1,
           legacyHeyWaifu: 0,
           heartsCount: 0,
-          averageRating: 0,
+          officialListing: false,
           viewsCount: 0
         }
       ]

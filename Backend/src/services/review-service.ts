@@ -44,47 +44,6 @@ const mapEntitlementTierCodeToCents = (tierCode: string) => {
   return 0
 }
 
-const getReviewActorOrThrow = async (userId: string): Promise<ReviewActor> => {
-  const actor = await prisma.user.findUnique({
-    where: {
-      id: userId
-    },
-    select: {
-      id: true,
-      role: true,
-      isEmailVerified: true
-    }
-  })
-
-  if (!actor) {
-    throw new ReviewVerificationError(401, 'Session user was not found.')
-  }
-
-  return actor
-}
-
-const getCharacterForReviewOrThrow = async (characterId: string): Promise<ReviewCharacter> => {
-  const character = await prisma.character.findUnique({
-    where: {
-      id: characterId
-    },
-    select: {
-      id: true,
-      ownerId: true,
-      status: true,
-      visibility: true,
-      isPatreonGated: true,
-      minimumTierCents: true
-    }
-  })
-
-  if (!character) {
-    throw new ReviewVerificationError(404, 'Character not found.')
-  }
-
-  return character
-}
-
 const resolveBestPatreonTierCents = async (userId: string) => {
   const now = new Date()
 
@@ -136,11 +95,58 @@ const resolveBestPatreonTierCents = async (userId: string) => {
   return Math.max(entitlementTierCents, accountTierCents)
 }
 
-const assertReviewRatingEligibility = async (userId: string, characterId: string) => {
-  const [actor, character] = await Promise.all([getReviewActorOrThrow(userId), getCharacterForReviewOrThrow(characterId)])
+const getReviewActorOrThrow = async (userId: string): Promise<ReviewActor> => {
+  const actor = await prisma.user.findUnique({
+    where: {
+      id: userId
+    },
+    select: {
+      id: true,
+      role: true,
+      isEmailVerified: true
+    }
+  })
+
+  if (!actor) {
+    throw new ReviewVerificationError(401, 'Session user was not found.')
+  }
+
+  return actor
+}
+
+const getCharacterForReviewOrThrow = async (characterIdOrSlug: string): Promise<ReviewCharacter> => {
+  const character = await prisma.character.findFirst({
+    where: {
+      OR: [{ id: characterIdOrSlug }, { slug: characterIdOrSlug }]
+    },
+    select: {
+      id: true,
+      ownerId: true,
+      status: true,
+      visibility: true,
+      isPatreonGated: true,
+      minimumTierCents: true
+    }
+  })
+
+  if (!character) {
+    throw new ReviewVerificationError(404, 'Character not found.')
+  }
+
+  return character
+}
+
+const assertReviewEligibility = async (userId: string, characterIdOrSlug: string) => {
+  const [actor, character] = await Promise.all([getReviewActorOrThrow(userId), getCharacterForReviewOrThrow(characterIdOrSlug)])
 
   if (!actor.isEmailVerified) {
-    throw new ReviewVerificationError(403, 'Please verify your e-mail before posting a rating.')
+    throw new ReviewVerificationError(403, 'Please verify your e-mail before posting a review.')
+  }
+
+  const subscriptionTierCents = await resolveBestPatreonTierCents(userId)
+
+  if (actor.role !== 'ADMIN' && subscriptionTierCents <= 0) {
+    throw new ReviewVerificationError(403, 'An active Patreon subscription is required to post reviews.')
   }
 
   if (character.status !== 'APPROVED' || character.visibility !== 'PUBLIC') {
@@ -151,12 +157,11 @@ const assertReviewRatingEligibility = async (userId: string, characterId: string
     throw new ReviewVerificationError(403, 'You cannot review your own character.')
   }
 
-  if (character.isPatreonGated) {
+  if (character.isPatreonGated && actor.role !== 'ADMIN') {
     const minimumTierCents = character.minimumTierCents ?? 1
-    const availableTierCents = await resolveBestPatreonTierCents(userId)
 
-    if (availableTierCents < minimumTierCents) {
-      throw new ReviewVerificationError(403, 'An active Patreon entitlement is required to review this character.')
+    if (subscriptionTierCents < minimumTierCents) {
+      throw new ReviewVerificationError(403, 'A higher Patreon tier is required to review this character.')
     }
   }
 }
@@ -173,38 +178,11 @@ const assertReviewOwnerOrAdmin = (reviewOwnerId: string, actorUserId: string, ac
   throw new ReviewVerificationError(403, 'You are not allowed to modify this review.')
 }
 
-const recalculateCharacterAverageRating = async (
-  transactionClient: Prisma.TransactionClient,
-  characterId: string
-): Promise<number> => {
-  const aggregationResult = await transactionClient.review.aggregate({
-    where: {
-      characterId
-    },
-    _avg: {
-      rating: true
-    }
-  })
-
-  const averageRating = aggregationResult._avg.rating ?? 0
-
-  await transactionClient.character.update({
-    where: {
-      id: characterId
-    },
-    data: {
-      averageRating
-    }
-  })
-
-  return averageRating
-}
-
 export {
   ReviewVerificationError,
   assertReviewOwnerOrAdmin,
-  assertReviewRatingEligibility,
+  assertReviewEligibility,
   getCharacterForReviewOrThrow,
   getReviewActorOrThrow,
-  recalculateCharacterAverageRating
+  resolveBestPatreonTierCents
 }

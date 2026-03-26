@@ -39,7 +39,7 @@ const CommunityVrmsPage = () => {
     setErrorMessage(null)
 
     try {
-      const payload = await listCharacters(searchValue)
+      const payload = await listCharacters({ search: searchValue, limit: 200 })
       setCharacterList(payload.data)
     } catch (error) {
       setCharacterList([])
@@ -59,7 +59,7 @@ const CommunityVrmsPage = () => {
       setErrorMessage(null)
 
       try {
-        const payload = await listCharacters('')
+        const payload = await listCharacters({ limit: 200 })
         if (!isCancelled) {
           setCharacterList(payload.data)
         }
@@ -251,7 +251,6 @@ const CommunityVrmsPage = () => {
                       <td className="px-4 py-4 align-middle text-xs text-[#a8b6d0]">
                         <p>Hearts: {characterRecord.heartsCount}</p>
                         <p>Views: {characterRecord.viewsCount}</p>
-                        <p>Rating: {characterRecord.averageRating.toFixed(1)}</p>
                       </td>
                       <td className="px-4 py-4 align-middle text-xs uppercase tracking-[0.08em] text-white/80">{characterRecord.status}</td>
                       <td className="px-4 py-4 align-middle text-xs uppercase tracking-[0.08em] text-white/80">{characterRecord.visibility}</td>

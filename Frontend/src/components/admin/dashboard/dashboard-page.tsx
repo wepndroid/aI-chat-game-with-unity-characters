@@ -21,7 +21,6 @@ type DashboardOverviewPayload = {
     totalReviews: number
     totalHearts: number
     totalViews: number
-    averageRating: number
     patreonLinkedUsers: number
     activePatrons: number
     dau7d: number
@@ -32,7 +31,6 @@ type DashboardOverviewPayload = {
       name: string
       viewsCount: number
       heartsCount: number
-      averageRating: number
       minimumTierCents: number | null
       isPatreonGated: boolean
     }>
@@ -202,10 +200,10 @@ const DashboardPage = () => {
         icon: <ViewIcon />
       },
       {
-        id: 'rating',
-        label: 'Average Rating',
-        value: overview.averageRating.toFixed(2),
-        helperText: `Reviews: ${formatCompactNumber(overview.totalReviews)}`,
+        id: 'reviews',
+        label: 'Total Reviews',
+        value: formatCompactNumber(overview.totalReviews),
+        helperText: `${formatCompactNumber(overview.approvedCharacters)} public characters`,
         tone: 'orange',
         icon: <ReviewIcon />
       },
@@ -299,8 +297,7 @@ const DashboardPage = () => {
               <div key={characterItem.id} className="rounded-md border border-white/10 bg-black/20 px-3 py-2">
                 <p className="text-sm text-white">{characterItem.name}</p>
                 <p className="mt-1 text-xs text-white/65">
-                  Views {formatCompactNumber(characterItem.viewsCount)} | Hearts {formatCompactNumber(characterItem.heartsCount)} | Rating{' '}
-                  {characterItem.averageRating.toFixed(2)}
+                  Views {formatCompactNumber(characterItem.viewsCount)} | Hearts {formatCompactNumber(characterItem.heartsCount)}
                 </p>
               </div>
             ))}
