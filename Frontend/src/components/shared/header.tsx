@@ -167,12 +167,66 @@ const Header = () => {
   return (
     <>
       <header className="fixed z-40 w-[100%] border-b border-white/10 bg-[#0b0b0b]/35 backdrop-blur-sm">
-        <div className="mx-auto flex w-full max-w-[1150px] items-center justify-between px-5 py-5 md:px-8">
-          <Link href="/" className="inline-flex items-center text-white" aria-label="SecretWaifu home">
-            <Image src="/images/Logo.png" alt="SecretWaifu logo" width={164} height={44} className="h-9 w-auto" priority />
-          </Link>
+        <div className="mx-auto w-full max-w-[1150px] px-5 py-4 md:px-8 md:py-5">
+          <div className="flex items-center justify-between gap-3">
+            <Link href="/" className="inline-flex shrink-0 items-center text-white" aria-label="SecretWaifu home">
+              <Image src="/images/Logo.png" alt="SecretWaifu logo" width={164} height={44} className="h-9 w-auto" priority />
+            </Link>
 
-          <nav className="hidden items-center gap-9 text-xs font-semibold uppercase tracking-[0.2em] text-white/85 md:flex">
+            <nav className="hidden items-center gap-9 text-xs font-semibold uppercase tracking-[0.2em] text-white/85 md:flex">
+              <Link href="/" className="transition hover:text-ember-300" aria-label="Go to home">
+                Home
+              </Link>
+              <Link href="/play-demo" className="transition hover:text-ember-300" aria-label="Go to play page">
+                Play
+              </Link>
+              <Link href="/characters" className="transition hover:text-ember-300" aria-label="Go to characters">
+                Characters
+              </Link>
+              {sessionUser ? (
+                <Link href="/profile" className="transition hover:text-ember-300" aria-label="Go to profile">
+                  Profile
+                </Link>
+              ) : null}
+              {sessionUser ? (
+                <Link href="/admin/dashboard" className="transition hover:text-ember-300" aria-label="Go to admin dashboard">
+                  Admin
+                </Link>
+              ) : null}
+            </nav>
+
+            {sessionUser ? (
+              <div className="flex shrink-0 items-center gap-3">
+                <p className="hidden text-[11px] font-semibold uppercase tracking-[0.08em] text-white/80 md:block">
+                  {sessionUser.username} ({sessionUser.role.toLowerCase()})
+                </p>
+                <button
+                  type="button"
+                  className="rounded-md border border-white/30 bg-transparent px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:border-ember-300 hover:text-ember-200"
+                  aria-label="Sign out"
+                  onClick={handleSignOut}
+                  disabled={isSigningOut}
+                >
+                  {isSigningOut ? 'Signing Out...' : 'Sign Out'}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="shrink-0 rounded-md border border-ember-500/65 bg-[#2b160f]/85 px-5 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-ember-100 transition hover:bg-[#3a1d13]"
+                aria-label="Open sign in modal"
+                onClick={handleOpenSignInModal}
+                disabled={isAuthLoading}
+              >
+                Sign In
+              </button>
+            )}
+          </div>
+
+          <nav
+            className="mt-3 flex flex-wrap gap-x-5 gap-y-2 border-t border-white/10 pt-3 text-xs font-semibold uppercase tracking-[0.18em] text-white/85 md:hidden"
+            aria-label="Primary navigation"
+          >
             <Link href="/" className="transition hover:text-ember-300" aria-label="Go to home">
               Home
             </Link>
@@ -193,33 +247,6 @@ const Header = () => {
               </Link>
             ) : null}
           </nav>
-
-          {sessionUser ? (
-            <div className="flex items-center gap-3">
-              <p className="hidden text-[11px] font-semibold uppercase tracking-[0.08em] text-white/80 md:block">
-                {sessionUser.username} ({sessionUser.role.toLowerCase()})
-              </p>
-              <button
-                type="button"
-                className="rounded-md border border-white/30 bg-transparent px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:border-ember-300 hover:text-ember-200"
-                aria-label="Sign out"
-                onClick={handleSignOut}
-                disabled={isSigningOut}
-              >
-                {isSigningOut ? 'Signing Out...' : 'Sign Out'}
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              className="rounded-md border border-ember-500/65 bg-[#2b160f]/85 px-5 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-ember-100 transition hover:bg-[#3a1d13]"
-              aria-label="Open sign in modal"
-              onClick={handleOpenSignInModal}
-              disabled={isAuthLoading}
-            >
-              Sign In
-            </button>
-          )}
         </div>
       </header>
 

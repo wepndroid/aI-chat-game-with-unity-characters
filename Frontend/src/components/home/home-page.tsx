@@ -25,6 +25,8 @@ type HeroPlatformData = {
   id: string
   label: string
   iconType: PlatformIconType
+  href: string
+  ariaLabel: string
 }
 
 type MarketingFeatureItem = {
@@ -83,29 +85,6 @@ const frequentlyAskedQuestions: FaqItemData[] = [
   }
 ]
 
-const heroPlatforms: HeroPlatformData[] = [
-  {
-    id: 'browser',
-    label: 'Browser',
-    iconType: 'browser'
-  },
-  {
-    id: 'windows',
-    label: 'Windows',
-    iconType: 'windows'
-  },
-  {
-    id: 'pcvr',
-    label: 'PCVR',
-    iconType: 'pcvr'
-  },
-  {
-    id: 'meta-quest',
-    label: 'Meta Quest',
-    iconType: 'meta-quest'
-  }
-]
-
 const featureList: MarketingFeatureItem[] = [
   {
     id: 'feature-webgl',
@@ -142,9 +121,44 @@ const featureList: MarketingFeatureItem[] = [
 const HomePage = () => {
   const trailerEmbedUrl = process.env.NEXT_PUBLIC_TRAILER_EMBED_URL
   const trailerVideoUrl = process.env.NEXT_PUBLIC_TRAILER_VIDEO_URL
-  const itchIoUrl = process.env.NEXT_PUBLIC_ITCH_IO_URL ?? '/download'
+  // Set NEXT_PUBLIC_ITCH_IO_URL in .env.local to your full itch.io game page (https://…)
+  const itchIoUrl = process.env.NEXT_PUBLIC_ITCH_IO_URL?.trim() || 'https://itch.io'
   const patreonUrl = process.env.NEXT_PUBLIC_PATREON_URL ?? '/members'
-  const directPurchaseUrl = process.env.NEXT_PUBLIC_DIRECT_PURCHASE_URL ?? '/download'
+  // Direct / third-party checkout (Gumroad, Stripe link, etc.). If unset, send users to the on-site purchase hub (not itch — that has its own button).
+  const directPurchaseUrl = process.env.NEXT_PUBLIC_DIRECT_PURCHASE_URL?.trim() || '/download'
+  const windowsExeHref = process.env.NEXT_PUBLIC_WINDOWS_BUILD_URL?.trim() || '/download#windows-build'
+
+  // Hero tiles: Browser = WebGL demo; Windows = download hub (Windows section); PCVR = VR / headset FAQ; EXE = Windows build URL or same anchor as Download EXE.
+  const heroPlatforms: HeroPlatformData[] = [
+    {
+      id: 'browser',
+      label: 'Browser',
+      iconType: 'browser',
+      href: '/play-demo',
+      ariaLabel: 'Play the game in your browser (WebGL demo)'
+    },
+    {
+      id: 'windows',
+      label: 'Windows',
+      iconType: 'windows',
+      href: '/download#windows-build',
+      ariaLabel: 'Download and purchase options for Windows'
+    },
+    {
+      id: 'pcvr',
+      label: 'PCVR',
+      iconType: 'pcvr',
+      href: '/chat-faq',
+      ariaLabel: 'PC VR and headset frequently asked questions'
+    },
+    {
+      id: 'exe',
+      label: 'EXE',
+      iconType: 'exe',
+      href: windowsExeHref,
+      ariaLabel: 'Download the Windows executable or build'
+    }
+  ]
 
   const purchasePathList: MarketingPurchasePathItem[] = [
     {
@@ -191,13 +205,19 @@ const HomePage = () => {
 
             <div className="mx-auto mt-4 grid max-w-[370px] grid-cols-2 gap-1 sm:grid-cols-4 sm:gap-1">
               {heroPlatforms.map((platformItem) => (
-                <PlatformItem key={platformItem.id} label={platformItem.label} iconType={platformItem.iconType} />
+                <PlatformItem
+                  key={platformItem.id}
+                  label={platformItem.label}
+                  iconType={platformItem.iconType}
+                  href={platformItem.href}
+                  ariaLabel={platformItem.ariaLabel}
+                />
               ))}
             </div>
 
             <div className="mx-auto mt-5 flex max-w-[470px] flex-col gap-3 sm:flex-row sm:justify-center">
               <CtaLinkButton href="/play-demo" label="Play In Browser" variant="light" ariaLabel="Play demo in browser" />
-              <CtaLinkButton href="/download" label="Download EXE" variant="accent" ariaLabel="Download executable" />
+              <CtaLinkButton href={windowsExeHref} label="Download EXE" variant="accent" ariaLabel="Download executable" />
             </div>
           </div>
         </div>

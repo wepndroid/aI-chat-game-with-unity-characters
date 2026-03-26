@@ -1,8 +1,12 @@
-type PlatformIconType = 'browser' | 'windows' | 'pcvr' | 'meta-quest'
+import Link from 'next/link'
+
+type PlatformIconType = 'browser' | 'windows' | 'pcvr' | 'exe'
 
 type PlatformItemProps = {
   label: string
   iconType: PlatformIconType
+  href: string
+  ariaLabel: string
 }
 
 type PlatformIconProps = {
@@ -44,6 +48,21 @@ const PlatformIcon = ({ iconType }: PlatformIconProps) => {
     )
   }
 
+  if (iconType === 'exe') {
+    return (
+      <svg viewBox="0 0 24 24" className="h-7 w-7 text-white/88" aria-hidden="true">
+        <rect x="4.5" y="5.5" width="15" height="13" rx="2" fill="none" stroke="currentColor" strokeWidth="1.7" />
+        <path
+          d="M8.2 9.2h7.6M8.2 12h5.2M8.2 14.8h6.4"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+      </svg>
+    )
+  }
+
   return (
     <svg viewBox="0 0 24 24" className="h-7 w-7 text-white/85" aria-hidden="true">
       <path
@@ -58,17 +77,37 @@ const PlatformIcon = ({ iconType }: PlatformIconProps) => {
   )
 }
 
-const PlatformItem = ({ label, iconType }: PlatformItemProps) => {
-  return (
-    <div className="flex flex-col items-center">
-      <div className="relative flex h-[50px] w-[56px] items-center justify-center overflow-hidden rounded-[13px] border-[2px] border-white/80 bg-black/12">
-        <div className="absolute inset-0 bg-white/40" aria-hidden="true" />
-        <div className="relative z-10">
-          <PlatformIcon iconType={iconType} />
-        </div>
+const PlatformItem = ({ label, iconType, href, ariaLabel }: PlatformItemProps) => {
+  const isExternal = href.startsWith('http://') || href.startsWith('https://')
+  const tileClassName =
+    'group relative flex h-[50px] w-[56px] items-center justify-center overflow-hidden rounded-[13px] border-[2px] border-white/80 bg-black/12 transition group-hover:border-ember-300/90 group-hover:bg-black/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember-300'
+
+  const inner = (
+    <>
+      <div className="absolute inset-0 bg-white/40 transition group-hover:bg-white/50" aria-hidden="true" />
+      <div className="relative z-10">
+        <PlatformIcon iconType={iconType} />
       </div>
-      <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.07em] text-white/95">{label}</p>
-    </div>
+    </>
+  )
+
+  const wrapperClassName =
+    'group flex flex-col items-center rounded-md p-0.5 transition hover:text-ember-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember-300'
+
+  if (isExternal) {
+    return (
+      <a href={href} target="_blank" rel="noreferrer" className={wrapperClassName} aria-label={ariaLabel}>
+        <span className={tileClassName}>{inner}</span>
+        <span className="mt-1 text-[9px] font-bold uppercase tracking-[0.07em] text-white/95 group-hover:underline">{label}</span>
+      </a>
+    )
+  }
+
+  return (
+    <Link href={href} className={wrapperClassName} aria-label={ariaLabel}>
+      <span className={tileClassName}>{inner}</span>
+      <span className="mt-1 text-[9px] font-bold uppercase tracking-[0.07em] text-white/95 group-hover:underline">{label}</span>
+    </Link>
   )
 }
 

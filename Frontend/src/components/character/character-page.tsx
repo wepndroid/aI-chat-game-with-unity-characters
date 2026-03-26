@@ -16,9 +16,17 @@ import {
 } from '@/lib/review-api'
 import { apiGet } from '@/lib/api-client'
 import { resolveAvailableTierCents, type PatreonStatusSnapshot } from '@/lib/patreon-access'
+import {
+  createVrmGLTFLoader,
+  getVrmFromGltfUserData,
+  loadVrmRuntime,
+  optimizeVrmSceneForRendering,
+  type VRM,
+  type VrmLoadedGltf
+} from '@/lib/vrm-three'
 import Image from 'next/image'
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 type CharacterPageProps = {
   characterId?: string
@@ -49,18 +57,6 @@ const formatReviewDateLabel = (value: string) => {
   return new Intl.DateTimeFormat('en-US', {
     dateStyle: 'medium'
   }).format(parsedDate)
-}
-
-type VrmLike = {
-  scene: import('three').Object3D
-  update: (deltaTime: number) => void
-}
-
-type LoadedGltfLike = {
-  scene: import('three').Object3D
-  userData: {
-    vrm?: VrmLike
-  }
 }
 
 const CharacterPreviewVisual = ({ previewImageUrl, characterName }: { previewImageUrl: string | null; characterName: string }) => {
@@ -96,7 +92,9 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
   const [characterRecord, setCharacterRecord] = useState<CharacterDetailRecord | null>(null)
   const [isThreePreviewOpen, setIsThreePreviewOpen] = useState(false)
   const [isThreePreviewLoading, setIsThreePreviewLoading] = useState(false)
+  const [threePreviewLoadProgress, setThreePreviewLoadProgress] = useState<number | null>(null)
   const [threePreviewErrorMessage, setThreePreviewErrorMessage] = useState<string | null>(null)
+  const [isThreePreviewExpanded, setIsThreePreviewExpanded] = useState(false)
   const [activeScreenshotIndex, setActiveScreenshotIndex] = useState(0)
   const [isHeartSubmitting, setIsHeartSubmitting] = useState(false)
   const [characterActionMessage, setCharacterActionMessage] = useState<string | null>(null)
@@ -107,6 +105,12 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
   const [isReviewSubmitting, setIsReviewSubmitting] = useState(false)
   const [reviewActionMessage, setReviewActionMessage] = useState<string | null>(null)
   const threePreviewContainerReference = useRef<HTMLDivElement | null>(null)
+  const [threePreviewContainerRevision, setThreePreviewContainerRevision] = useState(0)
+
+  const previewContainerRef = useCallback((node: HTMLDivElement | null) => {
+    threePreviewContainerReference.current = node
+    setThreePreviewContainerRevision((previousRevision) => previousRevision + 1)
+  }, [])
 
   useEffect(() => {
     if (!characterId) {
@@ -395,12 +399,12 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     }
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isThreePreviewOpen || !canOpenThreePreview || !characterRecord?.vroidFileUrl) {
       return
     }
 
-    const containerElement = threePreviewContainerReference.current
+    let containerElement = threePreviewContainerReference.current
 
     if (!containerElement) {
       return
@@ -410,17 +414,32 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     let frameRequestId = 0
     let resizeObserver: ResizeObserver | null = null
     let renderer: import('three').WebGLRenderer | null = null
-    let vrmInstance: VrmLike | null = null
+    let vrmInstance: VRM | null = null
+    let orbitControls: import('three/examples/jsm/controls/OrbitControls.js').OrbitControls | null = null
 
     const bootstrapPreview = async () => {
       setIsThreePreviewLoading(true)
+      setThreePreviewLoadProgress(0)
       setThreePreviewErrorMessage(null)
 
+      const loadTimeoutMs = 180000
+
+      const formatLoadError = (error: unknown) => {
+        const raw = error instanceof Error ? error.message : String(error)
+        const lower = raw.toLowerCase()
+
+        if (lower.includes('network') || lower.includes('fetch') || lower.includes('failed to fetch') || lower.includes('load failed')) {
+          return `${raw} — If the VRM is on another domain, that host must allow CORS. For this API’s /uploads, add your site origin to CORS_ORIGIN.`
+        }
+
+        return raw
+      }
+
       try {
-        const [{ Color, Scene, PerspectiveCamera, WebGLRenderer, DirectionalLight, AmbientLight, Clock }, { GLTFLoader }, { VRMUtils, VRMLoaderPlugin }] = await Promise.all([
+        const [{ Color, Scene, PerspectiveCamera, WebGLRenderer, DirectionalLight, AmbientLight, Clock }, vrmRuntime, { OrbitControls }] = await Promise.all([
           import('three'),
-          import('three/examples/jsm/loaders/GLTFLoader.js'),
-          import('@pixiv/three-vrm')
+          loadVrmRuntime(),
+          import('three/examples/jsm/controls/OrbitControls.js')
         ])
 
         if (isDisposed) {
@@ -440,7 +459,19 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
         renderer = previewRenderer
         previewRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
         containerElement.innerHTML = ''
-        containerElement.appendChild(previewRenderer.domElement)
+        const canvasElement = previewRenderer.domElement
+        canvasElement.style.display = 'block'
+        canvasElement.style.width = '100%'
+        canvasElement.style.height = '100%'
+        containerElement.appendChild(canvasElement)
+
+        orbitControls = new OrbitControls(camera, canvasElement)
+        orbitControls.target.set(0, 1, 0)
+        orbitControls.enableDamping = true
+        orbitControls.dampingFactor = 0.08
+        orbitControls.minDistance = 0.6
+        orbitControls.maxDistance = 6
+        orbitControls.maxPolarAngle = Math.PI * 0.92
 
         const keyLight = new DirectionalLight('#ffffff', 1.2)
         keyLight.position.set(1, 1.5, 2)
@@ -457,32 +488,57 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
           camera.aspect = width / height
           camera.updateProjectionMatrix()
           renderer.setSize(width, height, false)
+          orbitControls?.update()
         }
 
         resizePreview()
         resizeObserver = new ResizeObserver(() => resizePreview())
         resizeObserver.observe(containerElement)
 
-        const loader = new GLTFLoader()
-        loader.crossOrigin = 'anonymous'
-        loader.register((parser) => new VRMLoaderPlugin(parser))
+        const loader = createVrmGLTFLoader(vrmRuntime)
 
-        const loadedGltf = await new Promise<LoadedGltfLike>((resolve, reject) => {
+        const vrmUrl = characterRecord.vroidFileUrl as string
+
+        let loadTimeoutId: number | null = null
+
+        const loadPromise = new Promise<VrmLoadedGltf>((resolve, reject) => {
           loader.load(
-            characterRecord.vroidFileUrl as string,
-            (gltf) => resolve(gltf as LoadedGltfLike),
-            undefined,
+            vrmUrl,
+            (gltf) => resolve(gltf as VrmLoadedGltf),
+            (event) => {
+              const progressEvent = event as ProgressEvent
+              if (progressEvent.lengthComputable && progressEvent.total > 0) {
+                setThreePreviewLoadProgress(Math.round((progressEvent.loaded / progressEvent.total) * 100))
+              } else {
+                setThreePreviewLoadProgress(null)
+              }
+            },
             (loadError) => reject(loadError)
           )
         })
+
+        const timeoutPromise = new Promise<VrmLoadedGltf>((_resolve, reject) => {
+          loadTimeoutId = window.setTimeout(() => {
+            reject(
+              new Error(
+                `Timed out after ${Math.round(loadTimeoutMs / 1000)}s while downloading or parsing the VRM. Very large files are slow; try a smaller export or host the file closer to users.`
+              )
+            )
+          }, loadTimeoutMs)
+        })
+
+        const loadedGltf = await Promise.race([loadPromise, timeoutPromise])
+
+        if (loadTimeoutId !== null) {
+          window.clearTimeout(loadTimeoutId)
+        }
 
         if (isDisposed) {
           return
         }
 
-        VRMUtils.removeUnnecessaryVertices(loadedGltf.scene)
-        VRMUtils.removeUnnecessaryJoints(loadedGltf.scene)
-        vrmInstance = loadedGltf.userData.vrm ?? null
+        optimizeVrmSceneForRendering(vrmRuntime, loadedGltf.scene)
+        vrmInstance = getVrmFromGltfUserData(loadedGltf)
 
         if (!vrmInstance) {
           throw new Error('No VRM model could be parsed from this file.')
@@ -500,6 +556,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
 
           const deltaTime = clock.getDelta()
           vrmInstance.update(deltaTime)
+          orbitControls?.update()
           renderer.render(scene, camera)
           frameRequestId = window.requestAnimationFrame(runFrame)
         }
@@ -507,11 +564,12 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
         runFrame()
       } catch (error) {
         if (!isDisposed) {
-          setThreePreviewErrorMessage(error instanceof Error ? error.message : 'Failed to load 3D preview.')
+          setThreePreviewErrorMessage(formatLoadError(error))
         }
       } finally {
         if (!isDisposed) {
           setIsThreePreviewLoading(false)
+          setThreePreviewLoadProgress(null)
         }
       }
     }
@@ -527,11 +585,26 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
       isDisposed = true
       window.cancelAnimationFrame(frameRequestId)
       resizeObserver?.disconnect()
+      orbitControls?.dispose()
+      orbitControls = null
       renderer?.dispose()
       containerElement.innerHTML = ''
       vrmInstance = null
     }
-  }, [canOpenThreePreview, characterRecord?.vroidFileUrl, isThreePreviewOpen])
+  }, [canOpenThreePreview, characterRecord?.vroidFileUrl, isThreePreviewOpen, threePreviewContainerRevision])
+
+  useEffect(() => {
+    if (!isThreePreviewExpanded) {
+      return
+    }
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [isThreePreviewExpanded])
 
   return (
     <main className="relative overflow-hidden bg-[#030303] text-white">
@@ -560,7 +633,15 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                   {canUseCharacterActions ? (
                     <button
                       type="button"
-                      onClick={() => setIsThreePreviewOpen((previousState) => !previousState)}
+                      onClick={() => {
+                        setIsThreePreviewOpen((previousState) => {
+                          if (previousState) {
+                            setIsThreePreviewExpanded(false)
+                          }
+
+                          return !previousState
+                        })
+                      }}
                       className="absolute right-4 top-4 inline-flex h-9 items-center justify-center rounded-md border border-white/35 bg-white/95 px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#1d1d1d]"
                       aria-label="Open 3D preview"
                       disabled={!canOpenThreePreview}
@@ -578,11 +659,45 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                   )}
 
                   {isThreePreviewOpen && canOpenThreePreview ? (
-                    <div className="relative mx-auto h-[420px] w-[210px] overflow-hidden rounded-sm border border-white/10 bg-[#0f1117]">
-                      <div ref={threePreviewContainerReference} className="h-full w-full" />
+                    <div
+                      className={
+                        isThreePreviewExpanded
+                          ? 'fixed inset-0 z-[100] flex flex-col items-center justify-center gap-3 bg-black/95 p-4'
+                          : 'relative mx-auto h-[420px] w-[210px] overflow-hidden rounded-sm border border-white/10 bg-[#0f1117]'
+                      }
+                    >
+                      {isThreePreviewExpanded ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsThreePreviewExpanded(false)}
+                          className="absolute right-4 top-4 z-20 inline-flex h-9 items-center justify-center rounded-md border border-white/35 bg-white/95 px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#1d1d1d]"
+                          aria-label="Exit full view"
+                        >
+                          Exit full view
+                        </button>
+                      ) : null}
+                      {!isThreePreviewLoading && !threePreviewErrorMessage ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsThreePreviewExpanded((previousExpanded) => !previousExpanded)}
+                          className="absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-md border border-white/25 bg-black/55 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-white/90 backdrop-blur-sm hover:bg-black/70"
+                          aria-label={isThreePreviewExpanded ? 'Smaller preview' : 'Full screen 3D preview'}
+                        >
+                          {isThreePreviewExpanded ? 'Smaller' : 'Full view'}
+                        </button>
+                      ) : null}
+                      <div
+                        ref={previewContainerRef}
+                        className={
+                          isThreePreviewExpanded
+                            ? 'relative z-0 min-h-[280px] h-[min(85vh,900px)] w-full max-w-5xl'
+                            : 'relative z-0 min-h-0 h-full w-full'
+                        }
+                      />
                       {isThreePreviewLoading ? (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/45 px-3 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-white/85">
-                          Loading 3D preview...
+                          Loading 3D preview
+                          {threePreviewLoadProgress !== null ? `… ${threePreviewLoadProgress}%` : '…'}
                         </div>
                       ) : null}
                       {threePreviewErrorMessage ? (
@@ -594,6 +709,11 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                   ) : (
                     <CharacterPreviewVisual previewImageUrl={activePreviewImageUrl} characterName={characterRecord.name} />
                   )}
+                  {canUseCharacterActions && !characterRecord.vroidFileUrl ? (
+                    <p className="mt-2 text-center text-[10px] text-white/45">
+                      3D preview needs a VRM on this character. Add a VRM URL or upload a file in Edit / Upload VRM, then refresh this page.
+                    </p>
+                  ) : null}
                 </div>
 
                 {screenshotImageList.length > 1 ? (
@@ -604,6 +724,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                         type="button"
                         onClick={() => {
                           setIsThreePreviewOpen(false)
+                          setIsThreePreviewExpanded(false)
                           setActiveScreenshotIndex(index)
                         }}
                         className={`relative h-16 w-14 overflow-hidden rounded border ${

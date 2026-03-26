@@ -1,3 +1,5 @@
+import type { UserRole } from '@prisma/client'
+
 const parseDuration = (value: string | undefined, fallbackValue: number) => {
   const parsed = Number.parseInt(value ?? '', 10)
 
@@ -26,6 +28,12 @@ const parseBoolean = (value: string | undefined, fallbackValue: boolean) => {
   return fallbackValue
 }
 
+/** When true, session + API expose every user as ADMIN (DB rows unchanged). Default: on outside production. */
+const forceAllUsersAdminForTesting = parseBoolean(
+  process.env.FORCE_ALL_USERS_ADMIN,
+  process.env.NODE_ENV !== 'production'
+)
+
 const backendPublicUrl = process.env.BACKEND_PUBLIC_URL?.trim() || 'http://127.0.0.1:4000'
 const frontendPublicUrl = process.env.FRONTEND_URL?.trim() || 'http://127.0.0.1:5000'
 
@@ -51,4 +59,8 @@ const emailConfig = {
 
 const getIsSecureCookie = () => process.env.NODE_ENV === 'production'
 
-export { authConfig, emailConfig, getIsSecureCookie }
+const getEffectiveUserRoleForTesting = (role: UserRole): UserRole => {
+  return forceAllUsersAdminForTesting ? 'ADMIN' : role
+}
+
+export { authConfig, emailConfig, forceAllUsersAdminForTesting, getEffectiveUserRoleForTesting, getIsSecureCookie }

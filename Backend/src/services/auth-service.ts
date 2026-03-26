@@ -1,6 +1,6 @@
 import type { UserRole } from '@prisma/client'
 import type { Request } from 'express'
-import { authConfig } from '../lib/auth-config'
+import { authConfig, getEffectiveUserRoleForTesting } from '../lib/auth-config'
 import { prisma } from '../lib/prisma'
 import { generateOpaqueSessionToken, hashOpaqueSessionToken } from '../lib/session-token'
 
@@ -91,7 +91,7 @@ const resolveAuthenticatedSessionUser = async (rawSessionToken: string): Promise
   return {
     userId: existingSession.userId,
     email: existingSession.user.email,
-    role: existingSession.user.role,
+    role: getEffectiveUserRoleForTesting(existingSession.user.role),
     isEmailVerified: existingSession.user.isEmailVerified,
     sessionId: existingSession.id
   }

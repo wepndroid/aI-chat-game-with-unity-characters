@@ -1,18 +1,23 @@
 import AdminOfficialVrmStatusPill, { type AdminOfficialVrmStatus } from '@/components/ui-elements/admin-official-vrm-status-pill'
+import Link from 'next/link'
 
 type AdminOfficialVrmRecord = {
   id: string
+  slug: string
   code: string
   name: string
   tagline: string
   hearts: string
-  chats: string
+  views: string
   status: AdminOfficialVrmStatus
   releaseDate: string
+  previewImageUrl: string | null
 }
 
 type AdminOfficialVrmRowProps = {
   vrmRecord: AdminOfficialVrmRecord
+  isBusy?: boolean
+  onArchive?: (characterId: string) => void
 }
 
 const HeartIcon = () => {
@@ -64,14 +69,22 @@ const TrashIcon = () => {
   )
 }
 
-const AdminOfficialVrmRow = ({ vrmRecord }: AdminOfficialVrmRowProps) => {
+const AdminOfficialVrmRow = ({ vrmRecord, isBusy = false, onArchive }: AdminOfficialVrmRowProps) => {
   return (
     <tr className="border-t border-white/10">
       <td className="px-4 py-4 align-middle">
         <div className="inline-flex items-center gap-3">
-          <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-md border border-ember-400/30 bg-gradient-to-br from-ember-300 to-ember-500 text-white" aria-hidden="true">
-            <StarIcon />
-          </span>
+          {vrmRecord.previewImageUrl ? (
+            <img
+              src={vrmRecord.previewImageUrl}
+              alt=""
+              className="size-10 shrink-0 rounded-md border border-white/10 object-cover"
+            />
+          ) : (
+            <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-md border border-ember-400/30 bg-gradient-to-br from-ember-300 to-ember-500 text-white" aria-hidden="true">
+              <StarIcon />
+            </span>
+          )}
           <div>
             <p className="font-[family-name:var(--font-heading)] text-[17px] font-normal leading-none text-white">{vrmRecord.name}</p>
             <p className="mt-1 text-sm text-[#6f809d]">{vrmRecord.code}</p>
@@ -91,9 +104,9 @@ const AdminOfficialVrmRow = ({ vrmRecord }: AdminOfficialVrmRowProps) => {
             <HeartIcon />
             {vrmRecord.hearts}
           </span>
-          <span className="inline-flex items-center gap-1 text-xs font-normal text-[#a8b6d0]">
+          <span className="inline-flex items-center gap-1 text-xs font-normal text-[#a8b6d0]" title="Views">
             <ChatIcon />
-            {vrmRecord.chats}
+            {vrmRecord.views}
           </span>
         </div>
       </td>
@@ -106,27 +119,31 @@ const AdminOfficialVrmRow = ({ vrmRecord }: AdminOfficialVrmRowProps) => {
 
       <td className="px-4 py-4 align-middle">
         <div className="inline-flex items-center gap-2">
-          <button
-            type="button"
+          <Link
+            href={`/upload-vrm?edit=${encodeURIComponent(vrmRecord.id)}`}
             className="inline-flex size-8 items-center justify-center rounded-md border border-transparent text-[#8c99b0] transition hover:border-white/15 hover:bg-white/5 hover:text-white"
             aria-label={`Edit ${vrmRecord.name}`}
           >
             <EditIcon />
-          </button>
-          <button
-            type="button"
+          </Link>
+          <Link
+            href={`/characters/${encodeURIComponent(vrmRecord.slug)}`}
             className="inline-flex size-8 items-center justify-center rounded-md border border-transparent text-[#8c99b0] transition hover:border-white/15 hover:bg-white/5 hover:text-white"
-            aria-label={`Preview ${vrmRecord.name}`}
+            aria-label={`Open gallery page for ${vrmRecord.name}`}
           >
             <EyeIcon />
-          </button>
-          <button
-            type="button"
-            className="inline-flex size-8 items-center justify-center rounded-md border border-transparent text-[#8c99b0] transition hover:border-rose-500/35 hover:bg-rose-500/10 hover:text-rose-300"
-            aria-label={`Delete ${vrmRecord.name}`}
-          >
-            <TrashIcon />
-          </button>
+          </Link>
+          {onArchive ? (
+            <button
+              type="button"
+              onClick={() => onArchive(vrmRecord.id)}
+              disabled={isBusy}
+              className="inline-flex size-8 items-center justify-center rounded-md border border-transparent text-[#8c99b0] transition hover:border-rose-500/35 hover:bg-rose-500/10 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label={`Archive ${vrmRecord.name}`}
+            >
+              <TrashIcon />
+            </button>
+          ) : null}
         </div>
       </td>
     </tr>

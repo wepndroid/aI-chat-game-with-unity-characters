@@ -4,6 +4,7 @@ import AdminPageShell from '@/components/shared/admin-page-shell'
 import AdminActivityItem from '@/components/ui-elements/admin-activity-item'
 import AdminKpiCard from '@/components/ui-elements/admin-kpi-card'
 import AdminReviewQueueItem from '@/components/ui-elements/admin-review-queue-item'
+import { getDescriptionKeywordFlagCount } from '@/lib/admin-review-description'
 import { apiGet } from '@/lib/api-client'
 import { listAdminReviewQueue, type AdminReviewQueueRecord } from '@/lib/character-api'
 import Link from 'next/link'
@@ -29,6 +30,7 @@ type DashboardOverviewPayload = {
       id: string
       slug: string
       name: string
+      previewImageUrl: string | null
       viewsCount: number
       heartsCount: number
       minimumTierCents: number | null
@@ -85,40 +87,78 @@ const deploymentStatusClassNameMap: Record<'ready' | 'pending' | 'warning', stri
   warning: 'border-rose-500/35 bg-rose-500/15 text-rose-200'
 }
 
-const UserIcon = () => {
+/** DAU / active users — group of users (reads clearly at small sizes). */
+const ActiveUsersIcon = () => {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
-      <path d="M16.8 19.4v-1.3c0-2-1.9-3.7-4.3-3.7h-3c-2.4 0-4.3 1.7-4.3 3.7v1.3" strokeLinecap="round" />
-      <circle cx="11" cy="8" r="3.3" />
-      <path d="M18.3 8.8c1.6.3 2.8 1.6 2.8 3.2M20.4 16.8v1" strokeLinecap="round" />
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="size-full"
+      aria-hidden="true"
+    >
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
     </svg>
   )
 }
 
-const ViewIcon = () => {
+/** Total views — eye + pupil. */
+const ViewsIcon = () => {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
-      <path d="M2.7 12s3.5-6 9.3-6 9.3 6 9.3 6-3.5 6-9.3 6-9.3-6-9.3-6Z" />
-      <circle cx="12" cy="12" r="2.2" />
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="size-full"
+      aria-hidden="true"
+    >
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
   )
 }
 
-const ReviewIcon = () => {
+/** Written reviews — star (distinct from “views” and “hearts”). */
+const ReviewsStarIcon = () => {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
-      <path d="M8.7 3.7H6.3c-1.1 0-2 .9-2 2v12.7c0 1.1.9 2 2 2h9.8c1.1 0 2-.9 2-2v-2.2" />
-      <path d="M9 8.2h5.7M9 12h5.2" strokeLinecap="round" />
-      <path d="M14.7 5.7l3.7 3.7-3.9 3.9-3.5.3.3-3.5 3.4-4.4Z" strokeLinejoin="round" />
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="size-full"
+      aria-hidden="true"
+    >
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
     </svg>
   )
 }
 
-const PatreonIcon = () => {
+/** Active patrons / paid supporters — currency in circle (not ambiguous shapes). */
+const PatronSupportIcon = () => {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
-      <circle cx="8" cy="8" r="4.5" />
-      <path d="M16 3.5h4.5v17H16z" />
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="size-full"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H6M12 18V6" />
     </svg>
   )
 }
@@ -189,7 +229,7 @@ const DashboardPage = () => {
         value: formatCompactNumber(overview.dau7d),
         helperText: `30d active: ${formatCompactNumber(overview.dau30d)}`,
         tone: 'blue',
-        icon: <UserIcon />
+        icon: <ActiveUsersIcon />
       },
       {
         id: 'views',
@@ -197,7 +237,7 @@ const DashboardPage = () => {
         value: formatCompactNumber(overview.totalViews),
         helperText: `Hearts: ${formatCompactNumber(overview.totalHearts)}`,
         tone: 'purple',
-        icon: <ViewIcon />
+        icon: <ViewsIcon />
       },
       {
         id: 'reviews',
@@ -205,7 +245,7 @@ const DashboardPage = () => {
         value: formatCompactNumber(overview.totalReviews),
         helperText: `${formatCompactNumber(overview.approvedCharacters)} public characters`,
         tone: 'orange',
-        icon: <ReviewIcon />
+        icon: <ReviewsStarIcon />
       },
       {
         id: 'patrons',
@@ -213,7 +253,7 @@ const DashboardPage = () => {
         value: formatCompactNumber(overview.activePatrons),
         helperText: `Linked users: ${formatCompactNumber(overview.patreonLinkedUsers)}`,
         tone: 'green',
-        icon: <PatreonIcon />
+        icon: <PatronSupportIcon />
       }
     ]
   }, [overview])
@@ -281,7 +321,8 @@ const DashboardPage = () => {
                 key={queueItem.id}
                 characterName={queueItem.name}
                 creatorName={queueItem.owner.username}
-                flagCount={queueItem.description?.toLowerCase().includes('nsfw') ? 1 : undefined}
+                previewImageUrl={queueItem.previewImageUrl}
+                flagCount={getDescriptionKeywordFlagCount(queueItem.description)}
               />
             ))}
           </div>
@@ -294,12 +335,29 @@ const DashboardPage = () => {
           <div className="mt-4 space-y-3">
             {topCharacters.length === 0 ? <p className="text-sm text-white/70">No character analytics available yet.</p> : null}
             {topCharacters.map((characterItem) => (
-              <div key={characterItem.id} className="rounded-md border border-white/10 bg-black/20 px-3 py-2">
-                <p className="text-sm text-white">{characterItem.name}</p>
-                <p className="mt-1 text-xs text-white/65">
-                  Views {formatCompactNumber(characterItem.viewsCount)} | Hearts {formatCompactNumber(characterItem.heartsCount)}
-                </p>
-              </div>
+              <Link
+                key={characterItem.id}
+                href={`/characters/${encodeURIComponent(characterItem.slug)}`}
+                className="flex items-center gap-3 rounded-md border border-white/10 bg-black/20 px-3 py-2 transition hover:border-white/20 hover:bg-black/30"
+              >
+                {characterItem.previewImageUrl ? (
+                  <img
+                    src={characterItem.previewImageUrl}
+                    alt=""
+                    className="size-12 shrink-0 rounded-md border border-white/10 object-cover"
+                  />
+                ) : (
+                  <div className="flex size-12 shrink-0 items-center justify-center rounded-md border border-white/10 bg-[#1a1f28] text-[10px] text-[#4a5a72]">
+                    —
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="text-sm text-white">{characterItem.name}</p>
+                  <p className="mt-1 text-xs text-white/65">
+                    Views {formatCompactNumber(characterItem.viewsCount)} | Hearts {formatCompactNumber(characterItem.heartsCount)}
+                  </p>
+                </div>
+              </Link>
             ))}
           </div>
         </section>
@@ -310,12 +368,15 @@ const DashboardPage = () => {
             Linked users: {overview ? formatCompactNumber(overview.pledgeTrends.linkedUsers) : '0'} | Active patrons:{' '}
             {overview ? formatCompactNumber(overview.pledgeTrends.activePatrons) : '0'}
           </p>
+          <p className="mt-1 text-xs text-white/45">Tier amounts use Patreon tier cents; display is in major units (currency follows your campaign).</p>
 
           <div className="mt-4 space-y-3">
             {tierDistribution.length === 0 ? <p className="text-sm text-white/70">No Patreon tier distribution data yet.</p> : null}
             {tierDistribution.map((tier) => (
               <div key={tier.tierCents} className="rounded-md border border-white/10 bg-black/20 px-3 py-2">
-                <p className="text-sm text-white">EUR {(tier.tierCents / 100).toFixed(2)} tier</p>
+                <p className="text-sm text-white">
+                  {(tier.tierCents / 100).toFixed(2)} / month tier
+                </p>
                 <p className="mt-1 text-xs text-white/65">{tier.users} linked users</p>
               </div>
             ))}
@@ -330,6 +391,7 @@ const DashboardPage = () => {
             Full Checks
           </Link>
         </div>
+        <p className="mt-2 text-xs text-white/45">Showing a subset of checks here; open Global Settings for the full list.</p>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {deploymentCheckPreview.length === 0 ? <p className="text-sm text-white/70">No deployment checks available yet.</p> : null}

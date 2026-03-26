@@ -1,8 +1,8 @@
 import { CharacterStatus, CharacterVisibility, type Prisma } from '@prisma/client'
-import { isIP } from 'node:net'
 import type { Request } from 'express'
 import { Router } from 'express'
 import { z } from 'zod'
+import { assertSafeCharacterAssetUrls } from '../lib/character-asset-url'
 import { optionalAuth, requireAdmin, requireAuth, requireVerifiedEmail } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
 import { buildUniqueSlug } from '../lib/slug'
@@ -90,87 +90,6 @@ const characterParamsSchema = z.object({
 const reviewQueueQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50)
 })
-
-const isSafeExternalUrl = (rawUrl: string) => {
-  try {
-    const parsed = new URL(rawUrl)
-
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return false
-    }
-
-    const hostname = parsed.hostname.toLowerCase()
-
-    if (!hostname || hostname === 'localhost' || hostname.endsWith('.localhost')) {
-      return false
-    }
-
-    if (parsed.username || parsed.password) {
-      return false
-    }
-
-    const ipType = isIP(hostname)
-
-    if (ipType === 4) {
-      const [firstOctet, secondOctet] = hostname.split('.').map((segment) => Number.parseInt(segment, 10))
-
-      if (
-        Number.isNaN(firstOctet) ||
-        Number.isNaN(secondOctet) ||
-        firstOctet === 10 ||
-        firstOctet === 127 ||
-        firstOctet === 0 ||
-        (firstOctet === 169 && secondOctet === 254) ||
-        (firstOctet === 172 && secondOctet >= 16 && secondOctet <= 31) ||
-        (firstOctet === 192 && secondOctet === 168)
-      ) {
-        return false
-      }
-    }
-
-    if (ipType === 6) {
-      if (hostname === '::1' || hostname.startsWith('fc') || hostname.startsWith('fd') || hostname.startsWith('fe80:')) {
-        return false
-      }
-    }
-
-    return true
-  } catch {
-    return false
-  }
-}
-
-const assertSafeAssetUrl = (rawUrl: string | null | undefined, fieldLabel: string, allowedExtensions: string[]) => {
-  if (!rawUrl) {
-    return
-  }
-
-  const normalizedUrl = rawUrl.trim()
-
-  if (!isSafeExternalUrl(normalizedUrl)) {
-    throw new Error(`${fieldLabel} must be a safe public http(s) URL.`)
-  }
-
-  const parsedUrl = new URL(normalizedUrl)
-  const normalizedPath = parsedUrl.pathname.toLowerCase()
-
-  if (!allowedExtensions.some((extension) => normalizedPath.endsWith(extension))) {
-    throw new Error(`${fieldLabel} must use one of: ${allowedExtensions.join(', ')}`)
-  }
-}
-
-const assertSafeCharacterAssetUrls = (payload: {
-  vroidFileUrl?: string | null
-  previewImageUrl?: string | null
-  screenshotUrls?: string[]
-}) => {
-  assertSafeAssetUrl(payload.vroidFileUrl, 'VRM file URL', ['.vrm'])
-  assertSafeAssetUrl(payload.previewImageUrl, 'Preview image URL', ['.png', '.jpg', '.jpeg', '.webp', '.gif'])
-
-  for (const screenshotUrl of payload.screenshotUrls ?? []) {
-    assertSafeAssetUrl(screenshotUrl, 'Screenshot URL', ['.png', '.jpg', '.jpeg', '.webp', '.gif'])
-  }
-}
 
 const normalizeScreenshotUrls = (screenshotUrlList: string[] | undefined) => {
   if (!screenshotUrlList) {

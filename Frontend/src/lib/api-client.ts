@@ -88,6 +88,28 @@ const apiPost = async <T>(path: string, body?: unknown) => {
   }
 }
 
+const apiPostFormData = async <T>(path: string, formData: FormData, timeoutMs = 120000) => {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => {
+    controller.abort()
+  }, timeoutMs)
+
+  try {
+    const response = await fetch(buildApiUrl(path), {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+      signal: controller.signal
+    })
+
+    return parseApiResponse<T>(response)
+  } catch (error) {
+    throw new Error(toNetworkErrorMessage(error))
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
 const apiPatch = async <T>(path: string, body?: unknown) => {
   const requestSignal = createRequestSignal()
 
@@ -128,4 +150,4 @@ const apiDelete = async <T>(path: string) => {
   }
 }
 
-export { apiDelete, apiGet, apiPatch, apiPost, buildApiUrl, getApiBaseUrl }
+export { apiDelete, apiGet, apiPatch, apiPost, apiPostFormData, buildApiUrl, getApiBaseUrl }

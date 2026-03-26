@@ -1,11 +1,11 @@
-import { apiGet, apiPatch, apiPost } from '@/lib/api-client'
+import { apiGet, apiPatch, apiPost, apiPostFormData } from '@/lib/api-client'
 
 type CharacterListRecord = {
   id: string
   slug: string
   name: string
   tagline: string | null
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'
+  status: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'
   visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED'
   officialListing: boolean
   isPatreonGated: boolean
@@ -213,6 +213,13 @@ type ToggleCharacterHeartResponse = {
   }
 }
 
+type CharacterAssetUploadResponse = {
+  data: {
+    vroidFileUrl?: string
+    previewImageUrl?: string
+  }
+}
+
 type GalleryScope = 'all' | 'curated' | 'community' | 'mine'
 type GallerySort = 'name' | 'hearts' | 'views' | 'newest'
 
@@ -273,6 +280,10 @@ const toggleCharacterHeart = async (characterIdOrSlug: string) => {
   return apiPost<ToggleCharacterHeartResponse>(`/characters/${encodeURIComponent(normalizedCharacterId)}/heart/toggle`, {})
 }
 
+const uploadCharacterAssets = async (formData: FormData) => {
+  return apiPostFormData<CharacterAssetUploadResponse>('/characters/assets/upload', formData)
+}
+
 const listAdminReviewQueue = async () => {
   return apiGet<AdminReviewQueueResponse>('/admin/characters/review-queue?limit=100')
 }
@@ -301,9 +312,11 @@ export {
   toggleCharacterHeart,
   updateCharacter,
   updateCharacterStatus,
-  updateCharacterVisibility
+  updateCharacterVisibility,
+  uploadCharacterAssets
 }
 export type {
+  CharacterAssetUploadResponse,
   AdminReviewQueueRecord,
   CharacterDetailRecord,
   CharacterListRecord,

@@ -1,4 +1,5 @@
 import type { CharacterStatus, CharacterVisibility, Prisma, UserRole } from '@prisma/client'
+import { getEffectiveUserRoleForTesting } from '../lib/auth-config'
 import { prisma } from '../lib/prisma'
 
 class ReviewVerificationError extends Error {
@@ -111,7 +112,10 @@ const getReviewActorOrThrow = async (userId: string): Promise<ReviewActor> => {
     throw new ReviewVerificationError(401, 'Session user was not found.')
   }
 
-  return actor
+  return {
+    ...actor,
+    role: getEffectiveUserRoleForTesting(actor.role)
+  }
 }
 
 const getCharacterForReviewOrThrow = async (characterIdOrSlug: string): Promise<ReviewCharacter> => {
