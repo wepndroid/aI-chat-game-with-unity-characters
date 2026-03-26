@@ -115,7 +115,7 @@ const featureList: MarketingFeatureItem[] = [
   {
     id: 'feature-gallery',
     title: 'Community Character Gallery',
-    description: 'Browse official and community VRoid characters with ratings, hearts, and review discussions.'
+    description: 'Browse curated and community VRoid characters with hearts and written reviews.'
   },
   {
     id: 'feature-dashboard',

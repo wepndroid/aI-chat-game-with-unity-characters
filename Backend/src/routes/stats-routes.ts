@@ -205,7 +205,6 @@ statsRoutes.get('/stats/overview', requireAdmin, async (_request, response, next
       patreonLinkedUsers,
       activePatrons,
       totalViewsResult,
-      averageRatingResult,
       dau7dRecords,
       dau30dRecords
     ] = await prisma.$transaction([
@@ -240,11 +239,6 @@ statsRoutes.get('/stats/overview', requireAdmin, async (_request, response, next
           viewsCount: true
         }
       }),
-      prisma.character.aggregate({
-        _avg: {
-          averageRating: true
-        }
-      }),
       prisma.session.findMany({
         where: {
           revokedAt: null,
@@ -277,14 +271,13 @@ statsRoutes.get('/stats/overview', requireAdmin, async (_request, response, next
         visibility: 'PUBLIC'
       },
       take: 8,
-      orderBy: [{ viewsCount: 'desc' }, { heartsCount: 'desc' }, { averageRating: 'desc' }],
+      orderBy: [{ viewsCount: 'desc' }, { heartsCount: 'desc' }],
       select: {
         id: true,
         slug: true,
         name: true,
         viewsCount: true,
         heartsCount: true,
-        averageRating: true,
         minimumTierCents: true,
         isPatreonGated: true
       }
@@ -327,7 +320,6 @@ statsRoutes.get('/stats/overview', requireAdmin, async (_request, response, next
         totalReviews,
         totalHearts: totalHeartsResult._sum.heartsCount ?? 0,
         totalViews: totalViewsResult._sum.viewsCount ?? 0,
-        averageRating: Number((averageRatingResult._avg.averageRating ?? 0).toFixed(2)),
         patreonLinkedUsers,
         activePatrons,
         dau7d: dau7dRecords.length,

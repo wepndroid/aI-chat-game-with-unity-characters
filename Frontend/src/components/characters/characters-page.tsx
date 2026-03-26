@@ -5,26 +5,26 @@ import CharacterGalleryCard from '@/components/ui-elements/character-gallery-car
 import FilterTab from '@/components/ui-elements/filter-tab'
 import PaginationControls from '@/components/ui-elements/pagination-controls'
 import SearchField from '@/components/ui-elements/search-field'
-import { listCharacters, type CharacterListRecord } from '@/lib/character-api'
+import { listCharacters, type CharacterListRecord, type GallerySort } from '@/lib/character-api'
 import { apiGet } from '@/lib/api-client'
 import { resolveAvailableTierCents, type PatreonStatusSnapshot } from '@/lib/patreon-access'
 import { useEffect, useMemo, useState } from 'react'
 
-type CharacterCategory = 'official' | 'community' | 'your-characters'
-type CharacterSortOption = 'newest' | 'most-hearted' | 'top-rated' | 'most-viewed' | 'name-az'
+type CharacterCategory = 'curated' | 'community' | 'your-characters'
 
 const categoryTabs: Array<{ key: CharacterCategory; label: string }> = [
-  { key: 'official', label: 'Official' },
+  { key: 'curated', label: 'Curated' },
   { key: 'community', label: 'Community' },
   { key: 'your-characters', label: 'Your Characters' }
 ]
 
-const sortOptions: Array<{ value: CharacterSortOption; label: string }> = [
-  { value: 'newest', label: 'Newest' },
-  { value: 'most-hearted', label: 'Most Hearted' },
-  { value: 'top-rated', label: 'Top Rated' },
-  { value: 'most-viewed', label: 'Most Viewed' },
-  { value: 'name-az', label: 'Name A-Z' }
+type CharacterSortOption = 'newest' | 'most-hearted' | 'most-viewed' | 'name-az'
+
+const sortOptions: Array<{ value: CharacterSortOption; label: string; apiSort: GallerySort }> = [
+  { value: 'newest', label: 'Newest', apiSort: 'newest' },
+  { value: 'most-hearted', label: 'Most Hearted', apiSort: 'hearts' },
+  { value: 'most-viewed', label: 'Most Viewed', apiSort: 'views' },
+  { value: 'name-az', label: 'Name A-Z', apiSort: 'name' }
 ]
 
 const defaultGradientVariants = [
@@ -33,8 +33,6 @@ const defaultGradientVariants = [
   'from-[#29252f] via-[#1d1e2f] to-[#11111b]',
   'from-[#332936] via-[#2a2030] to-[#150f18]'
 ]
-
-const officialOwnerUsernameSet = new Set(['adminsenpai', 'secretwaifu', 'squirclegames', 'squircle'])
 
 const formatCompactNumber = (value: number) => {
   if (!Number.isFinite(value)) {
@@ -45,20 +43,6 @@ const formatCompactNumber = (value: number) => {
     notation: 'compact',
     maximumFractionDigits: 1
   }).format(value)
-}
-
-const resolveCharacterCategory = (characterRecord: CharacterListRecord, sessionUserId: string | null): CharacterCategory => {
-  if (sessionUserId && characterRecord.owner.id === sessionUserId) {
-    return 'your-characters'
-  }
-
-  const normalizedOwnerUsername = characterRecord.owner.username.trim().toLowerCase()
-
-  if (officialOwnerUsernameSet.has(normalizedOwnerUsername)) {
-    return 'official'
-  }
-
-  return 'community'
 }
 
 const resolveCharacterGatedAccess = (
@@ -85,7 +69,7 @@ const resolveCharacterGatedAccess = (
 const CharactersPage = () => {
   const { sessionUser, isAuthLoading } = useAuth()
   const sessionUserId = sessionUser?.id ?? null
-  const [activeCategory, setActiveCategory] = useState<CharacterCategory>('official')
+  const [activeCategory, setActiveCategory] = useState<CharacterCategory>('curated')
   const [activeSortOption, setActiveSortOption] = useState<CharacterSortOption>('newest')
   const [searchValue, setSearchValue] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
@@ -95,8 +79,19 @@ const CharactersPage = () => {
   const [characterList, setCharacterList] = useState<CharacterListRecord[]>([])
   const [patreonStatusSnapshot, setPatreonStatusSnapshot] = useState<PatreonStatusSnapshot | null>(null)
 
+  const resolvedApiSort = useMemo(() => {
+    return sortOptions.find((option) => option.value === activeSortOption)?.apiSort ?? 'newest'
+  }, [activeSortOption])
+
   useEffect(() => {
     if (isAuthLoading) {
+      return
+    }
+
+    if (activeCategory === 'your-characters' && !sessionUserId) {
+      setCharacterList([])
+      setCharactersErrorMessage('Sign in to view your characters.')
+      setIsCharactersLoading(false)
       return
     }
 
@@ -111,7 +106,13 @@ const CharactersPage = () => {
       setCharactersErrorMessage(null)
 
       try {
-        const payload = await listCharacters()
+        const galleryScope = activeCategory === 'curated' ? 'curated' : activeCategory === 'community' ? 'community' : 'mine'
+
+        const payload = await listCharacters({
+          search: searchValue,
+          galleryScope,
+          sort: resolvedApiSort
+        })
 
         if (isCancelled) {
           return
@@ -131,12 +132,12 @@ const CharactersPage = () => {
           setIsCharactersLoading(false)
         }
       }
-      })
+    })
 
     return () => {
       isCancelled = true
     }
-  }, [isAuthLoading, sessionUserId])
+  }, [isAuthLoading, sessionUserId, activeCategory, resolvedApiSort, searchValue])
 
   useEffect(() => {
     if (isAuthLoading) {
@@ -209,47 +210,7 @@ const CharactersPage = () => {
     setCurrentPage(1)
   }
 
-  const filteredAndSortedCharacters = useMemo(() => {
-    const normalizedSearchValue = searchValue.trim().toLowerCase()
-    const filteredCharacters = characterList.filter((characterItem) => {
-      const category = resolveCharacterCategory(characterItem, sessionUserId)
-
-      if (category !== activeCategory) {
-        return false
-      }
-
-      if (normalizedSearchValue.length === 0) {
-        return true
-      }
-
-      return (
-        characterItem.name.toLowerCase().includes(normalizedSearchValue) ||
-        (characterItem.tagline ?? '').toLowerCase().includes(normalizedSearchValue)
-      )
-    })
-
-    return [...filteredCharacters].sort((firstCharacter, secondCharacter) => {
-      if (activeSortOption === 'most-hearted') {
-        return secondCharacter.heartsCount - firstCharacter.heartsCount
-      }
-
-      if (activeSortOption === 'top-rated') {
-        return secondCharacter.averageRating - firstCharacter.averageRating
-      }
-
-      if (activeSortOption === 'most-viewed') {
-        return secondCharacter.viewsCount - firstCharacter.viewsCount
-      }
-
-      if (activeSortOption === 'name-az') {
-        return firstCharacter.name.localeCompare(secondCharacter.name)
-      }
-
-      const firstCreatedAtMs = Date.parse(firstCharacter.createdAt)
-      const secondCreatedAtMs = Date.parse(secondCharacter.createdAt)
-      return secondCreatedAtMs - firstCreatedAtMs
-    })
-  }, [activeCategory, activeSortOption, characterList, searchValue, sessionUserId])
+  const filteredAndSortedCharacters = characterList
 
   const itemsPerPage = 12
   const totalPages = Math.max(1, Math.ceil(filteredAndSortedCharacters.length / itemsPerPage))

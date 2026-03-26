@@ -6,10 +6,9 @@ import { prisma } from '../lib/prisma'
 import {
   ReviewVerificationError,
   assertReviewOwnerOrAdmin,
-  assertReviewRatingEligibility,
+  assertReviewEligibility,
   getCharacterForReviewOrThrow,
-  getReviewActorOrThrow,
-  recalculateCharacterAverageRating
+  getReviewActorOrThrow
 } from '../services/review-service'
 
 const reviewRoutes = Router()
@@ -27,18 +26,12 @@ const listReviewsQuerySchema = z.object({
 })
 
 const createReviewSchema = z.object({
-  rating: z.number().int().min(1).max(5),
   body: z.string().trim().min(3).max(2000)
 })
 
-const updateReviewSchema = z
-  .object({
-    rating: z.number().int().min(1).max(5).optional(),
-    body: z.string().trim().min(3).max(2000).optional()
-  })
-  .refine((payload) => payload.rating !== undefined || payload.body !== undefined, {
-    message: 'At least one field (rating or body) must be provided.'
-  })
+const updateReviewSchema = z.object({
+  body: z.string().trim().min(3).max(2000)
+})
 
 reviewRoutes.get('/characters/:characterId/reviews', async (request, response, next) => {
   try {
@@ -56,7 +49,7 @@ reviewRoutes.get('/characters/:characterId/reviews', async (request, response, n
 
     const reviews = await prisma.review.findMany({
       where: {
-        characterId
+        characterId: character.id
       },
       take: query.limit,
       orderBy: {
@@ -64,7 +57,6 @@ reviewRoutes.get('/characters/:characterId/reviews', async (request, response, n
       },
       select: {
         id: true,
-        rating: true,
         body: true,
         createdAt: true,
         updatedAt: true,
@@ -106,36 +98,28 @@ reviewRoutes.post('/characters/:characterId/reviews', requireAuth, async (reques
     const { characterId } = characterParamsSchema.parse(request.params)
     const payload = createReviewSchema.parse(request.body)
 
-    await assertReviewRatingEligibility(authUser.userId, characterId)
+    const character = await getCharacterForReviewOrThrow(characterId)
+    await assertReviewEligibility(authUser.userId, character.id)
 
-    const transactionResult = await prisma.$transaction(async (transactionClient) => {
-      const createdReview = await transactionClient.review.create({
-        data: {
-          userId: authUser.userId,
-          characterId,
-          rating: payload.rating,
-          body: payload.body
-        },
-        select: {
-          id: true,
-          rating: true,
-          body: true,
-          characterId: true,
-          createdAt: true,
-          updatedAt: true
-        }
-      })
-
-      const averageRating = await recalculateCharacterAverageRating(transactionClient, characterId)
-
-      return {
-        review: createdReview,
-        averageRating
+    const createdReview = await prisma.review.create({
+      data: {
+        userId: authUser.userId,
+        characterId: character.id,
+        body: payload.body
+      },
+      select: {
+        id: true,
+        body: true,
+        characterId: true,
+        createdAt: true,
+        updatedAt: true
       }
     })
 
     response.status(201).json({
-      data: transactionResult
+      data: {
+        review: createdReview
+      }
     })
   } catch (error) {
     if (error instanceof ReviewVerificationError) {
@@ -193,38 +177,29 @@ reviewRoutes.patch('/reviews/:reviewId', requireAuth, async (request, response, 
     assertReviewOwnerOrAdmin(existingReview.userId, actor.id, actor.role)
 
     if (actor.role !== 'ADMIN') {
-      await assertReviewRatingEligibility(actor.id, existingReview.characterId)
+      await assertReviewEligibility(actor.id, existingReview.characterId)
     }
 
-    const transactionResult = await prisma.$transaction(async (transactionClient) => {
-      const updatedReview = await transactionClient.review.update({
-        where: {
-          id: reviewId
-        },
-        data: {
-          ...(payload.rating !== undefined ? { rating: payload.rating } : {}),
-          ...(payload.body !== undefined ? { body: payload.body } : {})
-        },
-        select: {
-          id: true,
-          rating: true,
-          body: true,
-          characterId: true,
-          createdAt: true,
-          updatedAt: true
-        }
-      })
-
-      const averageRating = await recalculateCharacterAverageRating(transactionClient, existingReview.characterId)
-
-      return {
-        review: updatedReview,
-        averageRating
+    const updatedReview = await prisma.review.update({
+      where: {
+        id: reviewId
+      },
+      data: {
+        body: payload.body
+      },
+      select: {
+        id: true,
+        body: true,
+        characterId: true,
+        createdAt: true,
+        updatedAt: true
       }
     })
 
     response.json({
-      data: transactionResult
+      data: {
+        review: updatedReview
+      }
     })
   } catch (error) {
     if (error instanceof ReviewVerificationError) {
@@ -272,24 +247,17 @@ reviewRoutes.delete('/reviews/:reviewId', requireAuth, async (request, response,
 
     assertReviewOwnerOrAdmin(existingReview.userId, actor.id, actor.role)
 
-    const transactionResult = await prisma.$transaction(async (transactionClient) => {
-      await transactionClient.review.delete({
-        where: {
-          id: reviewId
-        }
-      })
-
-      const averageRating = await recalculateCharacterAverageRating(transactionClient, existingReview.characterId)
-
-      return {
-        deleted: true,
-        characterId: existingReview.characterId,
-        averageRating
+    await prisma.review.delete({
+      where: {
+        id: reviewId
       }
     })
 
     response.json({
-      data: transactionResult
+      data: {
+        deleted: true,
+        characterId: existingReview.characterId
+      }
     })
   } catch (error) {
     if (error instanceof ReviewVerificationError) {

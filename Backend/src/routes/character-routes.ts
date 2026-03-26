@@ -1,4 +1,4 @@
-import { CharacterStatus, CharacterVisibility } from '@prisma/client'
+import { CharacterStatus, CharacterVisibility, type Prisma } from '@prisma/client'
 import { isIP } from 'node:net'
 import type { Request } from 'express'
 import { Router } from 'express'
@@ -33,7 +33,8 @@ const createCharacterSchema = z.object({
   legacyHeyWaifu: z.number().int().min(0).max(1).optional(),
   isPatreonGated: z.boolean().optional(),
   minimumTierCents: z.number().int().min(0).optional(),
-  visibility: z.nativeEnum(CharacterVisibility).optional()
+  visibility: z.nativeEnum(CharacterVisibility).optional(),
+  officialListing: z.boolean().optional()
 })
 
 const updateCharacterSchema = z
@@ -54,7 +55,8 @@ const updateCharacterSchema = z
     legacyHeyWaifu: z.number().int().min(0).max(1).nullable().optional(),
     isPatreonGated: z.boolean().optional(),
     minimumTierCents: z.number().int().min(0).nullable().optional(),
-    visibility: z.nativeEnum(CharacterVisibility).optional()
+    visibility: z.nativeEnum(CharacterVisibility).optional(),
+    officialListing: z.boolean().optional()
   })
   .refine((payload) => Object.keys(payload).length > 0, {
     message: 'At least one field must be provided.'
@@ -64,6 +66,8 @@ const listCharactersQuerySchema = z.object({
   status: z.nativeEnum(CharacterStatus).optional(),
   visibility: z.nativeEnum(CharacterVisibility).optional(),
   search: z.string().trim().max(120).optional(),
+  galleryScope: z.enum(['all', 'curated', 'community', 'mine']).optional(),
+  sort: z.enum(['name', 'hearts', 'views', 'newest']).optional().default('newest'),
   includeUnpublished: z
     .enum(['true', 'false'])
     .optional()
@@ -205,18 +209,35 @@ characterRoutes.get('/characters', optionalAuth, async (request, response, next)
   try {
     const query = listCharactersQuerySchema.parse(request.query)
     const actor = toCharacterAccessActor(request)
+    const galleryScope = query.galleryScope ?? 'all'
+
+    if (galleryScope === 'mine' && !actor) {
+      response.status(401).json({
+        message: 'Authentication required.'
+      })
+      return
+    }
+
     const whereClause = buildCharacterListWhereClause(actor, {
       status: query.status,
       visibility: query.visibility,
-      search: query.search
+      search: query.search,
+      galleryScope
     })
+
+    const orderBy: Prisma.CharacterOrderByWithRelationInput =
+      query.sort === 'name'
+        ? { name: 'asc' }
+        : query.sort === 'hearts'
+          ? { heartsCount: 'desc' }
+          : query.sort === 'views'
+            ? { viewsCount: 'desc' }
+            : { createdAt: 'desc' }
 
     const characterList = await prisma.character.findMany({
       where: whereClause,
       take: query.limit,
-      orderBy: {
-        createdAt: 'desc'
-      },
+      orderBy,
       select: {
         id: true,
         slug: true,
@@ -224,10 +245,10 @@ characterRoutes.get('/characters', optionalAuth, async (request, response, next)
         tagline: true,
         status: true,
         visibility: true,
+        officialListing: true,
         isPatreonGated: true,
         minimumTierCents: true,
         heartsCount: true,
-        averageRating: true,
         viewsCount: true,
         previewImageUrl: true,
         owner: {
@@ -308,10 +329,10 @@ characterRoutes.get('/characters/mine', requireAuth, async (request, response, n
         tagline: true,
         status: true,
         visibility: true,
+        officialListing: true,
         isPatreonGated: true,
         minimumTierCents: true,
         heartsCount: true,
-        averageRating: true,
         viewsCount: true,
         previewImageUrl: true,
         createdAt: true,
@@ -371,8 +392,8 @@ characterRoutes.get('/characters/:characterId', optionalAuth, async (request, re
         isPatreonGated: true,
         minimumTierCents: true,
         heartsCount: true,
-        averageRating: true,
         viewsCount: true,
+        officialListing: true,
         ownerId: true,
         createdAt: true,
         updatedAt: true,
@@ -418,6 +439,30 @@ characterRoutes.get('/characters/:characterId', optionalAuth, async (request, re
       return
     }
 
+    let viewsCount = character.viewsCount
+
+    if (character.status === 'APPROVED' && character.visibility === 'PUBLIC') {
+      const shouldCountView = !actor || (actor.userId !== character.ownerId && actor.role !== 'ADMIN')
+
+      if (shouldCountView) {
+        const viewUpdate = await prisma.character.update({
+          where: {
+            id: character.id
+          },
+          data: {
+            viewsCount: {
+              increment: 1
+            }
+          },
+          select: {
+            viewsCount: true
+          }
+        })
+
+        viewsCount = viewUpdate.viewsCount
+      }
+    }
+
     const hasHearted = actor
       ? Boolean(
           await prisma.characterHeart.findUnique({
@@ -456,8 +501,8 @@ characterRoutes.get('/characters/:characterId', optionalAuth, async (request, re
         isPatreonGated: character.isPatreonGated,
         minimumTierCents: character.minimumTierCents,
         heartsCount: character.heartsCount,
-        averageRating: character.averageRating,
-        viewsCount: character.viewsCount,
+        viewsCount,
+        officialListing: character.officialListing,
         hasHearted,
         owner: character.owner,
         screenshots: character.screenshots.map((screenshot) => ({
@@ -499,6 +544,8 @@ characterRoutes.post('/characters', requireVerifiedEmail, async (request, respon
     const generatedSlug = buildUniqueSlug(payload.name, slugSuffix)
     const normalizedScreenshotUrls = normalizeScreenshotUrls(payload.screenshotUrls)
 
+    const isOfficialListing = actor.role === 'ADMIN' && payload.officialListing === true
+
     const createdCharacter = await prisma.$transaction(async (transactionClient) => {
       const nextCharacter = await transactionClient.character.create({
         data: {
@@ -520,6 +567,7 @@ characterRoutes.post('/characters', requireVerifiedEmail, async (request, respon
           isPatreonGated: payload.isPatreonGated ?? false,
           minimumTierCents: payload.minimumTierCents,
           visibility: payload.visibility ?? 'PRIVATE',
+          officialListing: isOfficialListing,
           status: 'PENDING'
         },
         select: {
@@ -624,6 +672,7 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
           ...(payload.isPatreonGated !== undefined ? { isPatreonGated: payload.isPatreonGated } : {}),
           ...(payload.minimumTierCents !== undefined ? { minimumTierCents: payload.minimumTierCents } : {}),
           ...(payload.visibility !== undefined ? { visibility: payload.visibility } : {}),
+          ...(payload.officialListing !== undefined && actor.role === 'ADMIN' ? { officialListing: payload.officialListing } : {}),
           ...(shouldResetStatusToPending
             ? {
                 status: 'PENDING',

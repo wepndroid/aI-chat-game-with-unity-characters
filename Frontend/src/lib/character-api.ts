@@ -7,10 +7,10 @@ type CharacterListRecord = {
   tagline: string | null
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'
   visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED'
+  officialListing: boolean
   isPatreonGated: boolean
   minimumTierCents: number | null
   heartsCount: number
-  averageRating: number
   viewsCount: number
   previewImageUrl: string | null
   owner: {
@@ -46,7 +46,7 @@ type CharacterDetailRecord = {
   minimumTierCents: number | null
   heartsCount: number
   hasHearted: boolean
-  averageRating: number
+  officialListing: boolean
   viewsCount: number
   owner: {
     id: string
@@ -91,6 +91,7 @@ type CreateCharacterPayload = {
   isPatreonGated?: boolean
   minimumTierCents?: number
   visibility?: CharacterVisibility
+  officialListing?: boolean
 }
 
 type UpdateCharacterPayload = {
@@ -111,6 +112,7 @@ type UpdateCharacterPayload = {
   isPatreonGated?: boolean
   minimumTierCents?: number | null
   visibility?: CharacterVisibility
+  officialListing?: boolean
 }
 
 type CreateCharacterResponse = {
@@ -154,7 +156,7 @@ type CharacterMineRecord = {
   isPatreonGated: boolean
   minimumTierCents: number | null
   heartsCount: number
-  averageRating: number
+  officialListing: boolean
   viewsCount: number
   previewImageUrl: string | null
   createdAt: string
@@ -211,17 +213,27 @@ type ToggleCharacterHeartResponse = {
   }
 }
 
-const listCharacters = async (searchText?: string) => {
+type GalleryScope = 'all' | 'curated' | 'community' | 'mine'
+type GallerySort = 'name' | 'hearts' | 'views' | 'newest'
+
+const listCharacters = async (options?: { search?: string; galleryScope?: GalleryScope; sort?: GallerySort; limit?: number }) => {
   const query = new URLSearchParams()
 
-  if (searchText && searchText.trim().length > 0) {
-    query.set('search', searchText.trim())
+  if (options?.search && options.search.trim().length > 0) {
+    query.set('search', options.search.trim())
   }
 
-  query.set('limit', '72')
-  const querySuffix = query.toString().length > 0 ? `?${query.toString()}` : ''
+  if (options?.galleryScope) {
+    query.set('galleryScope', options.galleryScope)
+  }
 
-  return apiGet<CharacterListResponse>(`/characters${querySuffix}`)
+  if (options?.sort) {
+    query.set('sort', options.sort)
+  }
+
+  query.set('limit', String(options?.limit ?? 72))
+
+  return apiGet<CharacterListResponse>(`/characters?${query.toString()}`)
 }
 
 const getCharacterDetail = async (characterIdOrSlug: string) => {
@@ -300,6 +312,8 @@ export type {
   CharacterVisibility,
   CreateCharacterPayload,
   CreateCharacterResponse,
+  GalleryScope,
+  GallerySort,
   UpdateCharacterPayload,
   UpdateCharacterResponse,
   UpdateCharacterStatusResponse,

@@ -160,7 +160,41 @@ const resolveCharacterAccess = async (actor: CharacterAccessActor, character: Ch
   }
 }
 
-const buildCharacterListWhereClause = (actor: CharacterAccessActor, params: { status?: CharacterStatus; visibility?: CharacterVisibility; search?: string }) => {
+type GalleryScope = 'all' | 'curated' | 'community' | 'mine'
+
+const buildPublicGalleryBranch = (galleryScope: GalleryScope): Prisma.CharacterWhereInput => {
+  if (galleryScope === 'curated') {
+    return {
+      status: 'APPROVED',
+      visibility: 'PUBLIC',
+      officialListing: true
+    }
+  }
+
+  if (galleryScope === 'community') {
+    return {
+      status: 'APPROVED',
+      visibility: 'PUBLIC',
+      officialListing: false
+    }
+  }
+
+  return {
+    status: 'APPROVED',
+    visibility: 'PUBLIC'
+  }
+}
+
+const buildCharacterListWhereClause = (
+  actor: CharacterAccessActor,
+  params: {
+    status?: CharacterStatus
+    visibility?: CharacterVisibility
+    search?: string
+    galleryScope?: GalleryScope
+  }
+) => {
+  const galleryScope = params.galleryScope ?? 'all'
   const normalizedSearch = params.search?.trim()
   const searchClause = normalizedSearch
     ? {
@@ -185,6 +219,33 @@ const buildCharacterListWhereClause = (actor: CharacterAccessActor, params: { st
   const visibilityClause = params.visibility ? { visibility: params.visibility } : {}
 
   if (actor?.role === 'ADMIN') {
+    if (galleryScope === 'mine' && actor) {
+      return {
+        ownerId: actor.userId,
+        ...searchClause,
+        ...statusClause,
+        ...visibilityClause
+      } satisfies Prisma.CharacterWhereInput
+    }
+
+    if (galleryScope === 'curated') {
+      return {
+        officialListing: true,
+        ...searchClause,
+        ...statusClause,
+        ...visibilityClause
+      } satisfies Prisma.CharacterWhereInput
+    }
+
+    if (galleryScope === 'community') {
+      return {
+        officialListing: false,
+        ...searchClause,
+        ...statusClause,
+        ...visibilityClause
+      } satisfies Prisma.CharacterWhereInput
+    }
+
     return {
       ...searchClause,
       ...statusClause,
@@ -192,7 +253,18 @@ const buildCharacterListWhereClause = (actor: CharacterAccessActor, params: { st
     } satisfies Prisma.CharacterWhereInput
   }
 
+  if (actor && galleryScope === 'mine') {
+    return {
+      ownerId: actor.userId,
+      ...searchClause,
+      ...statusClause,
+      ...visibilityClause
+    } satisfies Prisma.CharacterWhereInput
+  }
+
   if (actor) {
+    const publicBranch = buildPublicGalleryBranch(galleryScope)
+
     return {
       AND: [
         {
@@ -200,10 +272,7 @@ const buildCharacterListWhereClause = (actor: CharacterAccessActor, params: { st
             {
               ownerId: actor.userId
             },
-            {
-              status: 'APPROVED',
-              visibility: 'PUBLIC'
-            }
+            publicBranch
           ]
         },
         searchClause,
@@ -214,8 +283,7 @@ const buildCharacterListWhereClause = (actor: CharacterAccessActor, params: { st
   }
 
   return {
-    status: 'APPROVED',
-    visibility: 'PUBLIC',
+    ...buildPublicGalleryBranch(galleryScope),
     ...searchClause
   } satisfies Prisma.CharacterWhereInput
 }

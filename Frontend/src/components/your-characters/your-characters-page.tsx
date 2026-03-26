@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 
 type CharacterStatusFilter = 'all' | CharacterModerationStatus
-type CharacterSortOption = 'recent' | 'most-viewed' | 'most-hearted' | 'top-rated' | 'needs-action'
+type CharacterSortOption = 'recent' | 'most-viewed' | 'most-hearted' | 'needs-action'
 
 const statusFilterOptions: Array<{ value: CharacterStatusFilter; label: string }> = [
   { value: 'all', label: 'All Statuses' },
@@ -24,7 +24,6 @@ const sortOptions: Array<{ value: CharacterSortOption; label: string }> = [
   { value: 'recent', label: 'Recently Updated' },
   { value: 'most-viewed', label: 'Most Viewed' },
   { value: 'most-hearted', label: 'Most Hearted' },
-  { value: 'top-rated', label: 'Top Rated' },
   { value: 'needs-action', label: 'Needs Action First' }
 ]
 
@@ -80,7 +79,6 @@ const toCardRecord = (characterRecord: CharacterMineRecord): MyCharacterCardReco
     updatedAtLabel: formatRelativeTimeLabel(characterRecord.updatedAt),
     views: characterRecord.viewsCount,
     hearts: characterRecord.heartsCount,
-    rating: characterRecord.averageRating,
     pledgeAccess: characterRecord.isPatreonGated ? 'patreon' : 'free'
   }
 }
@@ -182,10 +180,6 @@ const YourCharactersPage = () => {
 
       if (sortOption === 'most-hearted') {
         return secondCharacter.hearts - firstCharacter.hearts
-      }
-
-      if (sortOption === 'top-rated') {
-        return secondCharacter.rating - firstCharacter.rating
       }
 
       if (sortOption === 'needs-action') {

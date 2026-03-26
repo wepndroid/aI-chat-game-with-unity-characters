@@ -15,7 +15,6 @@ type MyCharacterCardRecord = {
   updatedAtLabel: string
   views: number
   hearts: number
-  rating: number
   pledgeAccess: 'free' | 'patreon'
 }
 
@@ -52,7 +51,6 @@ const MyCharacterCard = ({ characterRecord, onSubmitForReview }: MyCharacterCard
         <p>NSFW: {characterRecord.nsfwLevel}</p>
         <p>Views: {characterRecord.views.toLocaleString()}</p>
         <p>Hearts: {characterRecord.hearts.toLocaleString()}</p>
-        <p>Rating: {characterRecord.rating.toFixed(1)}/5</p>
         <p>Access: {characterRecord.pledgeAccess}</p>
       </div>
 

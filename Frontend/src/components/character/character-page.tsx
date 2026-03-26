@@ -14,6 +14,8 @@ import {
   updateCharacterReview,
   type CharacterReviewRecord
 } from '@/lib/review-api'
+import { apiGet } from '@/lib/api-client'
+import { resolveAvailableTierCents, type PatreonStatusSnapshot } from '@/lib/patreon-access'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -47,11 +49,6 @@ const formatReviewDateLabel = (value: string) => {
   return new Intl.DateTimeFormat('en-US', {
     dateStyle: 'medium'
   }).format(parsedDate)
-}
-
-const renderReviewStars = (rating: number) => {
-  const normalizedRating = Math.max(1, Math.min(5, Math.round(rating)))
-  return `\u2605`.repeat(normalizedRating) + `\u2606`.repeat(5 - normalizedRating)
 }
 
 type VrmLike = {
@@ -93,6 +90,7 @@ const CharacterPreviewVisual = ({ previewImageUrl, characterName }: { previewIma
 
 const CharacterPage = ({ characterId }: CharacterPageProps) => {
   const { sessionUser } = useAuth()
+  const [patreonStatusSnapshot, setPatreonStatusSnapshot] = useState<PatreonStatusSnapshot | null>(null)
   const [isLoading, setIsLoading] = useState(Boolean(characterId))
   const [errorMessage, setErrorMessage] = useState<string | null>(characterId ? null : 'No character selected. Open one from the gallery.')
   const [characterRecord, setCharacterRecord] = useState<CharacterDetailRecord | null>(null)
@@ -105,7 +103,6 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
   const [reviewList, setReviewList] = useState<CharacterReviewRecord[]>([])
   const [isReviewsLoading, setIsReviewsLoading] = useState(false)
   const [reviewsErrorMessage, setReviewsErrorMessage] = useState<string | null>(null)
-  const [reviewInputRating, setReviewInputRating] = useState(5)
   const [reviewInputBody, setReviewInputBody] = useState('')
   const [isReviewSubmitting, setIsReviewSubmitting] = useState(false)
   const [reviewActionMessage, setReviewActionMessage] = useState<string | null>(null)
@@ -164,6 +161,32 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
       setErrorMessage('No character selected. Open one from the gallery.')
     }
   }, [characterId])
+
+  useEffect(() => {
+    if (!sessionUser?.id) {
+      setPatreonStatusSnapshot(null)
+      return
+    }
+
+    let isCancelled = false
+
+    Promise.resolve().then(async () => {
+      try {
+        const payload = await apiGet<{ data: PatreonStatusSnapshot }>('/patreon/status')
+        if (!isCancelled) {
+          setPatreonStatusSnapshot(payload.data)
+        }
+      } catch {
+        if (!isCancelled) {
+          setPatreonStatusSnapshot(null)
+        }
+      }
+    })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [sessionUser?.id])
 
   const screenshotImageList = useMemo(() => {
     if (!characterRecord) {
@@ -236,14 +259,23 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
 
   useEffect(() => {
     if (ownReview) {
-      setReviewInputRating(ownReview.rating)
       setReviewInputBody(ownReview.body)
       return
     }
 
-    setReviewInputRating(5)
     setReviewInputBody('')
   }, [ownReview])
+
+  const subscriptionTierCents = useMemo(() => {
+    if (!sessionUser || !patreonStatusSnapshot) {
+      return 0
+    }
+
+    return resolveAvailableTierCents(patreonStatusSnapshot)
+  }, [patreonStatusSnapshot, sessionUser])
+
+  const canPostReviewWithSubscription =
+    sessionUser?.role === 'ADMIN' || subscriptionTierCents > 0
 
   const canAccessGatedContent = characterRecord?.gatedAccess.hasAccess ?? false
   const isPatreonGated = characterRecord?.isPatreonGated ?? false
@@ -325,33 +357,13 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
 
     try {
       if (ownReview) {
-        const payload = await updateCharacterReview(ownReview.id, {
-          rating: reviewInputRating,
+        await updateCharacterReview(ownReview.id, {
           body: normalizedBody
         })
-
-        setCharacterRecord((previousCharacter) =>
-          previousCharacter
-            ? {
-                ...previousCharacter,
-                averageRating: payload.data.averageRating
-              }
-            : previousCharacter
-        )
       } else {
-        const payload = await createCharacterReview(characterRecord.id, {
-          rating: reviewInputRating,
+        await createCharacterReview(characterRecord.id, {
           body: normalizedBody
         })
-
-        setCharacterRecord((previousCharacter) =>
-          previousCharacter
-            ? {
-                ...previousCharacter,
-                averageRating: payload.data.averageRating
-              }
-            : previousCharacter
-        )
       }
 
       await refreshReviewList(characterRecord.id)
@@ -372,17 +384,8 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     setReviewActionMessage(null)
 
     try {
-      const payload = await deleteCharacterReview(ownReview.id)
-      setCharacterRecord((previousCharacter) =>
-        previousCharacter
-          ? {
-              ...previousCharacter,
-              averageRating: payload.data.averageRating
-            }
-          : previousCharacter
-      )
+      await deleteCharacterReview(ownReview.id)
       await refreshReviewList(characterRecord.id)
-      setReviewInputRating(5)
       setReviewInputBody('')
       setReviewActionMessage('Review removed.')
     } catch (error) {
@@ -636,7 +639,6 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                       <div key={review.id} className="rounded-sm border border-white/10 bg-[#0d0d0d] p-3">
                         <p className="text-[11px] font-semibold text-white/85">
                           {review.user.username}
-                          <span className="ml-2 text-amber-200">{renderReviewStars(review.rating)}</span>
                           <span className="ml-2 text-white/45">{formatReviewDateLabel(review.createdAt)}</span>
                         </p>
                         <p className="mt-2 whitespace-pre-wrap text-[11px] leading-[1.45] text-white/65">{review.body}</p>
@@ -648,33 +650,27 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                     <p className="text-[10px] font-semibold uppercase tracking-[0.09em] text-white/65">
                       {ownReview ? 'Update your review' : 'Write a review'}
                     </p>
-                    <div className="mt-2 flex gap-2">
-                      {[1, 2, 3, 4, 5].map((ratingValue) => (
-                        <button
-                          key={ratingValue}
-                          type="button"
-                          onClick={() => setReviewInputRating(ratingValue)}
-                          className={`rounded border px-2 py-1 text-xs ${
-                            reviewInputRating === ratingValue ? 'border-amber-300 text-amber-200' : 'border-white/20 text-white/60'
-                          }`}
-                          aria-label={`Set review rating to ${ratingValue}`}
-                        >
-                          {ratingValue}
-                        </button>
-                      ))}
-                    </div>
+                    {!canPostReviewWithSubscription ? (
+                      <p className="mt-2 text-[11px] leading-relaxed text-white/60">
+                        Written reviews require an active Patreon subscription linked to your account.{' '}
+                        <Link href="/members" className="font-semibold text-ember-200 underline-offset-2 hover:text-ember-100">
+                          Connect Patreon
+                        </Link>
+                      </p>
+                    ) : null}
                     <textarea
                       value={reviewInputBody}
                       onChange={(event) => setReviewInputBody(event.target.value)}
                       placeholder="Write your review..."
-                      className="mt-2 h-24 w-full resize-none rounded border border-white/20 bg-[#0d0d0d] px-3 py-2 text-xs text-white outline-none focus:border-ember-300"
+                      disabled={!canPostReviewWithSubscription}
+                      className="mt-2 h-24 w-full resize-none rounded border border-white/20 bg-[#0d0d0d] px-3 py-2 text-xs text-white outline-none focus:border-ember-300 disabled:opacity-50"
                       aria-label="Review text"
                     />
                     <div className="mt-2 flex gap-2">
                       <button
                         type="button"
                         onClick={handleSubmitReview}
-                        disabled={isReviewSubmitting}
+                        disabled={isReviewSubmitting || !canPostReviewWithSubscription}
                         className="rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-black disabled:opacity-70"
                         aria-label={ownReview ? 'Update review' : 'Post review'}
                       >
@@ -684,7 +680,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                         <button
                           type="button"
                           onClick={handleDeleteOwnReview}
-                          disabled={isReviewSubmitting}
+                          disabled={isReviewSubmitting || !canPostReviewWithSubscription}
                           className="rounded-md border border-rose-300/35 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-rose-200 disabled:opacity-70"
                           aria-label="Delete your review"
                         >
