@@ -2,9 +2,10 @@
 
 import AccountSideMenu from '@/components/shared/account-side-menu'
 import { useAuth } from '@/components/providers/auth-provider'
+import PreviewImageDropzone from '@/components/ui-elements/preview-image-dropzone'
 import UploadDropzone from '@/components/ui-elements/upload-dropzone'
 import UploadField from '@/components/ui-elements/upload-field'
-import { createCharacter, getCharacterDetail, updateCharacter } from '@/lib/character-api'
+import { createCharacter, getCharacterDetail, updateCharacter, uploadCharacterAssets } from '@/lib/character-api'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 
@@ -51,7 +52,10 @@ const UploadVrmPage = () => {
   const editCharacterId = searchParams.get('edit')?.trim() ?? ''
   const isEditing = editCharacterId.length > 0
   const [formState, setFormState] = useState<UploadVrmFormState>(initialFormState)
-  const [selectedFileName, setSelectedFileName] = useState<string | null>(null)
+  const [vrmFile, setVrmFile] = useState<File | null>(null)
+  const [previewImageFile, setPreviewImageFile] = useState<File | null>(null)
+  const [selectedVrmFileName, setSelectedVrmFileName] = useState<string | null>(null)
+  const [selectedPreviewFileName, setSelectedPreviewFileName] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isEditLoading, setIsEditLoading] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
@@ -69,6 +73,10 @@ const UploadVrmPage = () => {
   useEffect(() => {
     if (!isEditing) {
       setFormState(initialFormState)
+      setVrmFile(null)
+      setPreviewImageFile(null)
+      setSelectedVrmFileName(null)
+      setSelectedPreviewFileName(null)
       setErrorMessage(null)
       setStatusMessage(null)
       setIsEditLoading(false)
@@ -88,6 +96,11 @@ const UploadVrmPage = () => {
         if (isCancelled) {
           return
         }
+
+        setVrmFile(null)
+        setPreviewImageFile(null)
+        setSelectedVrmFileName(null)
+        setSelectedPreviewFileName(null)
 
         setFormState({
           fullName: payload.data.name ?? '',
@@ -166,6 +179,31 @@ const UploadVrmPage = () => {
       sessionUser?.role === 'ADMIN' ? { officialListing: formState.officialCurated } : {}
 
     try {
+      let vroidUrl = formState.vroidFileUrl.trim()
+      let previewUrl = formState.previewImageUrl.trim()
+
+      if (vrmFile || previewImageFile) {
+        const formData = new FormData()
+
+        if (vrmFile) {
+          formData.append('vrm', vrmFile)
+        }
+
+        if (previewImageFile) {
+          formData.append('preview', previewImageFile)
+        }
+
+        const uploadPayload = await uploadCharacterAssets(formData)
+
+        if (uploadPayload.data.vroidFileUrl) {
+          vroidUrl = uploadPayload.data.vroidFileUrl
+        }
+
+        if (uploadPayload.data.previewImageUrl) {
+          previewUrl = uploadPayload.data.previewImageUrl
+        }
+      }
+
       if (isEditing) {
         await updateCharacter(editCharacterId, {
           name: normalizedName,
@@ -176,8 +214,8 @@ const UploadVrmPage = () => {
           scenario: formState.scenario.trim() || null,
           firstMessage: formState.firstMessage.trim() || null,
           exampleDialogs: formState.exampleDialogue.trim() || null,
-          vroidFileUrl: formState.vroidFileUrl.trim() || null,
-          previewImageUrl: formState.previewImageUrl.trim() || null,
+          vroidFileUrl: vroidUrl || null,
+          previewImageUrl: previewUrl || null,
           screenshotUrls,
           legacyFileHash: formState.legacyFileHash.trim() || null,
           legacyTier: normalizedTierInput.length > 0 ? parsedLegacyTier ?? null : null,
@@ -197,8 +235,8 @@ const UploadVrmPage = () => {
           scenario: formState.scenario.trim() || undefined,
           firstMessage: formState.firstMessage.trim() || undefined,
           exampleDialogs: formState.exampleDialogue.trim() || undefined,
-          vroidFileUrl: formState.vroidFileUrl.trim() || undefined,
-          previewImageUrl: formState.previewImageUrl.trim() || undefined,
+          vroidFileUrl: vroidUrl || undefined,
+          previewImageUrl: previewUrl || undefined,
           screenshotUrls: screenshotUrls.length > 0 ? screenshotUrls : undefined,
           legacyFileHash: formState.legacyFileHash.trim() || undefined,
           legacyTier: parsedLegacyTier,
@@ -216,7 +254,10 @@ const UploadVrmPage = () => {
           : 'Character submitted successfully. It is now waiting for admin approval.'
       )
       setFormState(initialFormState)
-      setSelectedFileName(null)
+      setVrmFile(null)
+      setPreviewImageFile(null)
+      setSelectedVrmFileName(null)
+      setSelectedPreviewFileName(null)
       window.setTimeout(() => {
         router.push('/your-characters')
       }, 1000)
@@ -246,7 +287,31 @@ const UploadVrmPage = () => {
                 <p className="mb-4 rounded-md border border-white/20 bg-white/5 px-3 py-2 text-xs text-white/75">Loading character data...</p>
               ) : null}
 
-              <UploadDropzone onFileSelect={(file) => setSelectedFileName(file?.name ?? null)} selectedFileName={selectedFileName} />
+              <p className="text-sm text-white/65">
+                Add a <span className="text-white/90">.vrm</span> and preview image by uploading files here, or paste public <span className="text-white/90">https://</span>{' '}
+                URLs below. Uploaded files are stored on this site and fill the URL fields automatically when you submit.
+              </p>
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div>
+                  <UploadDropzone
+                    onFileSelect={(file) => {
+                      setVrmFile(file)
+                      setSelectedVrmFileName(file?.name ?? null)
+                    }}
+                    selectedFileName={selectedVrmFileName}
+                  />
+                </div>
+                <div>
+                  <PreviewImageDropzone
+                    onFileSelect={(file) => {
+                      setPreviewImageFile(file)
+                      setSelectedPreviewFileName(file?.name ?? null)
+                    }}
+                    selectedFileName={selectedPreviewFileName}
+                  />
+                </div>
+              </div>
 
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
                 <UploadField label="Full Name" value={formState.fullName} onChange={(value) => handleFieldChange('fullName', value)} />
@@ -255,13 +320,13 @@ const UploadVrmPage = () => {
 
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <UploadField
-                  label="VRM File URL"
+                  label="VRM file URL (optional if you upload)"
                   value={formState.vroidFileUrl}
                   onChange={(value) => handleFieldChange('vroidFileUrl', value)}
                   placeholder="https://.../model.vrm"
                 />
                 <UploadField
-                  label="Preview Image URL"
+                  label="Preview image URL (optional if you upload)"
                   value={formState.previewImageUrl}
                   onChange={(value) => handleFieldChange('previewImageUrl', value)}
                   placeholder="https://.../preview.png"

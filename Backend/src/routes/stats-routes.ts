@@ -276,6 +276,7 @@ statsRoutes.get('/stats/overview', requireAdmin, async (_request, response, next
         id: true,
         slug: true,
         name: true,
+        previewImageUrl: true,
         viewsCount: true,
         heartsCount: true,
         minimumTierCents: true,

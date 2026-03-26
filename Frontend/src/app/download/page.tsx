@@ -9,10 +9,11 @@ type PurchasePathItem = {
 }
 
 const DownloadPage = () => {
-  const itchIoUrl = process.env.NEXT_PUBLIC_ITCH_IO_URL ?? 'https://itch.io'
+  const itchIoUrl = process.env.NEXT_PUBLIC_ITCH_IO_URL?.trim() || 'https://itch.io'
   const patreonUrl = process.env.NEXT_PUBLIC_PATREON_URL ?? '/members'
-  const directPurchaseUrl = process.env.NEXT_PUBLIC_DIRECT_PURCHASE_URL ?? '/support'
-  const windowsBuildUrl = process.env.NEXT_PUBLIC_WINDOWS_BUILD_URL ?? '/support'
+  // Same env as home; default /support here so “Direct Website Purchase” is not a link to this same page when env is unset.
+  const directPurchaseUrl = process.env.NEXT_PUBLIC_DIRECT_PURCHASE_URL?.trim() || '/support'
+  const windowsBuildUrl = process.env.NEXT_PUBLIC_WINDOWS_BUILD_URL?.trim() || '/download#windows-build'
 
   const purchasePathList: PurchasePathItem[] = [
     {
@@ -70,7 +71,11 @@ const DownloadPage = () => {
 
           <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {purchasePathList.map((pathItem) => (
-              <article key={pathItem.id} className="rounded-xl border border-white/10 bg-[#121212]/95 p-5">
+              <article
+                key={pathItem.id}
+                id={pathItem.id === 'purchase-windows' ? 'windows-build' : undefined}
+                className="rounded-xl border border-white/10 bg-[#121212]/95 p-5"
+              >
                 <h2 className="font-[family-name:var(--font-heading)] text-3xl font-semibold italic leading-none text-white">
                   {pathItem.title}
                 </h2>

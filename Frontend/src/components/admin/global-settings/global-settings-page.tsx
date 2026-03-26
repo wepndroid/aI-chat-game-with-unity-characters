@@ -99,6 +99,9 @@ const GlobalSettingsPage = () => {
 
       <section className="mt-5 rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-5 py-5 sm:px-6">
         <h2 className="font-[family-name:var(--font-heading)] text-[21px] font-normal leading-none text-white">Browser Matrix</h2>
+        <p className="mt-2 text-xs text-white/50">
+          Status is derived from WebGL embed configuration (same flag for all rows), not a per-browser automated test run.
+        </p>
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-[360px] w-full">
             <thead>

@@ -3,7 +3,7 @@ import type { Request } from 'express'
 import { Router } from 'express'
 import { z } from 'zod'
 import { clearAuthCookie, setAuthCookie } from '../lib/auth-cookie'
-import { authConfig } from '../lib/auth-config'
+import { authConfig, getEffectiveUserRoleForTesting } from '../lib/auth-config'
 import { oauthConfig } from '../lib/oauth-config'
 import { hashPassword, verifyPassword } from '../lib/password-hash'
 import { optionalAuth, requireAuth } from '../middleware/auth-middleware'
@@ -350,7 +350,10 @@ authRoutes.post('/auth/register', async (request, response, next) => {
 
     response.status(201).json({
       data: {
-        user: createdUser,
+        user: {
+          ...createdUser,
+          role: getEffectiveUserRoleForTesting(createdUser.role)
+        },
         requiresEmailVerification: true,
         verificationEmailSent
       }
@@ -622,7 +625,7 @@ authRoutes.post('/auth/login', async (request, response, next) => {
           id: existingUser.id,
           email: existingUser.email,
           username: existingUser.username,
-          role: existingUser.role,
+          role: getEffectiveUserRoleForTesting(existingUser.role),
           isEmailVerified: existingUser.isEmailVerified
         }
       }
@@ -785,7 +788,10 @@ authRoutes.get('/auth/me', requireAuth, async (request, response, next) => {
 
     response.json({
       data: {
-        user: existingUser
+        user: {
+          ...existingUser,
+          role: getEffectiveUserRoleForTesting(existingUser.role)
+        }
       }
     })
   } catch (error) {

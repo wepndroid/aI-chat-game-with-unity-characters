@@ -39,7 +39,7 @@ const CommunityVrmsPage = () => {
     setErrorMessage(null)
 
     try {
-      const payload = await listCharacters({ search: searchValue, limit: 200 })
+      const payload = await listCharacters({ search: searchValue, galleryScope: 'community', limit: 200 })
       setCharacterList(payload.data)
     } catch (error) {
       setCharacterList([])
@@ -59,7 +59,7 @@ const CommunityVrmsPage = () => {
       setErrorMessage(null)
 
       try {
-        const payload = await listCharacters({ limit: 200 })
+        const payload = await listCharacters({ galleryScope: 'community', limit: 200 })
         if (!isCancelled) {
           setCharacterList(payload.data)
         }
@@ -212,6 +212,7 @@ const CommunityVrmsPage = () => {
           <table className="min-w-full">
             <thead>
               <tr className="border-b border-white/10 bg-[#181b21]/85">
+                <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Preview</th>
                 <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Name</th>
                 <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Uploader</th>
                 <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Metrics</th>
@@ -224,7 +225,7 @@ const CommunityVrmsPage = () => {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-[#7c8aa3]">
+                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-[#7c8aa3]">
                     Loading characters...
                   </td>
                 </tr>
@@ -232,7 +233,7 @@ const CommunityVrmsPage = () => {
 
               {!isLoading && filteredCharacterList.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-[#7c8aa3]">
+                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-[#7c8aa3]">
                     No VRMs match your filters.
                   </td>
                 </tr>
@@ -241,6 +242,19 @@ const CommunityVrmsPage = () => {
               {!isLoading
                 ? filteredCharacterList.map((characterRecord) => (
                     <tr key={characterRecord.id} className="border-t border-white/10">
+                      <td className="px-4 py-4 align-middle">
+                        {characterRecord.previewImageUrl ? (
+                          <img
+                            src={characterRecord.previewImageUrl}
+                            alt=""
+                            className="size-12 rounded-md border border-white/10 object-cover"
+                          />
+                        ) : (
+                          <div className="flex size-12 items-center justify-center rounded-md border border-white/10 bg-[#1a1f28] text-[10px] text-[#4a5a72]">
+                            —
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-4 align-middle">
                         <p className="font-[family-name:var(--font-heading)] text-[17px] font-normal leading-none text-white">{characterRecord.name}</p>
                         <p className="mt-1 text-sm text-[#6f809d]">{characterRecord.slug}</p>

@@ -1,9 +1,11 @@
+import path from 'node:path'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import express from 'express'
 import morgan from 'morgan'
 import { ZodError } from 'zod'
 import authRoutes from './routes/auth-routes'
+import characterAssetUploadRoutes from './routes/character-asset-upload-routes'
 import characterRoutes from './routes/character-routes'
 import healthRoutes from './routes/health-routes'
 import legacyRoutes from './routes/legacy-routes'
@@ -47,9 +49,13 @@ app.use(express.json({ limit: '10mb' }))
 app.use(cookieParser())
 app.use(morgan('dev'))
 
+const uploadsRoot = path.join(process.cwd(), 'uploads')
+app.use('/uploads', express.static(uploadsRoot))
+
 app.use('/api', healthRoutes)
 app.use('/api', authRoutes)
 app.use('/api', userRoutes)
+app.use('/api', characterAssetUploadRoutes)
 app.use('/api', characterRoutes)
 app.use('/api', reviewRoutes)
 app.use('/api', statsRoutes)

@@ -2,6 +2,7 @@
 
 import AdminPageShell from '@/components/shared/admin-page-shell'
 import AdminReviewQueueCard, { type AdminReviewQueueCardRecord } from '@/components/ui-elements/admin-review-queue-card'
+import { descriptionHasModeratorKeywordHint } from '@/lib/admin-review-description'
 import { listAdminReviewQueue, updateCharacterStatus, type AdminReviewQueueRecord } from '@/lib/character-api'
 import { useEffect, useMemo, useState } from 'react'
 
@@ -30,8 +31,7 @@ const formatRelativeTimeLabel = (isoValue: string) => {
 }
 
 const toQueueCardRecord = (queueRecord: AdminReviewQueueRecord): AdminReviewQueueCardRecord => {
-  const normalizedDescription = queueRecord.description?.toLowerCase() ?? ''
-  const looksFlagged = normalizedDescription.includes('nsfw') || normalizedDescription.includes('naked')
+  const looksFlagged = descriptionHasModeratorKeywordHint(queueRecord.description)
 
   return {
     id: queueRecord.id,
@@ -39,7 +39,9 @@ const toQueueCardRecord = (queueRecord: AdminReviewQueueRecord): AdminReviewQueu
     uploader: queueRecord.owner.username,
     uploadedAgoLabel: formatRelativeTimeLabel(queueRecord.updatedAt),
     scanState: looksFlagged ? 'flagged' : 'clean',
-    scanMessage: looksFlagged ? 'System flagged potential NSFW keywords' : 'System scans passed'
+    scanMessage: looksFlagged
+      ? 'Description matches common NSFW-related keywords—review manually'
+      : 'No keyword match for common NSFW terms—still review manually'
   }
 }
 
@@ -134,10 +136,6 @@ const ReviewQueuePage = () => {
     })
   }
 
-  const handleViewRecordDetails = (recordId: string) => {
-    setSelectedRecordId(recordId)
-  }
-
   return (
     <AdminPageShell activeKey="review-queue">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -175,9 +173,12 @@ const ReviewQueuePage = () => {
             <AdminReviewQueueCard
               key={queueRecord.id}
               queueRecord={toQueueCardRecord(queueRecord)}
+              characterSlug={queueRecord.slug}
+              characterId={queueRecord.id}
+              previewImageUrl={queueRecord.previewImageUrl}
               onApprove={handleApproveRecord}
               onReject={handleRejectRecord}
-              onViewDetails={handleViewRecordDetails}
+              onSelect={setSelectedRecordId}
               isBusy={busyRecordId === queueRecord.id}
             />
           ))

@@ -18,12 +18,34 @@ const CtaLinkButton = ({ href, label, variant, ariaLabel }: CtaLinkButtonProps) 
 
   const iconBorderClassName = variant === 'light' ? 'border-[#1f1f1f]/30' : 'border-white/45'
 
-  return (
-    <Link href={href} className={`${baseClassName} ${variantClassName}`} aria-label={ariaLabel}>
+  const isExternal = href.startsWith('http://') || href.startsWith('https://')
+
+  const content = (
+    <>
       {label}
       <span className={`inline-flex size-5 items-center justify-center rounded-full border text-[11px] leading-none ${iconBorderClassName}`}>
         o
       </span>
+    </>
+  )
+
+  if (isExternal) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className={`${baseClassName} ${variantClassName}`}
+        aria-label={ariaLabel}
+      >
+        {content}
+      </a>
+    )
+  }
+
+  return (
+    <Link href={href} className={`${baseClassName} ${variantClassName}`} aria-label={ariaLabel}>
+      {content}
     </Link>
   )
 }

@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 type AdminReviewQueueCardRecord = {
   id: string
   title: string
@@ -9,9 +11,12 @@ type AdminReviewQueueCardRecord = {
 
 type AdminReviewQueueCardProps = {
   queueRecord: AdminReviewQueueCardRecord
+  characterSlug: string
+  characterId: string
+  previewImageUrl?: string | null
   onApprove: (recordId: string) => void
   onReject: (recordId: string) => void
-  onViewDetails: (recordId: string) => void
+  onSelect?: (recordId: string) => void
   isBusy?: boolean
 }
 
@@ -33,16 +38,6 @@ const RejectIcon = () => {
   )
 }
 
-const DotsIcon = () => {
-  return (
-    <svg viewBox="0 0 24 24" className="size-4" fill="currentColor">
-      <circle cx="12" cy="6.5" r="1.7" />
-      <circle cx="12" cy="12" r="1.7" />
-      <circle cx="12" cy="17.5" r="1.7" />
-    </svg>
-  )
-}
-
 const ScanBadge = ({ queueRecord }: { queueRecord: AdminReviewQueueCardRecord }) => {
   if (queueRecord.scanState === 'clean') {
     return (
@@ -59,7 +54,16 @@ const ScanBadge = ({ queueRecord }: { queueRecord: AdminReviewQueueCardRecord })
   )
 }
 
-const AdminReviewQueueCard = ({ queueRecord, onApprove, onReject, onViewDetails, isBusy = false }: AdminReviewQueueCardProps) => {
+const AdminReviewQueueCard = ({
+  queueRecord,
+  characterSlug,
+  characterId,
+  previewImageUrl,
+  onApprove,
+  onReject,
+  onSelect,
+  isBusy = false
+}: AdminReviewQueueCardProps) => {
   const handleApproveClick = () => {
     onApprove(queueRecord.id)
   }
@@ -68,21 +72,35 @@ const AdminReviewQueueCard = ({ queueRecord, onApprove, onReject, onViewDetails,
     onReject(queueRecord.id)
   }
 
-  const handleViewDetailsClick = () => {
-    onViewDetails(queueRecord.id)
-  }
-
   return (
     <article className="rounded-2xl border border-white/10 bg-[#0d1219]/95 shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
       <div className="grid min-h-[176px] border-l-4 border-l-yellow-400 px-5 py-5 sm:grid-cols-[130px_1fr_170px] sm:items-center sm:gap-4">
-        <div className="inline-flex h-[130px] w-[130px] items-center justify-center rounded-lg border border-white/10 bg-[#1a1f28] text-[14px] font-[family-name:var(--font-heading)] font-normal text-[#31405b]">
-          NO PREVIEW
+        <div className="relative h-[130px] w-[130px] shrink-0 overflow-hidden rounded-lg border border-white/10 bg-[#1a1f28]">
+          {previewImageUrl ? (
+            <img
+              src={previewImageUrl}
+              alt=""
+              className="size-full object-cover"
+            />
+          ) : (
+            <div className="flex size-full items-center justify-center text-center text-[12px] font-[family-name:var(--font-heading)] font-normal text-[#31405b]">
+              No preview
+            </div>
+          )}
         </div>
 
         <div className="mt-4 sm:mt-0">
           <div className="inline-flex items-center gap-3">
-            <h3 className="font-[family-name:var(--font-heading)] text-[22px] font-normal leading-none text-white">{queueRecord.title}</h3>
-            <span className="inline-flex items-center rounded-full border border-yellow-400/35 bg-yellow-400/10 px-2.5 py-1 text-xs font-normal text-yellow-300">
+            <h3 className="font-[family-name:var(--font-heading)] text-[22px] font-normal leading-none text-white">
+              <button
+                type="button"
+                className="text-left transition hover:text-ember-200/95"
+                onClick={() => onSelect?.(queueRecord.id)}
+              >
+                {queueRecord.title}
+              </button>
+            </h3>
+            <span className="inline-flex shrink-0 items-center rounded-full border border-yellow-400/35 bg-yellow-400/10 px-2.5 py-1 text-xs font-normal text-yellow-300">
               Pending
             </span>
           </div>
@@ -119,16 +137,20 @@ const AdminReviewQueueCard = ({ queueRecord, onApprove, onReject, onViewDetails,
             Reject
           </button>
 
-          <button
-            type="button"
-            onClick={handleViewDetailsClick}
+          <Link
+            href={`/characters/${encodeURIComponent(characterSlug)}`}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-white/10 bg-[#232833]/90 text-sm font-normal text-[#d0d7e6] transition hover:bg-[#2d3441]"
-            aria-label={`View details for ${queueRecord.title}`}
-            disabled={isBusy}
+            aria-label={`Open ${queueRecord.title} in gallery`}
           >
-            <DotsIcon />
-            Details
-          </button>
+            Gallery
+          </Link>
+          <Link
+            href={`/upload-vrm?edit=${encodeURIComponent(characterId)}`}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-white/10 bg-[#232833]/90 text-sm font-normal text-[#d0d7e6] transition hover:bg-[#2d3441]"
+            aria-label={`Edit ${queueRecord.title}`}
+          >
+            Edit submission
+          </Link>
         </div>
       </div>
     </article>
