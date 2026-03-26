@@ -399,6 +399,14 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     }
   }
 
+  const playDemoHref = useMemo(() => {
+    if (!characterRecord) {
+      return '/play-demo'
+    }
+
+    return `/play-demo?characterId=${encodeURIComponent(characterRecord.id)}&character=${encodeURIComponent(characterRecord.slug)}`
+  }, [characterRecord])
+
   useLayoutEffect(() => {
     if (!isThreePreviewOpen || !canOpenThreePreview || !characterRecord?.vroidFileUrl) {
       return
@@ -666,21 +674,13 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                           : 'relative mx-auto h-[420px] w-[210px] overflow-hidden rounded-sm border border-white/10 bg-[#0f1117]'
                       }
                     >
-                      {isThreePreviewExpanded ? (
-                        <button
-                          type="button"
-                          onClick={() => setIsThreePreviewExpanded(false)}
-                          className="absolute right-4 top-4 z-20 inline-flex h-9 items-center justify-center rounded-md border border-white/35 bg-white/95 px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#1d1d1d]"
-                          aria-label="Exit full view"
-                        >
-                          Exit full view
-                        </button>
-                      ) : null}
                       {!isThreePreviewLoading && !threePreviewErrorMessage ? (
                         <button
                           type="button"
                           onClick={() => setIsThreePreviewExpanded((previousExpanded) => !previousExpanded)}
-                          className="absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-md border border-white/25 bg-black/55 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-white/90 backdrop-blur-sm hover:bg-black/70"
+                          className={`absolute left-1/2 z-[190] -translate-x-1/2 rounded-md border border-white/25 bg-black/55 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-white/90 backdrop-blur-sm hover:bg-black/70 ${
+                            isThreePreviewExpanded ? 'top-[5.25rem]' : 'top-3'
+                          }`}
                           aria-label={isThreePreviewExpanded ? 'Smaller preview' : 'Full screen 3D preview'}
                         >
                           {isThreePreviewExpanded ? 'Smaller' : 'Full view'}
@@ -703,6 +703,31 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                       {threePreviewErrorMessage ? (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/70 px-3 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-rose-200">
                           {threePreviewErrorMessage}
+                        </div>
+                      ) : null}
+                      {isThreePreviewExpanded ? (
+                        <div className="pointer-events-none absolute inset-x-0 top-0 z-[200] flex items-start justify-start gap-3 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))]">
+                          <button
+                            type="button"
+                            onClick={() => setIsThreePreviewExpanded(false)}
+                            className="pointer-events-auto flex size-10 shrink-0 items-center justify-center rounded-full border border-white/40 bg-black/80 text-white shadow-lg backdrop-blur-sm transition hover:border-ember-300/60 hover:bg-black/90 hover:text-white"
+                            aria-label="Exit full view"
+                            title="Exit full view"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="size-5"
+                              aria-hidden="true"
+                            >
+                              <path d="m15 18-6-6 6-6" />
+                            </svg>
+                          </button>
                         </div>
                       ) : null}
                     </div>
@@ -883,13 +908,13 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                     Unlock with Patreon
                   </Link>
                 ) : (
-                  <button
-                    type="button"
+                  <Link
+                    href={playDemoHref}
                     className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 font-[family-name:var(--font-heading)] text-[30px] font-semibold italic leading-none text-white transition hover:brightness-110"
-                    aria-label="Start chat"
+                    aria-label="Start chat in the WebGL demo with this character"
                   >
                     Start Chat
-                  </button>
+                  </Link>
                 )}
               </div>
             </div>
