@@ -22,7 +22,7 @@ const normalizeOrigin = (origin: string) => {
 
 const isProduction = process.env.NODE_ENV === 'production'
 const configuredOrigins = process.env.CORS_ORIGIN?.split(',').map((origin) => normalizeOrigin(origin)).filter(Boolean) ?? []
-const defaultDevOrigins = isProduction ? [] : ['http://127.0.0.1:5000', 'http://localhost:5000']
+const defaultDevOrigins = isProduction ? [] : ['http://127.0.0.1:7000', 'http://localhost:7000']
 const allowedOrigins = new Set<string>([...configuredOrigins, ...defaultDevOrigins])
 
 app.use(

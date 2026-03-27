@@ -1,4 +1,5 @@
 'use client'
+/* eslint-disable @next/next/no-img-element */
 
 import AdminPageShell from '@/components/shared/admin-page-shell'
 import { listCharacters, updateCharacterStatus, updateCharacterVisibility, type CharacterListRecord } from '@/lib/character-api'

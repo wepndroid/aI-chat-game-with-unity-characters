@@ -35,7 +35,7 @@ const forceAllUsersAdminForTesting = parseBoolean(
 )
 
 const backendPublicUrl = process.env.BACKEND_PUBLIC_URL?.trim() || 'http://127.0.0.1:4000'
-const frontendPublicUrl = process.env.FRONTEND_URL?.trim() || 'http://127.0.0.1:5000'
+const frontendPublicUrl = process.env.FRONTEND_URL?.trim() || 'http://127.0.0.1:7000'
 
 const authConfig = {
   cookieName: process.env.AUTH_COOKIE_NAME?.trim() || 'secretwaifu_auth',

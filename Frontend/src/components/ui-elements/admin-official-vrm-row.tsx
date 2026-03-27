@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import AdminOfficialVrmStatusPill, { type AdminOfficialVrmStatus } from '@/components/ui-elements/admin-official-vrm-status-pill'
 import Link from 'next/link'
 

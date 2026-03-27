@@ -1,3 +1,4 @@
+﻿/* eslint-disable @next/next/no-img-element */
 type AdminReviewQueueItemProps = {
   characterName: string
   creatorName: string
@@ -18,7 +19,7 @@ const AdminReviewQueueItem = ({ characterName, creatorName, previewImageUrl, fla
             />
           ) : (
             <div className="flex size-11 shrink-0 items-center justify-center rounded-md border border-white/10 bg-[#1a1f28] text-[10px] text-[#4a5a72]">
-              —
+              -
             </div>
           )}
           <div className="min-w-0">
@@ -36,7 +37,7 @@ const AdminReviewQueueItem = ({ characterName, creatorName, previewImageUrl, fla
 
           <span
             className="inline-flex size-6 items-center justify-center rounded-full border border-[#59657f] text-[#8794ad]"
-            aria-label={`${characterName} — pending review`}
+            aria-label={`${characterName} - pending review`}
             title="Pending review"
           >
             <svg
