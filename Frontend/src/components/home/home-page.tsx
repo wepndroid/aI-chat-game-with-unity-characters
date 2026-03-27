@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import CharacterCard from '@/components/ui-elements/character-card'
 import CtaLinkButton from '@/components/ui-elements/cta-link-button'
@@ -6,7 +6,9 @@ import FaqItem from '@/components/ui-elements/faq-item'
 import PlatformItem from '@/components/ui-elements/platform-item'
 import type { PlatformIconType } from '@/components/ui-elements/platform-item'
 import SectionHeading from '@/components/ui-elements/section-heading'
+import { listCharacters, type CharacterListRecord } from '@/lib/character-api'
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 
 type CharacterCardData = {
   id: string
@@ -43,32 +45,27 @@ type MarketingPurchasePathItem = {
   href: string
 }
 
-const topRatedCharacters: CharacterCardData[] = [
-  {
-    id: 'airi-1',
-    name: 'Airi Akizuki',
-    likes: '2.4k',
-    gradientClassName: 'from-[#5b0f0f] to-[#1e0707]'
-  },
-  {
-    id: 'airi-2',
-    name: 'Airi Akizuki',
-    likes: '2.4k',
-    gradientClassName: 'from-[#8f7040] to-[#2c1f09]'
-  },
-  {
-    id: 'airi-3',
-    name: 'Airi Akizuki',
-    likes: '2.4k',
-    gradientClassName: 'from-[#1d1b32] to-[#0a0911]'
-  },
-  {
-    id: 'airi-4',
-    name: 'Airi Akizuki',
-    likes: '2.4k',
-    gradientClassName: 'from-[#5a1212] to-[#210606]'
+const topRatedGradientClasses = ['from-[#5b0f0f] to-[#1e0707]', 'from-[#8f7040] to-[#2c1f09]', 'from-[#1d1b32] to-[#0a0911]', 'from-[#5a1212] to-[#210606]']
+
+const formatHeartsCount = (count: number) => {
+  if (count >= 1000) {
+    return `${(count / 1000).toFixed(1)}k`
   }
-]
+
+  return String(count)
+}
+
+const toTopRatedCharacterCardData = (characterList: CharacterListRecord[]): CharacterCardData[] => {
+  return characterList
+    .filter((character) => character.status === 'APPROVED' && character.visibility === 'PUBLIC')
+    .slice(0, 4)
+    .map((character, index) => ({
+      id: character.slug,
+      name: character.name,
+      likes: formatHeartsCount(character.heartsCount),
+      gradientClassName: topRatedGradientClasses[index % topRatedGradientClasses.length]
+    }))
+}
 
 const frequentlyAskedQuestions: FaqItemData[] = [
   {
@@ -121,14 +118,16 @@ const featureList: MarketingFeatureItem[] = [
 const HomePage = () => {
   const trailerEmbedUrl = process.env.NEXT_PUBLIC_TRAILER_EMBED_URL
   const trailerVideoUrl = process.env.NEXT_PUBLIC_TRAILER_VIDEO_URL
-  // Set NEXT_PUBLIC_ITCH_IO_URL in .env.local to your full itch.io game page (https://…)
+  // Set NEXT_PUBLIC_ITCH_IO_URL in .env.local to your full itch.io game page (https://...).
   const itchIoUrl = process.env.NEXT_PUBLIC_ITCH_IO_URL?.trim() || 'https://itch.io'
   const patreonUrl = process.env.NEXT_PUBLIC_PATREON_URL ?? '/members'
-  // Direct / third-party checkout (Gumroad, Stripe link, etc.). If unset, send users to the on-site purchase hub (not itch — that has its own button).
+  // Direct / third-party checkout (Gumroad, Stripe link, etc.).
   const directPurchaseUrl = process.env.NEXT_PUBLIC_DIRECT_PURCHASE_URL?.trim() || '/download'
   const windowsExeHref = process.env.NEXT_PUBLIC_WINDOWS_BUILD_URL?.trim() || '/download#windows-build'
+  const [topRatedCharacters, setTopRatedCharacters] = useState<CharacterCardData[]>([])
+  const [isTopRatedLoading, setIsTopRatedLoading] = useState(true)
 
-  // Hero tiles: Browser = WebGL demo; Windows = download hub (Windows section); PCVR = VR / headset FAQ; EXE = Windows build URL or same anchor as Download EXE.
+  // Hero tiles: Browser = WebGL demo; Windows = download hub; PCVR = FAQ route; EXE = direct Windows build link.
   const heroPlatforms: HeroPlatformData[] = [
     {
       id: 'browser',
@@ -185,6 +184,38 @@ const HomePage = () => {
   ]
 
   const isExternalHref = (href: string) => href.startsWith('http://') || href.startsWith('https://')
+
+  useEffect(() => {
+    let isCancelled = false
+
+    Promise.resolve().then(async () => {
+      setIsTopRatedLoading(true)
+
+      try {
+        const payload = await listCharacters({
+          galleryScope: 'all',
+          sort: 'hearts',
+          limit: 20
+        })
+
+        if (!isCancelled) {
+          setTopRatedCharacters(toTopRatedCharacterCardData(payload.data))
+        }
+      } catch {
+        if (!isCancelled) {
+          setTopRatedCharacters([])
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsTopRatedLoading(false)
+        }
+      }
+    })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [])
 
   return (
     <main className="relative overflow-hidden bg-[#030303] text-white">
@@ -312,17 +343,23 @@ const HomePage = () => {
       <section className="relative mx-auto w-full max-w-6xl px-5 py-6 md:px-8 md:py-10">
         <SectionHeading text="Top Rated Characters" />
 
-        <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {topRatedCharacters.map((character) => (
-            <CharacterCard
-              key={character.id}
-              id={character.id}
-              name={character.name}
-              likes={character.likes}
-              gradientClassName={character.gradientClassName}
-            />
-          ))}
-        </div>
+        {isTopRatedLoading ? (
+          <p className="mt-8 text-center text-sm text-white/70">Loading top rated characters...</p>
+        ) : topRatedCharacters.length > 0 ? (
+          <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {topRatedCharacters.map((character) => (
+              <CharacterCard
+                key={character.id}
+                id={character.id}
+                name={character.name}
+                likes={character.likes}
+                gradientClassName={character.gradientClassName}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="mt-8 text-center text-sm text-white/70">No top rated characters are available yet.</p>
+        )}
 
         <div className="mt-8 flex justify-center">
           <Link

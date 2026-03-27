@@ -68,10 +68,6 @@ const listCharactersQuerySchema = z.object({
   search: z.string().trim().max(120).optional(),
   galleryScope: z.enum(['all', 'curated', 'community', 'mine']).optional(),
   sort: z.enum(['name', 'hearts', 'views', 'newest']).optional().default('newest'),
-  includeUnpublished: z
-    .enum(['true', 'false'])
-    .optional()
-    .transform((value) => value === 'true'),
   limit: z.coerce.number().int().min(1).max(100).default(24)
 })
 
@@ -832,7 +828,10 @@ characterRoutes.patch('/characters/:characterId/status', requireAdmin, async (re
 
     const currentCharacter = await prisma.character.findUnique({
       where: { id: characterId },
-      select: { id: true }
+      select: {
+        id: true,
+        visibility: true
+      }
     })
 
     if (!currentCharacter) {
@@ -848,7 +847,7 @@ characterRoutes.patch('/characters/:characterId/status', requireAdmin, async (re
       },
       data: {
         status: payload.status,
-        publishedAt: payload.status === 'APPROVED' ? new Date() : null
+        publishedAt: payload.status === 'APPROVED' && currentCharacter.visibility === 'PUBLIC' ? new Date() : null
       },
       select: {
         id: true,
@@ -877,7 +876,8 @@ characterRoutes.patch('/characters/:characterId/visibility', requireAdmin, async
         id: characterId
       },
       select: {
-        id: true
+        id: true,
+        status: true
       }
     })
 
@@ -894,7 +894,7 @@ characterRoutes.patch('/characters/:characterId/visibility', requireAdmin, async
       },
       data: {
         visibility: payload.visibility,
-        publishedAt: payload.visibility === 'PUBLIC' ? new Date() : null
+        publishedAt: payload.visibility === 'PUBLIC' && existingCharacter.status === 'APPROVED' ? new Date() : null
       },
       select: {
         id: true,

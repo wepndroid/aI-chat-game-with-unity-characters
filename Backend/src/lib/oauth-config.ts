@@ -26,7 +26,7 @@ const parseBoolean = (value: string | undefined, fallbackValue: boolean) => {
   return fallbackValue
 }
 
-const frontendPublicUrl = process.env.FRONTEND_URL?.trim() || 'http://127.0.0.1:5000'
+const frontendPublicUrl = process.env.FRONTEND_URL?.trim() || 'http://127.0.0.1:7000'
 const googleClientId = process.env.GOOGLE_OAUTH_CLIENT_ID?.trim() || ''
 const googleClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim() || ''
 const googleRedirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI?.trim() || ''

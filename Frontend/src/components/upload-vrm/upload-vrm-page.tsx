@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import AccountSideMenu from '@/components/shared/account-side-menu'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -14,7 +14,6 @@ type UploadVrmFormState = {
   tagLine: string
   vroidFileUrl: string
   previewImageUrl: string
-  screenshotUrlsRawText: string
   description: string
   personality: string
   scenario: string
@@ -27,12 +26,13 @@ type UploadVrmFormState = {
   officialCurated: boolean
 }
 
+type AssetInputMode = 'upload' | 'url'
+
 const initialFormState: UploadVrmFormState = {
   fullName: '',
   tagLine: '',
   vroidFileUrl: '',
   previewImageUrl: '',
-  screenshotUrlsRawText: '',
   description: '',
   personality: '',
   scenario: '',
@@ -52,6 +52,7 @@ const UploadVrmPage = () => {
   const editCharacterId = searchParams.get('edit')?.trim() ?? ''
   const isEditing = editCharacterId.length > 0
   const [formState, setFormState] = useState<UploadVrmFormState>(initialFormState)
+  const [assetInputMode, setAssetInputMode] = useState<AssetInputMode>('upload')
   const [vrmFile, setVrmFile] = useState<File | null>(null)
   const [previewImageFile, setPreviewImageFile] = useState<File | null>(null)
   const [selectedVrmFileName, setSelectedVrmFileName] = useState<string | null>(null)
@@ -73,6 +74,7 @@ const UploadVrmPage = () => {
   useEffect(() => {
     if (!isEditing) {
       setFormState(initialFormState)
+      setAssetInputMode('upload')
       setVrmFile(null)
       setPreviewImageFile(null)
       setSelectedVrmFileName(null)
@@ -107,7 +109,6 @@ const UploadVrmPage = () => {
           tagLine: payload.data.tagline ?? '',
           vroidFileUrl: payload.data.vroidFileUrl ?? '',
           previewImageUrl: payload.data.previewImageUrl ?? '',
-          screenshotUrlsRawText: payload.data.screenshots.map((screenshot) => screenshot.imageUrl).join('\n'),
           description: payload.data.description ?? '',
           personality: payload.data.personality ?? '',
           scenario: payload.data.scenario ?? '',
@@ -119,6 +120,7 @@ const UploadVrmPage = () => {
           isPublic: payload.data.visibility === 'PUBLIC',
           officialCurated: payload.data.officialListing
         })
+        setAssetInputMode(payload.data.vroidFileUrl || payload.data.previewImageUrl ? 'url' : 'upload')
       } catch (error) {
         if (!isCancelled) {
           setErrorMessage(error instanceof Error ? error.message : 'Failed to load character for editing.')
@@ -166,10 +168,26 @@ const UploadVrmPage = () => {
     const isPatreonGated = typeof parsedLegacyTier === 'number' ? parsedLegacyTier > 0 : false
     const minimumTierCents =
       parsedLegacyTier === 2 ? 1650 : parsedLegacyTier === 1 ? 900 : undefined
-    const screenshotUrls = formState.screenshotUrlsRawText
-      .split(/\r?\n|,/)
-      .map((value) => value.trim())
-      .filter((value) => value.length > 0)
+    const hasUploadSource = Boolean(vrmFile || previewImageFile)
+    const hasUrlSource = Boolean(formState.vroidFileUrl.trim() || formState.previewImageUrl.trim())
+
+    if (hasUploadSource && hasUrlSource) {
+      setErrorMessage('Choose one source type only: Upload File or Use URL.')
+      setStatusMessage(null)
+      return
+    }
+
+    if (assetInputMode === 'upload' && hasUrlSource && !isEditing) {
+      setErrorMessage('URL inputs are filled. Clear them or switch to Use URL mode.')
+      setStatusMessage(null)
+      return
+    }
+
+    if (assetInputMode === 'url' && hasUploadSource) {
+      setErrorMessage('Uploaded files are selected. Remove them or switch to Upload File mode.')
+      setStatusMessage(null)
+      return
+    }
 
     setIsSubmitting(true)
     setErrorMessage(null)
@@ -216,7 +234,6 @@ const UploadVrmPage = () => {
           exampleDialogs: formState.exampleDialogue.trim() || null,
           vroidFileUrl: vroidUrl || null,
           previewImageUrl: previewUrl || null,
-          screenshotUrls,
           legacyFileHash: formState.legacyFileHash.trim() || null,
           legacyTier: normalizedTierInput.length > 0 ? parsedLegacyTier ?? null : null,
           legacyHeyWaifu: formState.legacyHeywaifu ? 1 : 0,
@@ -237,7 +254,6 @@ const UploadVrmPage = () => {
           exampleDialogs: formState.exampleDialogue.trim() || undefined,
           vroidFileUrl: vroidUrl || undefined,
           previewImageUrl: previewUrl || undefined,
-          screenshotUrls: screenshotUrls.length > 0 ? screenshotUrls : undefined,
           legacyFileHash: formState.legacyFileHash.trim() || undefined,
           legacyTier: parsedLegacyTier,
           legacyHeyWaifu: formState.legacyHeywaifu ? 1 : 0,
@@ -288,59 +304,82 @@ const UploadVrmPage = () => {
               ) : null}
 
               <p className="text-sm text-white/65">
-                Add a <span className="text-white/90">.vrm</span> and preview image by uploading files here, or paste public <span className="text-white/90">https://</span>{' '}
-                URLs below. Uploaded files are stored on this site and fill the URL fields automatically when you submit.
+                Select one source for assets: <span className="text-white/90">Upload File</span> (recommended) or{' '}
+                <span className="text-white/90">Use URL</span> (advanced).
               </p>
 
-              <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                <div>
-                  <UploadDropzone
-                    onFileSelect={(file) => {
-                      setVrmFile(file)
-                      setSelectedVrmFileName(file?.name ?? null)
-                    }}
-                    selectedFileName={selectedVrmFileName}
-                  />
+              <div className="mt-4">
+                <div className="inline-flex rounded-md border border-white/20 bg-black/25 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setAssetInputMode('upload')}
+                    className={`rounded px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] transition ${
+                      assetInputMode === 'upload' ? 'bg-ember-400 text-black' : 'text-white/75 hover:text-white'
+                    }`}
+                    aria-label="Use file upload mode"
+                  >
+                    Upload File
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAssetInputMode('url')}
+                    className={`rounded px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] transition ${
+                      assetInputMode === 'url' ? 'bg-ember-400 text-black' : 'text-white/75 hover:text-white'
+                    }`}
+                    aria-label="Use URL mode"
+                  >
+                    Use URL
+                  </button>
                 </div>
-                <div>
-                  <PreviewImageDropzone
-                    onFileSelect={(file) => {
-                      setPreviewImageFile(file)
-                      setSelectedPreviewFileName(file?.name ?? null)
-                    }}
-                    selectedFileName={selectedPreviewFileName}
-                  />
-                </div>
+
+                {assetInputMode === 'upload' ? (
+                  <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                    <div>
+                      <UploadDropzone
+                        onFileSelect={(file) => {
+                          setVrmFile(file)
+                          setSelectedVrmFileName(file?.name ?? null)
+                        }}
+                        selectedFileName={selectedVrmFileName}
+                      />
+                    </div>
+                    <div>
+                      <PreviewImageDropzone
+                        onFileSelect={(file) => {
+                          setPreviewImageFile(file)
+                          setSelectedPreviewFileName(file?.name ?? null)
+                        }}
+                        selectedFileName={selectedPreviewFileName}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                    <UploadField
+                      label="VRM file URL"
+                      value={formState.vroidFileUrl}
+                      onChange={(value) => handleFieldChange('vroidFileUrl', value)}
+                      placeholder="https://.../model.vrm"
+                    />
+                    <UploadField
+                      label="Preview image URL"
+                      value={formState.previewImageUrl}
+                      onChange={(value) => handleFieldChange('previewImageUrl', value)}
+                      placeholder="https://.../preview.png"
+                    />
+                  </div>
+                )}
               </div>
+
+              {assetInputMode === 'upload' ? (
+                <p className="mt-4 text-[11px] text-white/55">Files are uploaded to this site and URLs are filled automatically during submit.</p>
+              ) : (
+                <p className="mt-4 text-[11px] text-white/55">Use direct public https URLs only. The system validates URL safety and extensions.</p>
+              )}
 
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
                 <UploadField label="Full Name" value={formState.fullName} onChange={(value) => handleFieldChange('fullName', value)} />
                 <UploadField label="Tag line" value={formState.tagLine} onChange={(value) => handleFieldChange('tagLine', value)} />
-              </div>
-
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <UploadField
-                  label="VRM file URL (optional if you upload)"
-                  value={formState.vroidFileUrl}
-                  onChange={(value) => handleFieldChange('vroidFileUrl', value)}
-                  placeholder="https://.../model.vrm"
-                />
-                <UploadField
-                  label="Preview image URL (optional if you upload)"
-                  value={formState.previewImageUrl}
-                  onChange={(value) => handleFieldChange('previewImageUrl', value)}
-                  placeholder="https://.../preview.png"
-                />
-              </div>
-
-              <div className="mt-4">
-                <UploadField
-                  label="Screenshot URLs (one per line)"
-                  value={formState.screenshotUrlsRawText}
-                  onChange={(value) => handleFieldChange('screenshotUrlsRawText', value)}
-                  placeholder="https://.../screen-1.png"
-                  multiline
-                />
               </div>
 
               <div className="mt-4">
@@ -383,31 +422,38 @@ const UploadVrmPage = () => {
                 />
               </div>
 
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <UploadField
-                  label="Legacy File Hash (optional)"
-                  value={formState.legacyFileHash}
-                  onChange={(value) => handleFieldChange('legacyFileHash', value)}
-                  placeholder="64-char sha256 hash"
-                />
-                <UploadField
-                  label="Legacy Tier (0/1/2)"
-                  value={formState.legacyTier}
-                  onChange={(value) => handleFieldChange('legacyTier', value)}
-                  placeholder="0, 1, or 2"
-                />
-              </div>
+              <details className="mt-5 rounded-md border border-white/15 bg-white/5 p-3">
+                <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.08em] text-white/70">
+                  Advanced Options (Optional)
+                </summary>
+                <div className="mt-3 space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <UploadField
+                      label="Legacy File Hash (optional)"
+                      value={formState.legacyFileHash}
+                      onChange={(value) => handleFieldChange('legacyFileHash', value)}
+                      placeholder="64-char sha256 hash"
+                    />
+                    <UploadField
+                      label="Legacy Tier (0/1/2)"
+                      value={formState.legacyTier}
+                      onChange={(value) => handleFieldChange('legacyTier', value)}
+                      placeholder="0, 1, or 2"
+                    />
+                  </div>
 
-              <label className="mt-3 inline-flex cursor-pointer items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={formState.legacyHeywaifu}
-                  onChange={(event) => handleFieldChange('legacyHeywaifu', event.target.checked)}
-                  className="size-4 rounded border border-white/30 bg-transparent text-ember-400 focus:ring-ember-300"
-                  aria-label="Legacy heywaifu flag"
-                />
-                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/55">Legacy HeyWaifu Flag</span>
-              </label>
+                  <label className="inline-flex cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formState.legacyHeywaifu}
+                      onChange={(event) => handleFieldChange('legacyHeywaifu', event.target.checked)}
+                      className="size-4 rounded border border-white/30 bg-transparent text-ember-400 focus:ring-ember-300"
+                      aria-label="Legacy heywaifu flag"
+                    />
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/55">Legacy HeyWaifu Flag</span>
+                  </label>
+                </div>
+              </details>
 
               <label className="mt-4 inline-flex cursor-pointer items-center gap-2">
                 <input
@@ -430,7 +476,7 @@ const UploadVrmPage = () => {
                     aria-label="Curated official listing"
                   />
                   <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/55">
-                    Curated (official gallery — admin only)
+                    Curated (official gallery - admin only)
                   </span>
                 </label>
               ) : null}

@@ -20,7 +20,7 @@ const getPatreonConfig = (): PatreonConfig => {
   const clientId = process.env.PATREON_CLIENT_ID
   const clientSecret = process.env.PATREON_CLIENT_SECRET
   const redirectUri = process.env.PATREON_REDIRECT_URI
-  const frontendUrl = process.env.FRONTEND_URL ?? 'http://127.0.0.1:5000'
+  const frontendUrl = process.env.FRONTEND_URL ?? 'http://127.0.0.1:7000'
   const scopes = (process.env.PATREON_SCOPES ?? 'identity identity.memberships')
     .split(' ')
     .map((scope) => scope.trim())

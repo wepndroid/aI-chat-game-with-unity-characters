@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
@@ -117,6 +117,7 @@ const PlayDemoClient = () => {
     return buildWebglEmbedUrlWithCharacterContext(webglEmbedUrl, characterId, characterSlug)
   }, [webglEmbedUrl, characterId, characterSlug])
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!resolvedWebglEmbedUrl) {
       return
@@ -127,6 +128,7 @@ const PlayDemoClient = () => {
     setHasUnityProgressFeed(false)
     setShowLoadingOverlay(true)
   }, [resolvedWebglEmbedUrl])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (!webglEmbedUrl) {

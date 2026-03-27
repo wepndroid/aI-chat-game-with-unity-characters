@@ -412,7 +412,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
       return
     }
 
-    let containerElement = threePreviewContainerReference.current
+    const containerElement = threePreviewContainerReference.current
 
     if (!containerElement) {
       return

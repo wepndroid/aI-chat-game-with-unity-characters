@@ -71,7 +71,7 @@ const ForgotPasswordPage = () => {
               <Link href="/" className="font-semibold text-ember-300 transition hover:text-ember-200" aria-label="Return to home">
                 Back To Home
               </Link>
-              <Link href="/sign-up" className="font-semibold text-ember-300 transition hover:text-ember-200" aria-label="Open sign in/sign up page">
+              <Link href="/?openSignIn=1" className="font-semibold text-ember-300 transition hover:text-ember-200" aria-label="Open sign in modal">
                 Sign In
               </Link>
             </div>
