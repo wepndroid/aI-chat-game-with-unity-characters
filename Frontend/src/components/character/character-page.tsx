@@ -47,31 +47,110 @@ const formatTierLabel = (tierCents: number | null) => {
   return `Requires EUR ${(tierCents / 100).toFixed(2)}+ tier`
 }
 
-const formatReviewDateLabel = (value: string) => {
+const formatReviewRelativeLabel = (value: string) => {
   const parsedDate = new Date(value)
 
   if (Number.isNaN(parsedDate.getTime())) {
-    return 'Unknown date'
+    return 'recent'
   }
 
-  return new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'medium'
-  }).format(parsedDate)
+  const elapsedMs = Date.now() - parsedDate.getTime()
+  const elapsedDays = Math.max(0, Math.floor(elapsedMs / (24 * 60 * 60 * 1000)))
+
+  if (elapsedDays <= 0) {
+    return 'today'
+  }
+
+  if (elapsedDays === 1) {
+    return '1d ago'
+  }
+
+  if (elapsedDays < 30) {
+    return `${elapsedDays}d ago`
+  }
+
+  const elapsedMonths = Math.floor(elapsedDays / 30)
+  return `${elapsedMonths}mo ago`
+}
+
+const StartChatIcon = ({ className = 'size-8' }: { className?: string }) => {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <path
+        d="M12 2.75c-4.97 0-9 3.32-9 7.43 0 2.61 1.65 4.9 4.14 6.22-.09 1.11-.4 2.26-1.12 3.03a.6.6 0 0 0 .58 1.01c1.92-.35 3.49-1.2 4.45-1.86.31.03.62.05.95.05 4.97 0 9-3.32 9-7.43S16.97 2.75 12 2.75Z"
+        fill="currentColor"
+      />
+      <circle cx="8.5" cy="10.3" r="1.05" fill="#f48f49" />
+      <circle cx="12" cy="10.3" r="1.05" fill="#f48f49" />
+      <circle cx="15.5" cy="10.3" r="1.05" fill="#f48f49" />
+    </svg>
+  )
+}
+
+const ChatStatIcon = ({ className = 'size-4' }: { className?: string }) => {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <path
+        d="M12 2.75c-4.97 0-9 3.32-9 7.43 0 2.61 1.65 4.9 4.14 6.22-.09 1.11-.4 2.26-1.12 3.03a.6.6 0 0 0 .58 1.01c1.92-.35 3.49-1.2 4.45-1.86.31.03.62.05.95.05 4.97 0 9-3.32 9-7.43S16.97 2.75 12 2.75Z"
+        fill="#f19147"
+      />
+      <circle cx="8.5" cy="10.3" r="1.05" fill="#1f120d" />
+      <circle cx="12" cy="10.3" r="1.05" fill="#1f120d" />
+      <circle cx="15.5" cy="10.3" r="1.05" fill="#1f120d" />
+    </svg>
+  )
+}
+
+const HeartStatIcon = ({ className = 'size-4' }: { className?: string }) => {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <path
+        d="M12 21.35 10.55 20C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09A6.03 6.03 0 0 1 16.5 3C19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.5L12 21.35Z"
+        fill="#f75de8"
+      />
+    </svg>
+  )
+}
+
+const UploadedByStatIcon = ({ className = 'size-4' }: { className?: string }) => {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <rect x="5" y="6" width="14" height="14" rx="0.9" fill="#6d7380" />
+      <rect x="9" y="2" width="6" height="4.3" rx="0.55" fill="#6d7380" />
+      <circle cx="12" cy="4.15" r="0.95" fill="#17181c" />
+      <circle cx="12" cy="13.05" r="2.15" fill="#17181c" />
+      <path d="M8.6 19.2c.58-2.02 1.95-3.2 3.4-3.2s2.82 1.18 3.4 3.2v.8H8.6v-.8Z" fill="#17181c" />
+    </svg>
+  )
+}
+
+const DescriptionHeartIcon = ({ className = 'size-4' }: { className?: string }) => {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden="true">
+      <path
+        d="m12 20.2-.78-.7C6.46 15.21 3.5 12.53 3.5 9.23 3.5 6.55 5.6 4.5 8.25 4.5c1.5 0 2.95.7 3.75 1.82A4.83 4.83 0 0 1 15.75 4.5c2.66 0 4.75 2.05 4.75 4.73 0 3.3-2.96 5.98-7.72 10.27l-.78.7Z"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
 }
 
 const CharacterPreviewVisual = ({ previewImageUrl, characterName }: { previewImageUrl: string | null; characterName: string }) => {
   return (
-    <div className="relative mx-auto flex h-[420px] w-[210px] items-end justify-center overflow-hidden rounded-sm border border-white/10 bg-[linear-gradient(to_bottom,#a7bbcb_0%,#546377_45%,#1d2530_100%)]">
+    <div className="relative mx-auto flex h-[430px] w-[225px] items-end justify-center overflow-hidden rounded-sm border border-white/10 bg-black">
       {previewImageUrl ? (
         <Image
           src={previewImageUrl}
           alt={`${characterName} preview`}
           fill
           unoptimized
-          className="object-cover"
+          className="object-contain object-bottom"
         />
       ) : null}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_8%,rgba(255,255,255,0.4),transparent_35%)]" />
+      {!previewImageUrl ? (
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_8%,rgba(255,255,255,0.35),transparent_35%),radial-gradient(circle_at_12%_75%,rgba(255,255,255,0.24),transparent_28%),radial-gradient(circle_at_88%_30%,rgba(255,255,255,0.2),transparent_24%)]" />
+      ) : null}
       {!previewImageUrl ? (
         <>
           <div className="absolute left-1/2 top-[78px] h-14 w-14 -translate-x-1/2 rounded-full bg-[#f8c5a5]" />
@@ -294,9 +373,24 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     }
 
     return [
-      { id: 'total-views', icon: 'x', value: formatCompactNumber(characterRecord.viewsCount), label: 'Total Views' },
-      { id: 'likes', icon: 'o', value: formatCompactNumber(characterRecord.heartsCount), label: 'Likes' },
-      { id: 'uploaded-by', icon: '*', value: characterRecord.owner.username, label: 'Uploaded By' }
+      {
+        id: 'total-chats',
+        icon: <ChatStatIcon className="size-[24px]" />,
+        value: formatCompactNumber(characterRecord.viewsCount),
+        label: 'Total Chats'
+      },
+      {
+        id: 'likes',
+        icon: <HeartStatIcon className="size-[24px]" />,
+        value: formatCompactNumber(characterRecord.heartsCount),
+        label: 'Likes'
+      },
+      {
+        id: 'uploaded-by',
+        icon: <UploadedByStatIcon className="size-[24px]" />,
+        value: characterRecord.owner.username,
+        label: 'Uploaded By'
+      }
     ]
   }, [characterRecord])
 
@@ -621,8 +715,8 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
         <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:22px_22px] opacity-45" />
 
         <div className="relative z-10 mx-auto w-full max-w-[1150px] pt-24">
-          <h1 className="text-center font-[family-name:var(--font-heading)] text-5xl font-semibold italic text-white md:text-6xl">
-            {characterRecord?.name ?? 'Character Detail'}
+          <h1 className="text-center font-[family-name:var(--font-heading)] text-5xl font-semibold italic text-white md:text-[62px]">
+            AI Girlfriend
           </h1>
           {isLoading ? <p className="mt-4 text-center text-sm text-white/72">Loading character...</p> : null}
           {!isLoading && errorMessage ? (
@@ -635,9 +729,10 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
           ) : null}
 
           {!isLoading && !errorMessage && characterRecord ? (
-            <div className="mt-10 grid gap-5 lg:grid-cols-[1.28fr_1fr]">
+            <div className="mt-10 grid gap-5 lg:grid-cols-[1.3fr_1fr]">
               <div>
-                <div className="relative rounded-md border border-white/10 bg-[linear-gradient(to_right,#3f2b1b,#1f1a1a_38%,#0e0f14)] px-5 py-5 md:px-7">
+                <div className="relative overflow-hidden rounded-md border border-white/10 bg-[linear-gradient(90deg,#5d3b24_0%,#201817_38%,#0b1430_100%)] px-5 py-5 md:px-7">
+                  <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(255,243,200,0.5),transparent_34%),radial-gradient(circle_at_26%_58%,rgba(255,255,255,0.16),transparent_26%),radial-gradient(circle_at_74%_58%,rgba(255,255,255,0.1),transparent_24%),linear-gradient(180deg,rgba(0,0,0,0)_58%,rgba(0,0,0,0.86)_100%)]" />
                   {canUseCharacterActions ? (
                     <button
                       type="button"
@@ -650,7 +745,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                           return !previousState
                         })
                       }}
-                      className="absolute right-4 top-4 inline-flex h-9 items-center justify-center rounded-md border border-white/35 bg-white/95 px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#1d1d1d]"
+                      className="absolute right-4 top-4 z-[2] inline-flex h-9 items-center justify-center rounded-md border border-white/40 bg-white px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#1d1d1d]"
                       aria-label="Open 3D preview"
                       disabled={!canOpenThreePreview}
                     >
@@ -659,7 +754,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                   ) : (
                     <Link
                       href="/members"
-                      className="absolute right-4 top-4 inline-flex h-9 items-center justify-center rounded-md border border-ember-300/40 bg-ember-300/15 px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-ember-100"
+                      className="absolute right-4 top-4 z-[2] inline-flex h-9 items-center justify-center rounded-md border border-ember-300/40 bg-ember-300/15 px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-ember-100"
                       aria-label="Upgrade to unlock 3D preview"
                     >
                       Unlock Preview
@@ -671,7 +766,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                       className={
                         isThreePreviewExpanded
                           ? 'fixed inset-0 z-[100] flex flex-col items-center justify-center gap-3 bg-black/95 p-4'
-                          : 'relative mx-auto h-[420px] w-[210px] overflow-hidden rounded-sm border border-white/10 bg-[#0f1117]'
+                          : 'relative mx-auto h-[430px] w-[225px] overflow-hidden rounded-sm border border-white/10 bg-[#0f1117]'
                       }
                     >
                       {!isThreePreviewLoading && !threePreviewErrorMessage ? (
@@ -732,7 +827,9 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                       ) : null}
                     </div>
                   ) : (
-                    <CharacterPreviewVisual previewImageUrl={activePreviewImageUrl} characterName={characterRecord.name} />
+                    <div className="relative z-[1]">
+                      <CharacterPreviewVisual previewImageUrl={activePreviewImageUrl} characterName={characterRecord.name} />
+                    </div>
                   )}
                   {canUseCharacterActions && !characterRecord.vroidFileUrl ? (
                     <p className="mt-2 text-center text-[10px] text-white/45">
@@ -770,14 +867,16 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                 </div>
 
                 <section className="mt-4 rounded-md border border-white/10 bg-[#121010] p-5">
-                  <h3 className="font-[family-name:var(--font-heading)] text-[26px] font-semibold italic text-white">REVIEWS</h3>
+                  <h3 className="font-[family-name:var(--font-heading)] text-[26px] font-semibold italic uppercase text-white">Comments</h3>
                   {isReviewsLoading ? <p className="mt-3 text-xs text-white/70">Loading reviews...</p> : null}
                   {reviewsErrorMessage ? (
-                    <p className="mt-3 rounded-md border border-rose-300/30 bg-rose-300/10 px-3 py-2 text-xs text-rose-100">{reviewsErrorMessage}</p>
+                    <p className="mt-3 rounded-md border border-white/10 bg-[#0e0b0b] px-3 py-2 text-xs text-white/60">
+                      Comments are unavailable until this character is public.
+                    </p>
                   ) : null}
 
                   {!isReviewsLoading && !reviewsErrorMessage && reviewList.length === 0 ? (
-                    <p className="mt-3 text-xs text-white/70">No reviews yet. Be the first to leave one.</p>
+                    <p className="mt-3 text-xs text-white/70">No comments yet. Be the first to leave one.</p>
                   ) : null}
 
                   <div className="mt-3 space-y-2">
@@ -785,7 +884,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                       <div key={review.id} className="rounded-sm border border-white/10 bg-[#0d0d0d] p-3">
                         <p className="text-[11px] font-semibold text-white/85">
                           {review.user.username}
-                          <span className="ml-2 text-white/45">{formatReviewDateLabel(review.createdAt)}</span>
+                          <span className="ml-2 text-white/45">{formatReviewRelativeLabel(review.createdAt)}</span>
                         </p>
                         <p className="mt-2 whitespace-pre-wrap text-[11px] leading-[1.45] text-white/65">{review.body}</p>
                       </div>
@@ -794,11 +893,11 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
 
                   <div className="mt-4 rounded-md border border-white/15 bg-black/20 p-3">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.09em] text-white/65">
-                      {ownReview ? 'Update your review' : 'Write a review'}
+                      {ownReview ? 'Update your comment' : 'Write a comment'}
                     </p>
                     {!canPostReviewWithSubscription ? (
                       <p className="mt-2 text-[11px] leading-relaxed text-white/60">
-                        Written reviews require an active Patreon subscription linked to your account.{' '}
+                        Written comments require an active Patreon subscription linked to your account.{' '}
                         <Link href="/members" className="font-semibold text-ember-200 underline-offset-2 hover:text-ember-100">
                           Connect Patreon
                         </Link>
@@ -818,9 +917,9 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                         onClick={handleSubmitReview}
                         disabled={isReviewSubmitting || !canPostReviewWithSubscription}
                         className="rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-black disabled:opacity-70"
-                        aria-label={ownReview ? 'Update review' : 'Post review'}
+                        aria-label={ownReview ? 'Update comment' : 'Post comment'}
                       >
-                        {isReviewSubmitting ? 'Saving...' : ownReview ? 'Update Review' : 'Post Review'}
+                        {isReviewSubmitting ? 'Saving...' : ownReview ? 'Update Comment' : 'Post Comment'}
                       </button>
                       {ownReview ? (
                         <button
@@ -841,14 +940,14 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                 </section>
               </div>
 
-              <div className="rounded-md border border-white/10 bg-[#1a1414] p-5 md:p-6">
+              <div className="rounded-md border border-white/10 bg-[#1a1213] p-5 md:p-6">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h2 className="font-[family-name:var(--font-heading)] text-[42px] font-semibold italic leading-none text-white">
+                    <h2 className="font-[family-name:var(--font-heading)] text-[48px] font-semibold italic uppercase leading-none text-white">
                       {characterRecord.name}
                     </h2>
-                    <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.11em] text-white/50">
-                      {characterRecord.tagline ?? 'VRoid Character'}
+                    <p className="mt-2 text-[12px] font-semibold uppercase tracking-[0.09em] text-white/45">
+                      {(characterRecord.tagline ?? 'VRoid Character').toUpperCase()}
                     </p>
                   </div>
                   <button
@@ -857,12 +956,12 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                     disabled={isHeartSubmitting}
                     className={`inline-flex size-8 items-center justify-center rounded-full border text-xs transition ${
                       characterRecord.hasHearted
-                        ? 'border-rose-300/70 bg-rose-300/20 text-rose-200'
-                        : 'border-white/30 text-white/60 hover:border-rose-300/45 hover:text-rose-200'
+                        ? 'border-[#8f6447] bg-[#2e221c] text-white shadow-[0_0_0_1px_rgba(255,255,255,0.04)_inset]'
+                        : 'border-[#775844] bg-[#261c17] text-white/95 hover:border-[#8f6447] hover:bg-[#2c201a]'
                     }`}
                     aria-label="Add to favorites"
                   >
-                    {'\u2665'}
+                    <DescriptionHeartIcon className="size-[13px]" />
                   </button>
                 </div>
                 {characterActionMessage ? <p className="mt-3 text-xs text-white/70">{characterActionMessage}</p> : null}
@@ -874,35 +973,24 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
 
                 <div className="mt-6">
                   <p className="text-[10px] font-bold uppercase tracking-[0.11em] text-amber-300">Description</p>
-                  <p className="mt-3 text-[11px] leading-[1.5] text-white/70">{descriptionText}</p>
+                  <p className="mt-3 whitespace-pre-line text-[11px] leading-[1.75] text-white/75">{descriptionText}</p>
                 </div>
 
                 <div className="mt-6">
                   <p className="text-[10px] font-bold uppercase tracking-[0.11em] text-amber-300">First Message Preview</p>
-                  <div className="mt-3 rounded-md border border-amber-300/25 bg-[#161111] p-3">
+                  <div className="mt-3 rounded-md border border-amber-300/25 bg-[#171111] p-3">
                     {firstMessagePreviewText.length > 0 ? (
-                      <p className="whitespace-pre-wrap text-[11px] leading-[1.5] text-white/75">{firstMessagePreviewText}</p>
+                      <p className="whitespace-pre-wrap text-[11px] italic leading-[1.7] text-white/75">{firstMessagePreviewText}</p>
                     ) : (
                       <p className="text-[11px] leading-[1.5] text-white/55">No first-message preview has been added yet.</p>
                     )}
                   </div>
                 </div>
 
-                {canUseCharacterActions && characterRecord.vroidFileUrl ? (
-                  <a
-                    href={characterRecord.vroidFileUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-6 inline-flex h-10 w-full items-center justify-center rounded-md border border-white/20 bg-white/5 px-5 text-[11px] font-semibold uppercase tracking-[0.08em] text-white transition hover:border-ember-300 hover:text-ember-200"
-                    aria-label="Download VRM file"
-                  >
-                    Download VRM
-                  </a>
-                ) : null}
                 {isPatreonGated && !canAccessGatedContent ? (
                   <Link
                     href="/members"
-                    className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 font-[family-name:var(--font-heading)] text-[30px] font-semibold italic leading-none text-white transition hover:brightness-110"
+                    className="mt-8 inline-flex h-14 w-full items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 font-[family-name:var(--font-heading)] text-[40px] font-semibold italic leading-none text-white transition hover:brightness-110"
                     aria-label="Connect Patreon and upgrade tier"
                   >
                     Unlock with Patreon
@@ -910,10 +998,13 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                 ) : (
                   <Link
                     href={playDemoHref}
-                    className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 font-[family-name:var(--font-heading)] text-[30px] font-semibold italic leading-none text-white transition hover:brightness-110"
+                    className="mt-8 inline-flex h-14 w-full items-center justify-center gap-3 rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 font-[family-name:var(--font-heading)] text-[40px] font-semibold italic uppercase leading-none text-white transition hover:brightness-110"
                     aria-label="Start chat in the WebGL demo with this character"
                   >
                     Start Chat
+                    <span className="text-white/95">
+                      <StartChatIcon className="size-8" />
+                    </span>
                   </Link>
                 )}
               </div>

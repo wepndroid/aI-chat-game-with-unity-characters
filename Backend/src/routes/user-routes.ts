@@ -3,6 +3,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAdmin } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
+import { revokeAllSessionsForUser } from '../services/auth-service'
 
 const userRoutes = Router()
 
@@ -21,6 +22,10 @@ const updateUserRoleSchema = z.object({
   role: z.nativeEnum(UserRole)
 })
 
+const updateUserBannedSchema = z.object({
+  banned: z.boolean()
+})
+
 userRoutes.get('/users', requireAdmin, async (request, response, next) => {
   try {
     const query = listUsersQuerySchema.parse(request.query)
@@ -31,19 +36,19 @@ userRoutes.get('/users', requireAdmin, async (request, response, next) => {
       ...(query.role ? { role: query.role } : {}),
       ...(normalizedSearch
         ? {
-            OR: [
-              {
-                username: {
-                  contains: normalizedSearch
-                }
-              },
-              {
-                email: {
-                  contains: normalizedSearch
-                }
+          OR: [
+            {
+              username: {
+                contains: normalizedSearch
               }
-            ]
-          }
+            },
+            {
+              email: {
+                contains: normalizedSearch
+              }
+            }
+          ]
+        }
         : {})
     }
 
@@ -64,6 +69,7 @@ userRoutes.get('/users', requireAdmin, async (request, response, next) => {
           username: true,
           role: true,
           isEmailVerified: true,
+          isBanned: true,
           createdAt: true,
           updatedAt: true,
           patreonAccount: {
@@ -102,6 +108,7 @@ userRoutes.get('/users', requireAdmin, async (request, response, next) => {
           username: user.username,
           role: user.role,
           isEmailVerified: user.isEmailVerified,
+          isBanned: user.isBanned,
           createdAt: user.createdAt,
           updatedAt: user.updatedAt,
           uploadsCount: user._count.characters,
@@ -172,6 +179,67 @@ userRoutes.patch('/users/:userId/role', requireAdmin, async (request, response, 
         updatedAt: true
       }
     })
+
+    response.json({
+      data: updatedUser
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+userRoutes.patch('/users/:userId/banned', requireAdmin, async (request, response, next) => {
+  try {
+    const { userId } = userParamsSchema.parse(request.params)
+    const payload = updateUserBannedSchema.parse(request.body)
+    const actingAdmin = request.authUser
+
+    if (!actingAdmin) {
+      response.status(401).json({
+        message: 'Authentication required.'
+      })
+      return
+    }
+
+    if (actingAdmin.userId === userId && payload.banned) {
+      response.status(400).json({
+        message: 'You cannot ban your own account.'
+      })
+      return
+    }
+
+    const existingUser = await prisma.user.findUnique({
+      where: {
+        id: userId
+      },
+      select: {
+        id: true
+      }
+    })
+
+    if (!existingUser) {
+      response.status(404).json({
+        message: 'User not found.'
+      })
+      return
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: {
+        id: userId
+      },
+      data: {
+        isBanned: payload.banned
+      },
+      select: {
+        id: true,
+        isBanned: true
+      }
+    })
+
+    if (payload.banned) {
+      await revokeAllSessionsForUser(userId, new Date())
+    }
 
     response.json({
       data: updatedUser

@@ -256,6 +256,11 @@ authRoutes.get('/auth/oauth/:provider/callback', optionalAuth, async (request, r
       intent: oauthStatePayload.intent
     })
 
+    if (resolvedUser.isBanned) {
+      redirectWithError(oauthStatePayload.redirectAfter, 'This account has been suspended.')
+      return
+    }
+
     const rawSessionToken = await createOpaqueSessionForUser(resolvedUser.id, extractSessionClientMeta(request))
     setAuthCookie(response, rawSessionToken)
 
@@ -596,6 +601,7 @@ authRoutes.post('/auth/login', async (request, response, next) => {
         username: true,
         role: true,
         isEmailVerified: true,
+        isBanned: true,
         passwordHash: true
       }
     })
@@ -603,6 +609,13 @@ authRoutes.post('/auth/login', async (request, response, next) => {
     if (!existingUser?.passwordHash) {
       response.status(401).json({
         message: 'Invalid e-mail or password.'
+      })
+      return
+    }
+
+    if (existingUser.isBanned) {
+      response.status(403).json({
+        message: 'This account has been suspended.'
       })
       return
     }

@@ -1,6 +1,5 @@
 ﻿'use client'
 
-import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -98,8 +97,6 @@ const PlayDemoClient = () => {
   const characterSlug = searchParams.get('character')
 
   const webglEmbedUrl = process.env.NEXT_PUBLIC_WEBGL_EMBED_URL
-  const trailerEmbedUrl = process.env.NEXT_PUBLIC_TRAILER_EMBED_URL
-  const trailerVideoUrl = process.env.NEXT_PUBLIC_TRAILER_VIDEO_URL
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const [loadingProgress, setLoadingProgress] = useState(0)
   const [iframeLoaded, setIframeLoaded] = useState(false)
@@ -204,9 +201,6 @@ const PlayDemoClient = () => {
           <h1 className="text-center font-[family-name:var(--font-heading)] text-5xl font-semibold italic leading-none text-white md:text-6xl">
             WebGL Demo
           </h1>
-          <p className="mx-auto mt-4 max-w-3xl text-center text-sm leading-7 text-white/75">
-            Play the browser demo below, then continue to download or membership options for full access.
-          </p>
           {hasCharacterContext ? (
             <p className="mx-auto mt-4 max-w-3xl text-center text-xs leading-relaxed text-white/55">
               Starting with character {characterSlug ? <span className="text-white/85">{characterSlug}</span> : null}
@@ -287,49 +281,6 @@ const PlayDemoClient = () => {
             </div>
           </div>
 
-          <section className="mx-auto mt-8 w-full max-w-5xl">
-            <h2 className="font-[family-name:var(--font-heading)] text-[38px] font-semibold italic leading-none text-white">
-              Trailer Preview
-            </h2>
-
-            <div className="mt-4 overflow-hidden rounded-2xl border border-white/15 bg-[#0b0b0b]">
-              <div className="aspect-video w-full">
-                {trailerEmbedUrl ? (
-                  <iframe
-                    src={trailerEmbedUrl}
-                    title="AI Chat Game Trailer"
-                    className="h-full w-full"
-                    loading="lazy"
-                    allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-                    allowFullScreen
-                  />
-                ) : trailerVideoUrl ? (
-                  <video src={trailerVideoUrl} controls className="h-full w-full bg-black" preload="metadata" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center px-6 text-center">
-                    <p className="text-sm text-white/70">Set trailer env vars to display the official trailer here.</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link
-              href="/download"
-              className="inline-flex h-11 min-w-[220px] items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-6 text-xs font-bold uppercase tracking-[0.1em] text-black transition hover:brightness-110"
-              aria-label="Go to download and purchase options"
-            >
-              Get Full Version
-            </Link>
-            <Link
-              href="/characters"
-              className="inline-flex h-11 min-w-[220px] items-center justify-center rounded-md border border-white/20 px-6 text-xs font-semibold uppercase tracking-[0.1em] text-white transition hover:border-ember-300 hover:text-ember-200"
-              aria-label="Browse characters"
-            >
-              Browse Characters
-            </Link>
-          </div>
         </div>
       </section>
 

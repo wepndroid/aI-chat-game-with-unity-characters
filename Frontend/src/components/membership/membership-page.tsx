@@ -31,23 +31,6 @@ type PatreonStatusApiResponse = {
 
 type MembershipAccessState = 'not-connected' | 'connected-inactive' | 'active-entitlement' | 'sync-in-progress'
 
-const inactiveEntitlementRecords: MembershipEntitlementRecord[] = [
-  {
-    id: 'entitlement-just-models',
-    featureKey: 'just_models',
-    sourceProvider: 'patreon',
-    validUntilLabel: 'No access',
-    status: 'inactive'
-  },
-  {
-    id: 'entitlement-secretwaifu-access',
-    featureKey: 'secretwaifu_access',
-    sourceProvider: 'patreon',
-    validUntilLabel: 'No access',
-    status: 'inactive'
-  }
-]
-
 const formatDateLabel = (value: string | null, fallbackLabel: string) => {
   if (!value) {
     return fallbackLabel
@@ -95,10 +78,6 @@ const mapMembershipStatusToChip = (linked: boolean, membershipStatus: string): M
 }
 
 const mapEntitlements = (entitlements: PatreonEntitlementApiRecord[]): MembershipEntitlementRecord[] => {
-  if (entitlements.length === 0) {
-    return inactiveEntitlementRecords
-  }
-
   return entitlements.map((entitlement) => ({
     id: entitlement.id,
     featureKey: entitlement.tierCode,
@@ -106,6 +85,26 @@ const mapEntitlements = (entitlements: PatreonEntitlementApiRecord[]): Membershi
     validUntilLabel: formatDateLabel(entitlement.validUntil, 'No access'),
     status: entitlement.status === 'ACTIVE' ? 'active' : 'inactive'
   }))
+}
+
+const buildDerivedEntitlementFromPatreonStatus = (statusData: PatreonStatusApiResponse): MembershipEntitlementRecord[] => {
+  const isAccountActive = statusData.linked && statusData.membershipStatus === 'active_patron' && statusData.tierCents > 0
+
+  if (!isAccountActive) {
+    return []
+  }
+
+  const derivedFeatureKey = statusData.tierCents >= 1650 ? 'secretwaifu_access' : statusData.tierCents >= 900 ? 'just_models' : 'patreon_active'
+
+  return [
+    {
+      id: 'derived-patreon-account-tier',
+      featureKey: derivedFeatureKey,
+      sourceProvider: 'patreon',
+      validUntilLabel: formatDateLabel(statusData.nextChargeDate, 'Active'),
+      status: 'active'
+    }
+  ]
 }
 
 const mapPatreonCallbackErrorMessage = (rawMessage: string | null) => {
@@ -158,7 +157,7 @@ const MembershipPage = () => {
   const [isPatreonLinked, setIsPatreonLinked] = useState(false)
   const [lastSyncLabel, setLastSyncLabel] = useState('Never')
   const [periodEndLabel, setPeriodEndLabel] = useState('No active billing period')
-  const [entitlementRecords, setEntitlementRecords] = useState<MembershipEntitlementRecord[]>(inactiveEntitlementRecords)
+  const [entitlementRecords, setEntitlementRecords] = useState<MembershipEntitlementRecord[]>([])
   const [syncCount, setSyncCount] = useState(0)
   const [membershipMessage, setMembershipMessage] = useState<string | null>(null)
 
@@ -185,7 +184,7 @@ const MembershipPage = () => {
       setConnectionStatus('not-connected')
       setLastSyncLabel('Never')
       setPeriodEndLabel('No active billing period')
-      setEntitlementRecords(inactiveEntitlementRecords)
+      setEntitlementRecords([])
       return
     }
 
@@ -198,7 +197,8 @@ const MembershipPage = () => {
     setConnectionStatus(mapMembershipStatusToChip(statusData.linked, statusData.membershipStatus))
     setLastSyncLabel(formatDateLabel(statusData.lastCheckedAt, 'Never'))
     setPeriodEndLabel(formatDateLabel(statusData.nextChargeDate, 'No active billing period'))
-    setEntitlementRecords(mapEntitlements(statusData.entitlements))
+    const mappedEntitlements = mapEntitlements(statusData.entitlements)
+    setEntitlementRecords(mappedEntitlements.length > 0 ? mappedEntitlements : buildDerivedEntitlementFromPatreonStatus(statusData))
     setSyncCount((previousCount) => previousCount + 1)
   }, [sessionUser])
 
@@ -303,7 +303,7 @@ const MembershipPage = () => {
       setConnectionStatus('not-connected')
       setLastSyncLabel('Disconnected')
       setPeriodEndLabel('No active billing period')
-      setEntitlementRecords(inactiveEntitlementRecords)
+      setEntitlementRecords([])
       setMembershipMessage('Patreon account disconnected.')
     } catch (error) {
       setConnectionStatus('canceled')
@@ -316,6 +316,10 @@ const MembershipPage = () => {
     return entitlementRecords.filter((entitlementItem) => entitlementItem.status === 'active').length
   }, [entitlementRecords])
 
+  const hasActiveMembershipAccess = useMemo(() => {
+    return activeEntitlementCount > 0 || currentTier !== 'free'
+  }, [activeEntitlementCount, currentTier])
+
   const membershipAccessState = useMemo<MembershipAccessState>(() => {
     if (connectionStatus === 'syncing') {
       return 'sync-in-progress'
@@ -325,12 +329,12 @@ const MembershipPage = () => {
       return 'not-connected'
     }
 
-    if (activeEntitlementCount > 0) {
+    if (hasActiveMembershipAccess) {
       return 'active-entitlement'
     }
 
     return 'connected-inactive'
-  }, [activeEntitlementCount, connectionStatus, isPatreonLinked])
+  }, [connectionStatus, hasActiveMembershipAccess, isPatreonLinked])
 
   const membershipStateLabelMap: Record<MembershipAccessState, string> = {
     'not-connected': 'Not Connected',
@@ -346,8 +350,8 @@ const MembershipPage = () => {
     'sync-in-progress': 'We are syncing your Patreon membership data with the backend.'
   }
 
-  const gatedAccessLabel = activeEntitlementCount > 0 ? 'Unlocked' : 'Locked'
-  const accessStateHelperText = activeEntitlementCount > 0 ? 'Patreon content is available now' : 'Link Patreon to unlock gated content'
+  const gatedAccessLabel = hasActiveMembershipAccess ? 'Unlocked' : 'Locked'
+  const accessStateHelperText = hasActiveMembershipAccess ? 'Patreon content is available now' : 'Link Patreon to unlock gated content'
 
   const tierLabelMap: Record<MembershipTier, string> = {
     free: 'Free',
@@ -562,9 +566,15 @@ const MembershipPage = () => {
                 </div>
 
                 <div className="mt-2 space-y-2">
-                  {entitlementRecords.map((entitlementItem) => (
-                    <MembershipEntitlementRow key={entitlementItem.id} entitlementRecord={entitlementItem} />
-                  ))}
+                  {entitlementRecords.length === 0 ? (
+                    <p className="rounded-md border border-white/10 bg-[#141214]/60 px-3 py-2 text-xs text-white/65">
+                      No entitlement grants are currently stored for this account.
+                    </p>
+                  ) : (
+                    entitlementRecords.map((entitlementItem) => (
+                      <MembershipEntitlementRow key={entitlementItem.id} entitlementRecord={entitlementItem} />
+                    ))
+                  )}
                 </div>
               </article>
             </div>

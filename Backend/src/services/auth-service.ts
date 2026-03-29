@@ -69,13 +69,26 @@ const resolveAuthenticatedSessionUser = async (rawSessionToken: string): Promise
         select: {
           email: true,
           role: true,
-          isEmailVerified: true
+          isEmailVerified: true,
+          isBanned: true
         }
       }
     }
   })
 
   if (!existingSession) {
+    return null
+  }
+
+  if (existingSession.user.isBanned) {
+    await prisma.session.update({
+      where: {
+        id: existingSession.id
+      },
+      data: {
+        revokedAt: now
+      }
+    })
     return null
   }
 

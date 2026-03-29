@@ -5,7 +5,7 @@ import CharacterGalleryCard from '@/components/ui-elements/character-gallery-car
 import FilterTab from '@/components/ui-elements/filter-tab'
 import PaginationControls from '@/components/ui-elements/pagination-controls'
 import SearchField from '@/components/ui-elements/search-field'
-import { listCharacters, type CharacterListRecord, type GallerySort } from '@/lib/character-api'
+import { listCharacters, type CharacterListRecord } from '@/lib/character-api'
 import { apiGet } from '@/lib/api-client'
 import { resolveAvailableTierCents, type PatreonStatusSnapshot } from '@/lib/patreon-access'
 import { useEffect, useMemo, useState } from 'react'
@@ -13,18 +13,9 @@ import { useEffect, useMemo, useState } from 'react'
 type CharacterCategory = 'curated' | 'community' | 'your-characters'
 
 const categoryTabs: Array<{ key: CharacterCategory; label: string }> = [
-  { key: 'curated', label: 'Curated' },
+  { key: 'curated', label: 'Official' },
   { key: 'community', label: 'Community' },
   { key: 'your-characters', label: 'Your Characters' }
-]
-
-type CharacterSortOption = 'newest' | 'most-hearted' | 'most-viewed' | 'name-az'
-
-const sortOptions: Array<{ value: CharacterSortOption; label: string; apiSort: GallerySort }> = [
-  { value: 'newest', label: 'Newest', apiSort: 'newest' },
-  { value: 'most-hearted', label: 'Most Hearted', apiSort: 'hearts' },
-  { value: 'most-viewed', label: 'Most Viewed', apiSort: 'views' },
-  { value: 'name-az', label: 'Name A-Z', apiSort: 'name' }
 ]
 
 const defaultGradientVariants = [
@@ -33,6 +24,27 @@ const defaultGradientVariants = [
   'from-[#29252f] via-[#1d1e2f] to-[#11111b]',
   'from-[#332936] via-[#2a2030] to-[#150f18]'
 ]
+
+const toUserFriendlyCharactersError = (error: unknown, hasSearchQuery: boolean) => {
+  const rawMessage = error instanceof Error ? error.message.toLowerCase() : ''
+  const looksLikeNetworkIssue =
+    rawMessage.includes('failed to fetch') ||
+    rawMessage.includes('network') ||
+    rawMessage.includes('timeout') ||
+    rawMessage.includes('econn') ||
+    rawMessage.includes('503') ||
+    rawMessage.includes('500')
+
+  if (hasSearchQuery) {
+    return looksLikeNetworkIssue
+      ? 'Search is temporarily unavailable. Please check your connection and try again.'
+      : 'We could not complete your search right now. Please try again.'
+  }
+
+  return looksLikeNetworkIssue
+    ? 'Characters are temporarily unavailable. Please check your connection and refresh the page.'
+    : 'We could not load characters right now. Please refresh and try again.'
+}
 
 const formatCompactNumber = (value: number) => {
   if (!Number.isFinite(value)) {
@@ -70,7 +82,6 @@ const CharactersPage = () => {
   const { sessionUser, isAuthLoading } = useAuth()
   const sessionUserId = sessionUser?.id ?? null
   const [activeCategory, setActiveCategory] = useState<CharacterCategory>('curated')
-  const [activeSortOption, setActiveSortOption] = useState<CharacterSortOption>('newest')
   const [searchValue, setSearchValue] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [isCharactersLoading, setIsCharactersLoading] = useState(true)
@@ -78,10 +89,6 @@ const CharactersPage = () => {
   const [charactersErrorMessage, setCharactersErrorMessage] = useState<string | null>(null)
   const [characterList, setCharacterList] = useState<CharacterListRecord[]>([])
   const [patreonStatusSnapshot, setPatreonStatusSnapshot] = useState<PatreonStatusSnapshot | null>(null)
-
-  const resolvedApiSort = useMemo(() => {
-    return sortOptions.find((option) => option.value === activeSortOption)?.apiSort ?? 'newest'
-  }, [activeSortOption])
 
   useEffect(() => {
     if (isAuthLoading) {
@@ -111,7 +118,7 @@ const CharactersPage = () => {
         const payload = await listCharacters({
           search: searchValue,
           galleryScope,
-          sort: resolvedApiSort
+          sort: 'newest'
         })
 
         if (isCancelled) {
@@ -124,8 +131,7 @@ const CharactersPage = () => {
           return
         }
 
-        const message = error instanceof Error ? error.message : 'Failed to load characters.'
-        setCharactersErrorMessage(message)
+        setCharactersErrorMessage(toUserFriendlyCharactersError(error, searchValue.trim().length > 0))
         setCharacterList([])
       } finally {
         if (!isCancelled) {
@@ -137,7 +143,7 @@ const CharactersPage = () => {
     return () => {
       isCancelled = true
     }
-  }, [isAuthLoading, sessionUserId, activeCategory, resolvedApiSort, searchValue])
+  }, [isAuthLoading, sessionUserId, activeCategory, searchValue])
 
   useEffect(() => {
     if (isAuthLoading) {
@@ -232,50 +238,31 @@ const CharactersPage = () => {
             AI Anime Girlfriend
           </h1>
 
-          <div className="mt-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center">
-              <div className="flex items-center gap-4 border-b border-white/15 pb-2">
-                {categoryTabs.map((tabItem) => (
-                  <FilterTab
-                    key={tabItem.key}
-                    label={tabItem.label}
-                    isActive={activeCategory === tabItem.key}
-                    onClick={() => handleCategoryChange(tabItem.key)}
-                    ariaLabel={`Filter by ${tabItem.label}`}
-                  />
-                ))}
-              </div>
-              <label className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-white/75">
-                Sort
-                <select
-                  value={activeSortOption}
-                  onChange={(event) => {
-                    setActiveSortOption(event.target.value as CharacterSortOption)
-                    setCurrentPage(1)
-                  }}
-                  className="h-9 min-w-[160px] rounded-md border border-white/20 bg-black/35 px-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-white outline-none transition focus:border-ember-300"
-                  aria-label="Sort characters"
-                >
-                  {sortOptions.map((sortOption) => (
-                    <option key={sortOption.value} value={sortOption.value} className="bg-[#101014]">
-                      {sortOption.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+          <div className="mt-5 flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-nowrap items-center gap-2 md:gap-3 lg:gap-4">
+              {categoryTabs.map((tabItem) => (
+                <FilterTab
+                  key={tabItem.key}
+                  label={tabItem.label}
+                  isActive={activeCategory === tabItem.key}
+                  onClick={() => handleCategoryChange(tabItem.key)}
+                  ariaLabel={`Filter by ${tabItem.label}`}
+                />
+              ))}
             </div>
 
-            <div className="w-full md:max-w-[430px]">
+            <div className="w-full xl:max-w-[370px]">
               <SearchField
                 value={searchValue}
                 onChange={handleSearchChange}
-                placeholder="Search..."
+                placeholder="Search:  ..."
                 ariaLabel="Search characters"
+                inputClassName="h-[45px] w-full rounded-[10px] border border-white/25 bg-[#06080c]/90 px-4 text-[18px] font-[family-name:var(--font-heading)] font-medium text-[#d2d3d8] outline-none transition placeholder:text-[#8b8f96] focus:border-ember-300 md:text-[23px]"
               />
             </div>
           </div>
 
-          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
             {isCharactersLoading ? (
               <p className="col-span-full text-sm text-white/70">Loading characters...</p>
             ) : null}

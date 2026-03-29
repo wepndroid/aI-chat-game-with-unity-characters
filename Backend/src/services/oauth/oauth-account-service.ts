@@ -9,6 +9,7 @@ type ResolvedOAuthUser = {
   username: string
   role: 'USER' | 'CREATOR' | 'ADMIN'
   isEmailVerified: boolean
+  isBanned: boolean
 }
 
 type OAuthAuthenticationIntent = 'signin' | 'signup'
@@ -73,7 +74,8 @@ const findSafeUserFields = async (userId: string): Promise<ResolvedOAuthUser | n
       email: true,
       username: true,
       role: true,
-      isEmailVerified: true
+      isEmailVerified: true,
+      isBanned: true
     }
   })
 
@@ -155,7 +157,8 @@ const resolveUserForOAuthAuthentication = async (params: {
           email: true,
           username: true,
           role: true,
-          isEmailVerified: true
+          isEmailVerified: true,
+          isBanned: true
         }
       }
     }
@@ -178,7 +181,8 @@ const resolveUserForOAuthAuthentication = async (params: {
       email: true,
       username: true,
       role: true,
-      isEmailVerified: true
+      isEmailVerified: true,
+      isBanned: true
     }
   })
 
@@ -223,7 +227,8 @@ const resolveUserForOAuthAuthentication = async (params: {
           email: true,
           username: true,
           role: true,
-          isEmailVerified: true
+          isEmailVerified: true,
+          isBanned: true
         }
       })
 
@@ -248,7 +253,8 @@ const resolveUserForOAuthAuthentication = async (params: {
         email: true,
         username: true,
         role: true,
-        isEmailVerified: true
+        isEmailVerified: true,
+        isBanned: true
       }
     })
 

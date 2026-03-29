@@ -5,16 +5,43 @@ import AdminPageShell from '@/components/shared/admin-page-shell'
 import { listCharacters, updateCharacterStatus, updateCharacterVisibility, type CharacterListRecord } from '@/lib/character-api'
 import { useEffect, useMemo, useState } from 'react'
 
-type StatusFilterValue = 'all' | 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'
+type CommunityVrmFilterValue = 'all' | 'public' | 'private' | 'removed'
 
-const statusFilterOptions: Array<{ value: StatusFilterValue; label: string }> = [
-  { value: 'all', label: 'All Status' },
-  { value: 'PENDING', label: 'Pending' },
-  { value: 'APPROVED', label: 'Approved' },
-  { value: 'REJECTED', label: 'Rejected' },
-  { value: 'DRAFT', label: 'Draft' },
-  { value: 'ARCHIVED', label: 'Archived' }
+const communityVrmFilterOptions: Array<{ value: CommunityVrmFilterValue; label: string }> = [
+  { value: 'all', label: 'All status' },
+  { value: 'public', label: 'Public' },
+  { value: 'private', label: 'Private' },
+  { value: 'removed', label: 'Removed' }
 ]
+
+const isRemovedCharacter = (characterRecord: CharacterListRecord) =>
+  characterRecord.status === 'REJECTED' || characterRecord.status === 'ARCHIVED'
+
+const matchesCommunityVrmFilter = (characterRecord: CharacterListRecord, filter: CommunityVrmFilterValue) => {
+  if (filter === 'all') {
+    return true
+  }
+
+  const removed = isRemovedCharacter(characterRecord)
+
+  if (filter === 'removed') {
+    return removed
+  }
+
+  if (removed) {
+    return false
+  }
+
+  if (filter === 'public') {
+    return characterRecord.visibility === 'PUBLIC'
+  }
+
+  if (filter === 'private') {
+    return characterRecord.visibility === 'PRIVATE' || characterRecord.visibility === 'UNLISTED'
+  }
+
+  return true
+}
 
 const SearchIcon = () => {
   return (
@@ -26,7 +53,7 @@ const SearchIcon = () => {
 }
 
 const CommunityVrmsPage = () => {
-  const [statusFilter, setStatusFilter] = useState<StatusFilterValue>('all')
+  const [communityFilter, setCommunityFilter] = useState<CommunityVrmFilterValue>('all')
   const [searchValue, setSearchValue] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -85,7 +112,7 @@ const CommunityVrmsPage = () => {
     const normalizedSearchValue = searchValue.trim().toLowerCase()
 
     return characterList.filter((characterRecord) => {
-      if (statusFilter !== 'all' && characterRecord.status !== statusFilter) {
+      if (!matchesCommunityVrmFilter(characterRecord, communityFilter)) {
         return false
       }
 
@@ -100,7 +127,7 @@ const CommunityVrmsPage = () => {
         characterRecord.slug.toLowerCase().includes(normalizedSearchValue)
       )
     })
-  }, [characterList, searchValue, statusFilter])
+  }, [characterList, searchValue, communityFilter])
 
   const handleApprove = (characterId: string) => {
     Promise.resolve().then(async () => {
@@ -175,14 +202,14 @@ const CommunityVrmsPage = () => {
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <label className="inline-flex h-11 items-center rounded-lg border border-ember-500/55 bg-[#12151b] px-3">
             <select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value as StatusFilterValue)}
-              aria-label="Filter VRMs by status"
+              value={communityFilter}
+              onChange={(event) => setCommunityFilter(event.target.value as CommunityVrmFilterValue)}
+              aria-label="Filter community VRMs"
               className="h-full bg-transparent text-base text-[#9cb0cc] outline-none"
             >
-              {statusFilterOptions.map((statusOption) => (
-                <option key={statusOption.value} value={statusOption.value} className="bg-[#10151d] text-[#9cb0cc]">
-                  {statusOption.label}
+              {communityVrmFilterOptions.map((filterOption) => (
+                <option key={filterOption.value} value={filterOption.value} className="bg-[#10151d] text-[#9cb0cc]">
+                  {filterOption.label}
                 </option>
               ))}
             </select>

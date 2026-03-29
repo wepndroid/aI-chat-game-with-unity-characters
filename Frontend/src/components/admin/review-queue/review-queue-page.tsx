@@ -3,8 +3,8 @@
 import AdminPageShell from '@/components/shared/admin-page-shell'
 import AdminReviewQueueCard, { type AdminReviewQueueCardRecord } from '@/components/ui-elements/admin-review-queue-card'
 import { descriptionHasModeratorKeywordHint } from '@/lib/admin-review-description'
-import { listAdminReviewQueue, updateCharacterStatus, type AdminReviewQueueRecord } from '@/lib/character-api'
-import { useEffect, useMemo, useState } from 'react'
+import { listAdminReviewQueue, updateCharacterStatus, updateCharacterVisibility, type AdminReviewQueueRecord } from '@/lib/character-api'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 const formatRelativeTimeLabel = (isoValue: string) => {
   const targetMs = Date.parse(isoValue)
@@ -52,38 +52,49 @@ const ReviewQueuePage = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [busyRecordId, setBusyRecordId] = useState<string | null>(null)
 
-  useEffect(() => {
-    let isCancelled = false
+  const loadReviewQueue = useCallback(
+    async (options?: { withSpinner?: boolean; preserveSelection?: boolean }) => {
+      const withSpinner = options?.withSpinner ?? true
+      const preserveSelection = options?.preserveSelection ?? true
 
-    Promise.resolve().then(async () => {
-      setIsLoading(true)
+      if (withSpinner) {
+        setIsLoading(true)
+      }
+
       setErrorMessage(null)
 
       try {
         const payload = await listAdminReviewQueue()
+        const nextQueueList = payload.data
 
-        if (isCancelled) {
-          return
-        }
+        setQueueRecordList(nextQueueList)
+        setSelectedRecordId((previousSelectedId) => {
+          if (!preserveSelection) {
+            return nextQueueList[0]?.id ?? null
+          }
 
-        setQueueRecordList(payload.data)
-        setSelectedRecordId(payload.data[0]?.id ?? null)
+          if (previousSelectedId && nextQueueList.some((queueRecord) => queueRecord.id === previousSelectedId)) {
+            return previousSelectedId
+          }
+
+          return nextQueueList[0]?.id ?? null
+        })
       } catch (error) {
-        if (!isCancelled) {
-          setErrorMessage(error instanceof Error ? error.message : 'Failed to load review queue.')
-          setQueueRecordList([])
-        }
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to load review queue.')
+        setQueueRecordList([])
+        setSelectedRecordId(null)
       } finally {
-        if (!isCancelled) {
+        if (withSpinner) {
           setIsLoading(false)
         }
       }
-    })
+    },
+    []
+  )
 
-    return () => {
-      isCancelled = true
-    }
-  }, [])
+  useEffect(() => {
+    void loadReviewQueue({ withSpinner: true, preserveSelection: false })
+  }, [loadReviewQueue])
 
   const pendingReviewCount = queueRecordList.length
 
@@ -95,25 +106,14 @@ const ReviewQueuePage = () => {
     return queueRecordList.find((queueRecord) => queueRecord.id === selectedRecordId) ?? null
   }, [queueRecordList, selectedRecordId])
 
-  const handleRemoveRecordFromQueue = (recordId: string) => {
-    const nextQueueList = queueRecordList.filter((queueRecord) => queueRecord.id !== recordId)
-    setQueueRecordList(nextQueueList)
-
-    setSelectedRecordId((previousSelectedId) => {
-      if (previousSelectedId !== recordId) {
-        return previousSelectedId
-      }
-
-      return nextQueueList[0]?.id ?? null
-    })
-  }
-
   const handleApproveRecord = (recordId: string) => {
     Promise.resolve().then(async () => {
       try {
         setBusyRecordId(recordId)
+        setErrorMessage(null)
         await updateCharacterStatus(recordId, 'APPROVED')
-        handleRemoveRecordFromQueue(recordId)
+        await updateCharacterVisibility(recordId, 'PUBLIC')
+        await loadReviewQueue({ withSpinner: false, preserveSelection: false })
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Failed to approve character.')
       } finally {
@@ -126,8 +126,10 @@ const ReviewQueuePage = () => {
     Promise.resolve().then(async () => {
       try {
         setBusyRecordId(recordId)
+        setErrorMessage(null)
         await updateCharacterStatus(recordId, 'REJECTED')
-        handleRemoveRecordFromQueue(recordId)
+        await updateCharacterVisibility(recordId, 'PRIVATE')
+        await loadReviewQueue({ withSpinner: false, preserveSelection: false })
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Failed to reject character.')
       } finally {

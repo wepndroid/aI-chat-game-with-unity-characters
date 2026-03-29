@@ -48,15 +48,6 @@ const UserGroupIcon = () => {
   )
 }
 
-const ActivityIcon = () => {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M3.8 12h3.4l2.2-4.3 3.2 8.7 2.3-4.5h5.3" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M4 6.2h16M4 17.8h16" strokeLinecap="round" opacity="0.38" />
-    </svg>
-  )
-}
-
 const ServerIcon = () => {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -151,7 +142,6 @@ const AdminSidebar = ({ activeKey }: AdminSidebarProps) => {
         title: 'Management',
         entryList: [
           { id: 'dashboard', label: 'Dashboard', href: '/admin/dashboard', icon: <DashboardGridIcon /> },
-          { id: 'activity', label: 'Activity', href: '/admin/activity', icon: <ActivityIcon /> },
           { id: 'users', label: 'Users', href: '/admin/users', icon: <UserGroupIcon /> },
           { id: 'community-vrms', label: 'Community VRMs', href: '/admin/community-vrms', icon: <ServerIcon /> }
         ]

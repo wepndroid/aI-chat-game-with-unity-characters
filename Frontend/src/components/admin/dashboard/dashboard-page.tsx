@@ -1,5 +1,4 @@
 'use client'
-/* eslint-disable @next/next/no-img-element */
 
 import AdminPageShell from '@/components/shared/admin-page-shell'
 import AdminActivityItem from '@/components/ui-elements/admin-activity-item'
@@ -18,45 +17,10 @@ type DashboardOverviewPayload = {
   data: {
     totalUsers: number
     totalCharacters: number
-    approvedCharacters: number
     pendingCharacters: number
-    totalReviews: number
-    totalHearts: number
-    totalViews: number
-    patreonLinkedUsers: number
     activePatrons: number
-    dau7d: number
-    dau30d: number
-    topCharacters: Array<{
-      id: string
-      slug: string
-      name: string
-      previewImageUrl: string | null
-      viewsCount: number
-      heartsCount: number
-      minimumTierCents: number | null
-      isPatreonGated: boolean
-    }>
-    pledgeTrends: {
-      linkedUsers: number
-      activePatrons: number
-      tierDistribution: Array<{
-        tierCents: number
-        users: number
-      }>
-    }
-    deployment: {
-      checks: Array<{
-        id: string
-        label: string
-        status: 'ready' | 'pending' | 'warning'
-        detail: string
-      }>
-      browserMatrix: Array<{
-        browser: string
-        status: 'ready' | 'pending' | 'warning'
-      }>
-    }
+    newUsersToday: number
+    serverLoad1m: number
     recentActivity: Array<{
       id: string
       message: string
@@ -71,9 +35,11 @@ type KpiRecord = {
   id: string
   label: string
   value: string
-  helperText: string
+  helperText?: string
+  helperContent?: ReactNode
   tone: 'blue' | 'purple' | 'orange' | 'green'
   icon: ReactNode
+  labelClassName?: string
 }
 
 const formatCompactNumber = (value: number) =>
@@ -82,13 +48,28 @@ const formatCompactNumber = (value: number) =>
     maximumFractionDigits: 1
   }).format(value)
 
-const deploymentStatusClassNameMap: Record<'ready' | 'pending' | 'warning', string> = {
-  ready: 'border-emerald-500/35 bg-emerald-500/15 text-emerald-200',
-  pending: 'border-amber-500/35 bg-amber-500/15 text-amber-200',
-  warning: 'border-rose-500/35 bg-rose-500/15 text-rose-200'
+const formatTodayUserDelta = (value: number) =>
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value)
+
+/** Green pulse sparkline + “+N today” — single beat: flat → spike up → dip below → level (reference UI). */
+const UsersTodayGrowthIndicator = ({ count }: { count: number }) => {
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      <svg viewBox="0 0 26 10" fill="none" className="h-3.5 w-[1.625rem] shrink-0 text-emerald-400" aria-hidden="true">
+        <path
+          d="M1 6.5 L5 6.5 L9 2 L13 9 L17 6.5 L25 6.5"
+          stroke="currentColor"
+          strokeWidth="1.85"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <span className="text-[12px] font-semibold tracking-tight text-emerald-400">+{formatTodayUserDelta(count)} today</span>
+    </div>
+  )
 }
 
-/** DAU / active users — group of users (reads clearly at small sizes). */
+/** Total users / accounts — group of people (reads clearly at small sizes). */
 const ActiveUsersIcon = () => {
   return (
     <svg
@@ -108,8 +89,8 @@ const ActiveUsersIcon = () => {
   )
 }
 
-/** Total views — eye + pupil. */
-const ViewsIcon = () => {
+/** Total VRMs / character models — 3D box outline. */
+const VrmModelsIcon = () => {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -121,14 +102,14 @@ const ViewsIcon = () => {
       className="size-full"
       aria-hidden="true"
     >
-      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-      <circle cx="12" cy="12" r="3" />
+      <path d="m12 2 8 4.5v11L12 22 4 17.5v-11L12 2Z" />
+      <path d="M4 6.5 12 11l8-4.5M12 11v11" />
     </svg>
   )
 }
 
-/** Written reviews — star (distinct from “views” and “hearts”). */
-const ReviewsStarIcon = () => {
+/** Pending moderation queue — clipboard. */
+const PendingReviewQueueIcon = () => {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -140,13 +121,15 @@ const ReviewsStarIcon = () => {
       className="size-full"
       aria-hidden="true"
     >
-      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+      <rect x="8" y="2" width="8" height="4" rx="1" />
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+      <path d="M9 12h6M9 16h6" />
     </svg>
   )
 }
 
-/** Active patrons / paid supporters — currency in circle (not ambiguous shapes). */
-const PatronSupportIcon = () => {
+/** Active chats KPI — speech bubble. */
+const ActiveChatsIcon = () => {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -158,8 +141,7 @@ const PatronSupportIcon = () => {
       className="size-full"
       aria-hidden="true"
     >
-      <circle cx="12" cy="12" r="10" />
-      <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H6M12 18V6" />
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
     </svg>
   )
 }
@@ -225,45 +207,43 @@ const DashboardPage = () => {
 
     return [
       {
-        id: 'dau-7d',
-        label: 'DAU (7d active)',
-        value: formatCompactNumber(overview.dau7d),
-        helperText: `30d active: ${formatCompactNumber(overview.dau30d)}`,
+        id: 'total-users',
+        label: 'Total Users',
+        value: formatCompactNumber(overview.totalUsers),
+        helperContent: <UsersTodayGrowthIndicator count={overview.newUsersToday} />,
         tone: 'blue',
         icon: <ActiveUsersIcon />
       },
       {
-        id: 'views',
-        label: 'Total Views',
-        value: formatCompactNumber(overview.totalViews),
-        helperText: `Hearts: ${formatCompactNumber(overview.totalHearts)}`,
+        id: 'total-vrms',
+        label: 'Total VRMs',
+        value: formatCompactNumber(overview.totalCharacters),
+        helperText: 'Across all servers',
         tone: 'purple',
-        icon: <ViewsIcon />
+        icon: <VrmModelsIcon />
       },
       {
-        id: 'reviews',
-        label: 'Total Reviews',
-        value: formatCompactNumber(overview.totalReviews),
-        helperText: `${formatCompactNumber(overview.approvedCharacters)} public characters`,
+        id: 'pending-reviews',
+        label: 'Pending Reviews',
+        value: formatCompactNumber(overview.pendingCharacters),
+        helperText: 'Requires attention',
         tone: 'orange',
-        icon: <ReviewsStarIcon />
+        labelClassName: 'text-orange-400',
+        icon: <PendingReviewQueueIcon />
       },
       {
-        id: 'patrons',
-        label: 'Active Patrons',
+        id: 'active-chats',
+        label: 'Active Chats',
         value: formatCompactNumber(overview.activePatrons),
-        helperText: `Linked users: ${formatCompactNumber(overview.patreonLinkedUsers)}`,
+        helperText: `Server load: ${overview.serverLoad1m.toFixed(2)} (1 min avg)`,
         tone: 'green',
-        icon: <PatronSupportIcon />
+        icon: <ActiveChatsIcon />
       }
     ]
   }, [overview])
 
   const priorityQueuePreview = reviewQueue.slice(0, 3)
   const activityPreview = overview?.recentActivity.slice(0, 6) ?? []
-  const topCharacters = overview?.topCharacters.slice(0, 6) ?? []
-  const tierDistribution = overview?.pledgeTrends.tierDistribution ?? []
-  const deploymentCheckPreview = overview?.deployment.checks.slice(0, 4) ?? []
 
   return (
     <AdminPageShell activeKey="dashboard">
@@ -284,8 +264,10 @@ const DashboardPage = () => {
             label={kpiItem.label}
             value={kpiItem.value}
             helperText={kpiItem.helperText}
+            helperContent={kpiItem.helperContent}
             tone={kpiItem.tone}
             icon={kpiItem.icon}
+            labelClassName={kpiItem.labelClassName}
           />
         ))}
       </div>
@@ -329,86 +311,6 @@ const DashboardPage = () => {
           </div>
         </section>
       </div>
-
-      <div className="mt-5 grid gap-4 2xl:grid-cols-2">
-        <section className="rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-5 py-5 sm:px-6">
-          <h2 className="font-[family-name:var(--font-heading)] text-[21px] font-normal leading-none text-white">Top Characters</h2>
-          <div className="mt-4 space-y-3">
-            {topCharacters.length === 0 ? <p className="text-sm text-white/70">No character analytics available yet.</p> : null}
-            {topCharacters.map((characterItem) => (
-              <Link
-                key={characterItem.id}
-                href={`/characters/${encodeURIComponent(characterItem.slug)}`}
-                className="flex items-center gap-3 rounded-md border border-white/10 bg-black/20 px-3 py-2 transition hover:border-white/20 hover:bg-black/30"
-              >
-                {characterItem.previewImageUrl ? (
-                  <img
-                    src={characterItem.previewImageUrl}
-                    alt=""
-                    className="size-12 shrink-0 rounded-md border border-white/10 object-cover"
-                  />
-                ) : (
-                  <div className="flex size-12 shrink-0 items-center justify-center rounded-md border border-white/10 bg-[#1a1f28] text-[10px] text-[#4a5a72]">
-                    —
-                  </div>
-                )}
-                <div className="min-w-0">
-                  <p className="text-sm text-white">{characterItem.name}</p>
-                  <p className="mt-1 text-xs text-white/65">
-                    Views {formatCompactNumber(characterItem.viewsCount)} | Hearts {formatCompactNumber(characterItem.heartsCount)}
-                  </p>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-5 py-5 sm:px-6">
-          <h2 className="font-[family-name:var(--font-heading)] text-[21px] font-normal leading-none text-white">Pledge Trends</h2>
-          <p className="mt-2 text-xs text-white/65">
-            Linked users: {overview ? formatCompactNumber(overview.pledgeTrends.linkedUsers) : '0'} | Active patrons:{' '}
-            {overview ? formatCompactNumber(overview.pledgeTrends.activePatrons) : '0'}
-          </p>
-          <p className="mt-1 text-xs text-white/45">Tier amounts use Patreon tier cents; display is in major units (currency follows your campaign).</p>
-
-          <div className="mt-4 space-y-3">
-            {tierDistribution.length === 0 ? <p className="text-sm text-white/70">No Patreon tier distribution data yet.</p> : null}
-            {tierDistribution.map((tier) => (
-              <div key={tier.tierCents} className="rounded-md border border-white/10 bg-black/20 px-3 py-2">
-                <p className="text-sm text-white">
-                  {(tier.tierCents / 100).toFixed(2)} / month tier
-                </p>
-                <p className="mt-1 text-xs text-white/65">{tier.users} linked users</p>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-
-      <section className="mt-5 rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-5 py-5 sm:px-6">
-        <div className="flex items-center justify-between">
-          <h2 className="font-[family-name:var(--font-heading)] text-[21px] font-normal leading-none text-white">Deployment Readiness</h2>
-          <Link href="/admin/global-settings" className="text-xs font-normal text-ember-300 transition hover:text-ember-200" aria-label="Open full deployment checks">
-            Full Checks
-          </Link>
-        </div>
-        <p className="mt-2 text-xs text-white/45">Showing a subset of checks here; open Global Settings for the full list.</p>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {deploymentCheckPreview.length === 0 ? <p className="text-sm text-white/70">No deployment checks available yet.</p> : null}
-          {deploymentCheckPreview.map((checkItem) => (
-            <article key={checkItem.id} className="rounded-md border border-white/10 bg-black/20 px-3 py-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-white">{checkItem.label}</p>
-                <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] ${deploymentStatusClassNameMap[checkItem.status]}`}>
-                  {checkItem.status.toUpperCase()}
-                </span>
-              </div>
-              <p className="mt-2 text-xs text-white/60">{checkItem.detail}</p>
-            </article>
-          ))}
-        </div>
-      </section>
     </AdminPageShell>
   )
 }

@@ -68,7 +68,7 @@ const listCharactersQuerySchema = z.object({
   search: z.string().trim().max(120).optional(),
   galleryScope: z.enum(['all', 'curated', 'community', 'mine']).optional(),
   sort: z.enum(['name', 'hearts', 'views', 'newest']).optional().default('newest'),
-  limit: z.coerce.number().int().min(1).max(100).default(24)
+  limit: z.coerce.number().int().min(1).max(200).default(24)
 })
 
 const updateCharacterStatusSchema = z.object({

@@ -1,6 +1,7 @@
 'use client'
 
 import AdminPageShell from '@/components/shared/admin-page-shell'
+import { useAuth } from '@/components/providers/auth-provider'
 import AdminUserTableRow, { type AdminUserTableRecord } from '@/components/ui-elements/admin-user-table-row'
 import { apiGet, apiPatch } from '@/lib/api-client'
 import type { AdminUserRole } from '@/components/ui-elements/admin-user-role-pill'
@@ -17,9 +18,9 @@ type UsersListResponse = {
       username: string
       role: UserRoleApi
       isEmailVerified: boolean
+      isBanned: boolean
       createdAt: string
       uploadsCount: number
-      lastSeenAt: string | null
     }>
     pagination: {
       page: number
@@ -46,28 +47,22 @@ const formatDate = (isoDate: string) => {
   return new Date(isoDate).toISOString().slice(0, 10)
 }
 
-const formatLastSeenLabel = (isoDate: string | null) => {
-  if (!isoDate) {
-    return 'Last seen: never'
-  }
-
-  return `Last seen: ${new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  }).format(new Date(isoDate))}`
-}
-
 const mapRecordToTable = (record: UsersListResponse['data']['records'][number]): AdminUserTableRecord => {
+  const status: AdminUserTableRecord['status'] = record.isBanned
+    ? 'banned'
+    : record.isEmailVerified
+      ? 'active'
+      : 'unverified'
+
   return {
     id: record.id,
     username: record.username,
     email: record.email,
     role: roleApiToUiMap[record.role],
-    status: record.isEmailVerified ? 'active' : 'unverified',
+    status,
+    isEmailVerified: record.isEmailVerified,
     uploads: record.uploadsCount,
-    joined: formatDate(record.createdAt),
-    lastSeenLabel: formatLastSeenLabel(record.lastSeenAt)
+    joined: formatDate(record.createdAt)
   }
 }
 
@@ -81,6 +76,7 @@ const SearchIcon = () => {
 }
 
 const UsersPage = () => {
+  const { sessionUser } = useAuth()
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [searchValue, setSearchValue] = useState('')
@@ -90,6 +86,7 @@ const UsersPage = () => {
   const [totalEntriesCount, setTotalEntriesCount] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
+  const [updatingBanUserId, setUpdatingBanUserId] = useState<string | null>(null)
 
   const itemsPerPage = 10
   const safeCurrentPage = Math.max(1, Math.min(currentPage, totalPages))
@@ -206,6 +203,35 @@ const UsersPage = () => {
     }
   }
 
+  const handleToggleBan = async (userId: string, banned: boolean) => {
+    setUpdatingBanUserId(userId)
+    setErrorMessage(null)
+
+    try {
+      const payload = await apiPatch<{ data: { id: string; isBanned: boolean } }>(
+        `/users/${encodeURIComponent(userId)}/banned`,
+        { banned }
+      )
+
+      setUserRecords((previousRecords) =>
+        previousRecords.map((record) => {
+          if (record.id !== payload.data.id) {
+            return record
+          }
+
+          return {
+            ...record,
+            status: payload.data.isBanned ? 'banned' : record.isEmailVerified ? 'active' : 'unverified'
+          }
+        })
+      )
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to update ban status.')
+    } finally {
+      setUpdatingBanUserId(null)
+    }
+  }
+
   const visibleStart = userRecords.length === 0 ? 0 : (safeCurrentPage - 1) * itemsPerPage + 1
   const visibleEnd = Math.min(safeCurrentPage * itemsPerPage, totalEntriesCount)
 
@@ -288,10 +314,13 @@ const UsersPage = () => {
               ) : (
                 userRecords.map((userRecord) => (
                   <AdminUserTableRow
-                    key={`${userRecord.id}:${userRecord.role}`}
+                    key={`${userRecord.id}:${userRecord.role}:${userRecord.status}`}
                     userRecord={userRecord}
                     isUpdatingRole={updatingUserId === userRecord.id}
+                    isUpdatingBan={updatingBanUserId === userRecord.id}
+                    currentAdminUserId={sessionUser?.id ?? null}
                     onUpdateRole={handleUpdateRole}
+                    onToggleBan={handleToggleBan}
                   />
                 ))
               )}

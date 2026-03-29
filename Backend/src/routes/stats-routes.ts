@@ -1,3 +1,4 @@
+import os from 'node:os'
 import { Router } from 'express'
 import { emailConfig, getIsSecureCookie } from '../lib/auth-config'
 import { isPatreonOauthEnabled } from '../lib/patreon-config'
@@ -192,11 +193,13 @@ const buildDeploymentChecks = () => {
 statsRoutes.get('/stats/overview', requireAdmin, async (_request, response, next) => {
   try {
     const now = new Date()
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
 
     const [
       totalUsers,
+      newUsersToday,
       totalCharacters,
       approvedCharacters,
       pendingCharacters,
@@ -209,6 +212,13 @@ statsRoutes.get('/stats/overview', requireAdmin, async (_request, response, next
       dau30dRecords
     ] = await prisma.$transaction([
       prisma.user.count(),
+      prisma.user.count({
+        where: {
+          createdAt: {
+            gte: startOfToday
+          }
+        }
+      }),
       prisma.character.count(),
       prisma.character.count({
         where: {
@@ -312,9 +322,12 @@ statsRoutes.get('/stats/overview', requireAdmin, async (_request, response, next
     const recentActivity = await buildRecentActivity()
     const deployment = await buildDeploymentChecks()
 
+    const [loadAvg1m, loadAvg5m, loadAvg15m] = os.loadavg()
+
     response.json({
       data: {
         totalUsers,
+        newUsersToday,
         totalCharacters,
         approvedCharacters,
         pendingCharacters,
@@ -325,6 +338,9 @@ statsRoutes.get('/stats/overview', requireAdmin, async (_request, response, next
         activePatrons,
         dau7d: dau7dRecords.length,
         dau30d: dau30dRecords.length,
+        serverLoad1m: Math.round(loadAvg1m * 1000) / 1000,
+        serverLoad5m: Math.round(loadAvg5m * 1000) / 1000,
+        serverLoad15m: Math.round(loadAvg15m * 1000) / 1000,
         topCharacters,
         pledgeTrends: {
           linkedUsers: patreonLinkedUsers,
