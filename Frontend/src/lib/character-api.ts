@@ -216,6 +216,12 @@ type ToggleCharacterHeartResponse = {
   }
 }
 
+type CharacterChatStartResponse = {
+  data: {
+    viewsCount: number
+  }
+}
+
 type CharacterAssetUploadResponse = {
   data: {
     vroidFileUrl?: string
@@ -300,6 +306,35 @@ const toggleCharacterHeart = async (characterIdOrSlug: string) => {
   return apiPost<ToggleCharacterHeartResponse>(`/characters/${encodeURIComponent(normalizedCharacterId)}/heart/toggle`, {})
 }
 
+const VISITOR_KEY_STORAGE = 'chatVisitorKey'
+
+function getOrCreateVisitorKey(): string | undefined {
+  if (typeof window === 'undefined') {
+    return undefined
+  }
+
+  try {
+    let key = window.localStorage.getItem(VISITOR_KEY_STORAGE)
+    if (!key || !/^[0-9a-fA-F-]{8,128}$/.test(key)) {
+      key = crypto.randomUUID()
+      window.localStorage.setItem(VISITOR_KEY_STORAGE, key)
+    }
+
+    return key
+  } catch {
+    return undefined
+  }
+}
+
+const recordCharacterChatStart = async (characterIdOrSlug: string) => {
+  const normalizedCharacterId = characterIdOrSlug.trim()
+  const visitorKey = getOrCreateVisitorKey()
+  return apiPost<CharacterChatStartResponse>(
+    `/characters/${encodeURIComponent(normalizedCharacterId)}/chat-start`,
+    visitorKey ? { visitorKey } : {}
+  )
+}
+
 const uploadCharacterAssets = async (formData: FormData) => {
   return apiPostFormData<CharacterAssetUploadResponse>('/characters/assets/upload', formData)
 }
@@ -334,6 +369,7 @@ export {
   listAdminReviewQueue,
   listCharacters,
   listMyCharacters,
+  recordCharacterChatStart,
   submitCharacterForReview,
   toggleCharacterHeart,
   updateCharacter,
@@ -343,6 +379,7 @@ export {
 }
 export type {
   CharacterAssetUploadResponse,
+  CharacterChatStartResponse,
   DeleteCharacterResponse,
   AdminReviewQueueRecord,
   CharacterDetailRecord,

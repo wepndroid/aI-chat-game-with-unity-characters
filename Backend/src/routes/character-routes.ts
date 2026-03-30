@@ -1,4 +1,4 @@
-import { CharacterStatus, CharacterVisibility, type Prisma } from '@prisma/client'
+import { CharacterStatus, CharacterVisibility, Prisma } from '@prisma/client'
 import type { Request } from 'express'
 import { Router } from 'express'
 import { z } from 'zod'
@@ -84,6 +84,16 @@ const updateCharacterVisibilitySchema = z.object({
 
 const characterParamsSchema = z.object({
   characterId: z.string().min(1)
+})
+
+const chatStartBodySchema = z.object({
+  /** Stable anonymous id from the client (e.g. localStorage UUID) so guests only count once per character. */
+  visitorKey: z
+    .string()
+    .trim()
+    .max(128)
+    .regex(/^[0-9a-fA-F-]{8,128}$/)
+    .optional()
 })
 
 const reviewQueueQuerySchema = z.object({
@@ -330,30 +340,6 @@ characterRoutes.get('/characters/:characterId', optionalAuth, async (request, re
       return
     }
 
-    let viewsCount = character.viewsCount
-
-    if (character.status === 'APPROVED' && character.visibility === 'PUBLIC') {
-      const shouldCountView = !actor || (actor.userId !== character.ownerId && actor.role !== 'ADMIN')
-
-      if (shouldCountView) {
-        const viewUpdate = await prisma.character.update({
-          where: {
-            id: character.id
-          },
-          data: {
-            viewsCount: {
-              increment: 1
-            }
-          },
-          select: {
-            viewsCount: true
-          }
-        })
-
-        viewsCount = viewUpdate.viewsCount
-      }
-    }
-
     const hasHearted = actor
       ? Boolean(
           await prisma.characterHeart.findUnique({
@@ -392,7 +378,7 @@ characterRoutes.get('/characters/:characterId', optionalAuth, async (request, re
         isPatreonGated: character.isPatreonGated,
         minimumTierCents: character.minimumTierCents,
         heartsCount: character.heartsCount,
-        viewsCount,
+        viewsCount: character.viewsCount,
         officialListing: character.officialListing,
         hasHearted,
         owner: character.owner,
@@ -403,6 +389,125 @@ characterRoutes.get('/characters/:characterId', optionalAuth, async (request, re
           hasAccess: characterAccess.canAccessPatreonGatedContent,
           requiredTierCents: character.minimumTierCents ?? null
         }
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+/** Count a “chat start” (play demo) — not a page view. Same eligibility as the former GET increment. */
+characterRoutes.post('/characters/:characterId/chat-start', optionalAuth, async (request, response, next) => {
+  try {
+    const { characterId } = characterParamsSchema.parse(request.params)
+    const body = chatStartBodySchema.parse(request.body ?? {})
+    const actor = toCharacterAccessActor(request)
+
+    const character = await prisma.character.findFirst({
+      where: {
+        OR: [
+          {
+            id: characterId
+          },
+          {
+            slug: characterId
+          }
+        ]
+      },
+      select: {
+        id: true,
+        ownerId: true,
+        status: true,
+        visibility: true,
+        isPatreonGated: true,
+        minimumTierCents: true,
+        viewsCount: true
+      }
+    })
+
+    if (!character) {
+      response.status(404).json({
+        message: 'Character not found.'
+      })
+      return
+    }
+
+    const characterAccess = await resolveCharacterAccess(actor, {
+      id: character.id,
+      ownerId: character.ownerId,
+      status: character.status,
+      visibility: character.visibility,
+      isPatreonGated: character.isPatreonGated,
+      minimumTierCents: character.minimumTierCents
+    })
+
+    if (!characterAccess.canReadCharacter) {
+      response.status(404).json({
+        message: 'Character not found.'
+      })
+      return
+    }
+
+    let viewsCount = character.viewsCount
+
+    if (character.status === 'APPROVED' && character.visibility === 'PUBLIC') {
+      const shouldCountView = !actor || (actor.userId !== character.ownerId && actor.role !== 'ADMIN')
+
+      if (shouldCountView) {
+        const dedupeKey =
+          actor && actor.userId !== character.ownerId && actor.role !== 'ADMIN'
+            ? `u:${actor.userId}`
+            : body.visitorKey
+              ? `v:${body.visitorKey}`
+              : null
+
+        if (dedupeKey) {
+          try {
+            await prisma.characterChatStartLedger.create({
+              data: {
+                characterId: character.id,
+                dedupeKey
+              }
+            })
+
+            const viewUpdate = await prisma.character.update({
+              where: {
+                id: character.id
+              },
+              data: {
+                viewsCount: {
+                  increment: 1
+                }
+              },
+              select: {
+                viewsCount: true
+              }
+            })
+
+            viewsCount = viewUpdate.viewsCount
+          } catch (error) {
+            if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+              const fresh = await prisma.character.findUniqueOrThrow({
+                where: {
+                  id: character.id
+                },
+                select: {
+                  viewsCount: true
+                }
+              })
+
+              viewsCount = fresh.viewsCount
+            } else {
+              throw error
+            }
+          }
+        }
+      }
+    }
+
+    response.json({
+      data: {
+        viewsCount
       }
     })
   } catch (error) {

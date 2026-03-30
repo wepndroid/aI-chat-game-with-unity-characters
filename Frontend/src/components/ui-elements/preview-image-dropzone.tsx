@@ -123,7 +123,7 @@ const PreviewImageDropzone = ({
                   event.stopPropagation()
                   openImageInNewTab()
                 }}
-                className="pointer-events-auto relative z-[2] rounded-md border-2 border-ember-400 bg-transparent px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.1em] text-orange-300 transition hover:border-ember-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember-400/90"
+                className="pointer-events-auto relative z-[2] rounded-md bg-transparent px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.1em] text-orange-300 transition hover:border-ember-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember-400/90"
               >
                 Full screen
               </button>

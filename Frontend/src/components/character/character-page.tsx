@@ -4,6 +4,7 @@ import { useAuth } from '@/components/providers/auth-provider'
 import CharacterStatTile from '@/components/ui-elements/character-stat-tile'
 import {
   getCharacterDetail,
+  recordCharacterChatStart,
   toggleCharacterHeart,
   type CharacterDetailRecord
 } from '@/lib/character-api'
@@ -385,8 +386,20 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     ]
   }, [characterRecord])
 
+  const isViewerCharacterOwner = useMemo(() => {
+    if (!sessionUser?.id || !characterRecord) {
+      return false
+    }
+
+    return sessionUser.id === characterRecord.owner.id
+  }, [sessionUser?.id, characterRecord])
+
   const handleToggleHeart = async () => {
     if (!characterRecord) {
+      return
+    }
+
+    if (isViewerCharacterOwner) {
       return
     }
 
@@ -928,13 +941,21 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                   <button
                     type="button"
                     onClick={handleToggleHeart}
-                    disabled={isHeartSubmitting}
-                    className={`inline-flex size-8 items-center justify-center rounded-full border text-xs transition ${
-                      characterRecord.hasHearted
-                        ? 'border-[#8f6447] bg-[#2e221c] text-white shadow-[0_0_0_1px_rgba(255,255,255,0.04)_inset]'
-                        : 'border-[#775844] bg-[#261c17] text-white/95 hover:border-[#8f6447] hover:bg-[#2c201a]'
+                    disabled={isHeartSubmitting || isViewerCharacterOwner}
+                    className={`inline-flex size-8 items-center justify-center rounded-full border text-xs transition disabled:cursor-not-allowed ${
+                      isViewerCharacterOwner
+                        ? 'border-[#5c4a42]/45 bg-[#1f1815] text-white/30'
+                        : characterRecord.hasHearted
+                          ? 'border-[#8f6447] bg-[#2e221c] text-white shadow-[0_0_0_1px_rgba(255,255,255,0.04)_inset]'
+                          : 'border-[#775844] bg-[#261c17] text-white/95 hover:border-[#8f6447] hover:bg-[#2c201a]'
                     }`}
-                    aria-label="Add to favorites"
+                    aria-label={
+                      isViewerCharacterOwner
+                        ? 'Favorites are not available for your own character'
+                        : characterRecord.hasHearted
+                          ? 'Remove from favorites'
+                          : 'Add to favorites'
+                    }
                   >
                     <DescriptionHeartIcon className="size-[13px]" />
                   </button>
@@ -972,6 +993,19 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                 ) : (
                   <Link
                     href={playDemoHref}
+                    onClick={() => {
+                      if (!characterRecord) {
+                        return
+                      }
+
+                      void recordCharacterChatStart(characterRecord.id)
+                        .then((payload) => {
+                          setCharacterRecord((previous) =>
+                            previous ? { ...previous, viewsCount: payload.data.viewsCount } : previous
+                          )
+                        })
+                        .catch(() => {})
+                    }}
                     className="mt-8 inline-flex h-14 w-full items-center justify-center gap-3 rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 font-[family-name:var(--font-heading)] text-[calc(40px*2/3)] font-semibold italic uppercase leading-none text-white transition hover:brightness-110"
                     aria-label="Start chat in the WebGL demo with this character"
                   >

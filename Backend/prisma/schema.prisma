@@ -96,9 +96,10 @@ model Character {
   viewsCount       Int                   @default(0)
   ownerId          String
   owner            User                  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  reviews          Review[]
-  hearts           CharacterHeart[]
-  createdAt        DateTime              @default(now())
+  reviews             Review[]
+  hearts              CharacterHeart[]
+  chatStartLedgerRows CharacterChatStartLedger[]
+  createdAt           DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
   publishedAt      DateTime?
 
@@ -115,6 +116,18 @@ model CharacterHeart {
   character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
 
   @@unique([userId, characterId])
+  @@index([characterId])
+}
+
+/// At most one counted "chat start" per character per dedupeKey (signed-in user or anonymous visitor id).
+model CharacterChatStartLedger {
+  id          String    @id @default(cuid())
+  characterId String
+  dedupeKey   String
+  createdAt   DateTime  @default(now())
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([characterId, dedupeKey])
   @@index([characterId])
 }
 
