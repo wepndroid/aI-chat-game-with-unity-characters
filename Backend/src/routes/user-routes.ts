@@ -212,7 +212,8 @@ userRoutes.patch('/users/:userId/banned', requireAdmin, async (request, response
         id: userId
       },
       select: {
-        id: true
+        id: true,
+        username: true
       }
     })
 
@@ -233,6 +234,26 @@ userRoutes.patch('/users/:userId/banned', requireAdmin, async (request, response
       select: {
         id: true,
         isBanned: true
+      }
+    })
+
+    const actingAdminProfile = await prisma.user.findUnique({
+      where: {
+        id: actingAdmin.userId
+      },
+      select: {
+        username: true
+      }
+    })
+
+    const adminLabel = actingAdminProfile?.username ?? 'admin'
+
+    await prisma.systemActivityLog.create({
+      data: {
+        message: payload.banned
+          ? `User ${existingUser.username} was banned by ${adminLabel}.`
+          : `User ${existingUser.username} was unbanned by ${adminLabel}.`,
+        tone: payload.banned ? 'red' : 'green'
       }
     })
 

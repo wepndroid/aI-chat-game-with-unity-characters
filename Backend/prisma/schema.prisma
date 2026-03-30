@@ -72,6 +72,16 @@ model User {
   sessions                Session[]
 }
 
+/// Append-only entries for admin dashboard “System Activity” (bans, etc.).
+model SystemActivityLog {
+  id        String   @id @default(cuid())
+  message   String
+  tone      String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 model Character {
   id               String                @id @default(cuid())
   slug             String                @unique

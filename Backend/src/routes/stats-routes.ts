@@ -29,7 +29,7 @@ const toRelativeTimeLabel = (value: Date) => {
 }
 
 const buildRecentActivity = async () => {
-  const [latestUsers, latestCharacters, latestReviews] = await prisma.$transaction([
+  const [latestUsers, latestCharacters, latestReviews, systemLogs] = await prisma.$transaction([
     prisma.user.findMany({
       take: 4,
       orderBy: {
@@ -77,6 +77,18 @@ const buildRecentActivity = async () => {
           }
         }
       }
+    }),
+    prisma.systemActivityLog.findMany({
+      take: 8,
+      orderBy: {
+        createdAt: 'desc'
+      },
+      select: {
+        id: true,
+        message: true,
+        tone: true,
+        createdAt: true
+      }
     })
   ])
 
@@ -112,6 +124,20 @@ const buildRecentActivity = async () => {
       timeLabel: toRelativeTimeLabel(review.createdAt),
       tone: 'blue',
       timestampMs: review.createdAt.getTime()
+    })
+  }
+
+  const logToneSet = new Set<ActivityTone>(['yellow', 'red', 'green', 'blue'])
+
+  for (const log of systemLogs) {
+    const tone = logToneSet.has(log.tone as ActivityTone) ? (log.tone as ActivityTone) : 'blue'
+
+    activityList.push({
+      id: `log-${log.id}`,
+      message: log.message,
+      timeLabel: toRelativeTimeLabel(log.createdAt),
+      tone,
+      timestampMs: log.createdAt.getTime()
     })
   }
 

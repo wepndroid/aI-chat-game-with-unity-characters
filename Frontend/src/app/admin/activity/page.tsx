@@ -54,7 +54,9 @@ const AdminActivityPage = () => {
   return (
     <AdminPageShell activeKey="activity">
       <h1 className="font-[family-name:var(--font-heading)] text-[29px] font-normal leading-none text-white">System Activity</h1>
-      <p className="mt-2 text-sm text-[#95a6c1]">Recent sign-ups, character updates, and reviews from the connected app database.</p>
+      <p className="mt-2 text-sm text-[#95a6c1]">
+        Recent sign-ups, character updates, reviews, and moderation events (for example bans) from the app database.
+      </p>
 
       {errorMessage ? (
         <p className="mt-4 rounded-md border border-rose-300/30 bg-rose-300/10 px-3 py-2 text-sm text-rose-100">{errorMessage}</p>
