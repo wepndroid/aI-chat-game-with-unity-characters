@@ -1061,7 +1061,7 @@ characterRoutes.get('/admin/characters/review-queue', requireAdmin, async (reque
       },
       take: query.limit,
       orderBy: {
-        updatedAt: 'asc'
+        updatedAt: 'desc'
       },
       select: {
         id: true,

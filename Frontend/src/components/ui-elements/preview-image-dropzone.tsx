@@ -24,7 +24,6 @@ const overlayIconButtonClass =
 
 type PreviewImageDropzoneProps = {
   onFileSelect: (file: File | null) => void
-  selectedFileName: string | null
   /** Newly picked file (not yet uploaded) — shown as preview. */
   pendingImageFile?: File | null
   /** Saved preview URL from the server when not replacing yet. */
@@ -37,7 +36,6 @@ type PreviewImageDropzoneProps = {
 
 const PreviewImageDropzone = ({
   onFileSelect,
-  selectedFileName,
   pendingImageFile = null,
   existingImageUrl,
   baselinePreviewImageUrl = '',
@@ -102,14 +100,6 @@ const PreviewImageDropzone = ({
     event.stopPropagation()
     openFilePicker()
   }
-
-  const statusLine = selectedFileName
-    ? `New file: ${selectedFileName}`
-    : hasImage
-      ? pendingImageFile
-        ? 'Unsaved preview — submit the form to upload'
-        : 'Saved preview — click image to replace'
-      : null
 
   return (
     <div className="w-full">
@@ -179,12 +169,6 @@ const PreviewImageDropzone = ({
           ) : null}
         </div>
       </div>
-
-      {statusLine ? (
-        <p className="mt-2 max-w-[280px] truncate text-[11px] text-white/55" title={statusLine}>
-          {statusLine}
-        </p>
-      ) : null}
 
       <input
         ref={fileInputRef}

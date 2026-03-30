@@ -54,7 +54,6 @@ const UploadVrmPage = () => {
   const [vrmFile, setVrmFile] = useState<File | null>(null)
   const [previewImageFile, setPreviewImageFile] = useState<File | null>(null)
   const [selectedVrmFileName, setSelectedVrmFileName] = useState<string | null>(null)
-  const [selectedPreviewFileName, setSelectedPreviewFileName] = useState<string | null>(null)
   /** Preview URL from server (edit) or empty (new upload); used to revert after picking a replacement file. */
   const [baselinePreviewImageUrl, setBaselinePreviewImageUrl] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -77,7 +76,6 @@ const UploadVrmPage = () => {
       setVrmFile(null)
       setPreviewImageFile(null)
       setSelectedVrmFileName(null)
-      setSelectedPreviewFileName(null)
       setBaselinePreviewImageUrl('')
       setErrorMessage(null)
       setStatusMessage(null)
@@ -102,7 +100,6 @@ const UploadVrmPage = () => {
         setVrmFile(null)
         setPreviewImageFile(null)
         setSelectedVrmFileName(null)
-        setSelectedPreviewFileName(null)
 
         const loadedPreviewUrl = (payload.data.previewImageUrl ?? '').trim()
 
@@ -291,7 +288,6 @@ const UploadVrmPage = () => {
       setVrmFile(null)
       setPreviewImageFile(null)
       setSelectedVrmFileName(null)
-      setSelectedPreviewFileName(null)
       const nextPath = isAdmin ? '/admin/official-vrms' : '/your-characters'
       window.setTimeout(() => {
         router.push(nextPath)
@@ -348,15 +344,12 @@ const UploadVrmPage = () => {
                   <PreviewImageDropzone
                     onFileSelect={(file) => {
                       setPreviewImageFile(file)
-                      setSelectedPreviewFileName(file?.name ?? null)
                     }}
-                    selectedFileName={selectedPreviewFileName}
                     pendingImageFile={previewImageFile}
                     existingImageUrl={formState.previewImageUrl.trim() || null}
                     baselinePreviewImageUrl={baselinePreviewImageUrl}
                     onRevertPreview={() => {
                       setPreviewImageFile(null)
-                      setSelectedPreviewFileName(null)
                       handleFieldChange('previewImageUrl', baselinePreviewImageUrl)
                     }}
                   />
