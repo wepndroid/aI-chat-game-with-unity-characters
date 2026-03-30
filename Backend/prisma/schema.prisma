@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
   engineType = "binary"
 }
 
@@ -47,21 +47,23 @@ enum EntitlementStatus {
 }
 
 model User {
-  id                String           @id @default(cuid())
-  email             String           @unique
-  username          String           @unique
-  passwordHash      String?
-  role              UserRole         @default(USER)
-  isEmailVerified   Boolean          @default(false)
-  isBanned          Boolean          @default(false)
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-  characters        Character[]
-  hearts            CharacterHeart[]
-  reviews           Review[]
-  patreonAccount    PatreonAccount?
-  patreonOauthState PatreonOAuthState[]
-  entitlementGrants Entitlement[]
+  id                      String                   @id @default(cuid())
+  email                   String                   @unique
+  username                String                   @unique
+  passwordHash            String?
+  role                    UserRole                 @default(USER)
+  isEmailVerified         Boolean                  @default(false)
+  isBanned                Boolean                  @default(false)
+  /// When this admin last opened Official VRMs; used for sidebar “new official” badge (per admin).
+  officialVrmsListSeenAt  DateTime?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  characters              Character[]
+  hearts                  CharacterHeart[]
+  reviews                 Review[]
+  patreonAccount          PatreonAccount?
+  patreonOauthState       PatreonOAuthState[]
+  entitlementGrants       Entitlement[]
   emailVerificationTokens EmailVerificationToken[]
   passwordResetTokens     PasswordResetToken[]
   oauthAccounts           OAuthAccount[]
@@ -69,8 +71,8 @@ model User {
 }
 
 model Character {
-  id               String              @id @default(cuid())
-  slug             String              @unique
+  id               String                @id @default(cuid())
+  slug             String                @unique
   name             String
   fullName         String?
   tagline          String?
@@ -84,21 +86,20 @@ model Character {
   legacyFileHash   String?
   legacyTier       Int?
   legacyHeyWaifu   Int?
-  status           CharacterStatus     @default(DRAFT)
-  visibility       CharacterVisibility @default(PRIVATE)
+  status           CharacterStatus       @default(DRAFT)
+  visibility       CharacterVisibility   @default(PRIVATE)
   /// True when the owning account is an admin (admin-uploaded VRMs); mirrored for API compatibility.
-  officialListing  Boolean             @default(false)
-  isPatreonGated   Boolean             @default(false)
+  officialListing  Boolean               @default(false)
+  isPatreonGated   Boolean               @default(false)
   minimumTierCents Int?
-  heartsCount      Int                 @default(0)
-  viewsCount       Int                 @default(0)
+  heartsCount      Int                   @default(0)
+  viewsCount       Int                   @default(0)
   ownerId          String
-  owner            User                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  owner            User                  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   reviews          Review[]
   hearts           CharacterHeart[]
-  screenshots      CharacterScreenshot[]
-  createdAt        DateTime            @default(now())
-  updatedAt        DateTime            @updatedAt
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
   publishedAt      DateTime?
 
   @@index([ownerId, status])
@@ -117,17 +118,6 @@ model CharacterHeart {
   @@index([characterId])
 }
 
-model CharacterScreenshot {
-  id          String    @id @default(cuid())
-  characterId String
-  imageUrl    String
-  sortOrder   Int       @default(0)
-  createdAt   DateTime  @default(now())
-  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
-
-  @@index([characterId, sortOrder])
-}
-
 model Review {
   id          String    @id @default(cuid())
   body        String
@@ -143,22 +133,22 @@ model Review {
 }
 
 model PatreonAccount {
-  id                   String   @id @default(cuid())
-  userId               String   @unique
-  patreonUserId        String   @unique
-  campaignMemberId     String?
-  accessTokenEncrypted String?
+  id                    String    @id @default(cuid())
+  userId                String    @unique
+  patreonUserId         String    @unique
+  campaignMemberId      String?
+  accessTokenEncrypted  String?
   refreshTokenEncrypted String?
-  tokenExpiresAt       DateTime?
-  tierCents            Int?
-  membershipStatus     String?
-  lastChargeStatus     String?
-  lastChargeDate       DateTime?
-  nextChargeDate       DateTime?
-  lastCheckedAt        DateTime?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenExpiresAt        DateTime?
+  tierCents             Int?
+  membershipStatus      String?
+  lastChargeStatus      String?
+  lastChargeDate        DateTime?
+  nextChargeDate        DateTime?
+  lastCheckedAt         DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model PatreonOAuthState {
@@ -234,16 +224,16 @@ model OAuthAccount {
 }
 
 model Session {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   userId           String
-  sessionTokenHash String   @unique
+  sessionTokenHash String    @unique
   expiresAt        DateTime
   revokedAt        DateTime?
-  createdAt        DateTime @default(now())
+  createdAt        DateTime  @default(now())
   lastSeenAt       DateTime?
   ipAddress        String?
   userAgent        String?
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, expiresAt])
   @@index([revokedAt])

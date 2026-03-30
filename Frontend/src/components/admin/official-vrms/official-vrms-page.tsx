@@ -2,8 +2,11 @@
 
 import AdminPageShell from '@/components/shared/admin-page-shell'
 import AdminOfficialVrmRow, { type AdminOfficialVrmRecord } from '@/components/ui-elements/admin-official-vrm-row'
+import AdminModalDialog from '@/components/ui-elements/admin-modal-dialog'
 import { type AdminOfficialVrmStatus } from '@/components/ui-elements/admin-official-vrm-status-pill'
-import { listCharacters, updateCharacterStatus, type CharacterListRecord } from '@/lib/character-api'
+import { deleteCharacter, listCharacters, type CharacterListRecord } from '@/lib/character-api'
+import { ADMIN_OVERVIEW_REFRESH_EVENT } from '@/lib/admin-overview-events'
+import { apiPost } from '@/lib/api-client'
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
 
@@ -82,6 +85,7 @@ const OfficialVrmsPage = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [busyCharacterId, setBusyCharacterId] = useState<string | null>(null)
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{ id: string; name: string } | null>(null)
 
   const loadOfficialCharacters = useCallback(async (withSpinner = true) => {
     if (withSpinner) {
@@ -91,7 +95,7 @@ const OfficialVrmsPage = () => {
     setErrorMessage(null)
 
     try {
-      const payload = await listCharacters({ galleryScope: 'curated', limit: 200 })
+      const payload = await listCharacters({ galleryScope: 'curated', adminCuratedAll: true, limit: 200 })
       setCharacterList(payload.data)
     } catch (error) {
       setCharacterList([])
@@ -107,16 +111,50 @@ const OfficialVrmsPage = () => {
     void loadOfficialCharacters(true)
   }, [loadOfficialCharacters])
 
-  const handleArchive = (characterId: string) => {
+  useEffect(() => {
+    let isCancelled = false
+
+    Promise.resolve().then(async () => {
+      try {
+        await apiPost('/admin/me/official-vrms-seen', {})
+        if (!isCancelled && typeof window !== 'undefined') {
+          window.dispatchEvent(new Event(ADMIN_OVERVIEW_REFRESH_EVENT))
+        }
+      } catch {
+        // Sidebar badge is best-effort if this fails.
+      }
+    })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [])
+
+  const requestDeleteOfficialCharacter = (characterId: string, characterName: string) => {
+    setDeleteConfirmTarget({ id: characterId, name: characterName })
+  }
+
+  const runConfirmedDeleteOfficial = () => {
+    const target = deleteConfirmTarget
+    if (!target) {
+      return
+    }
+
+    const characterId = target.id
+
     Promise.resolve().then(async () => {
       setBusyCharacterId(characterId)
       setErrorMessage(null)
 
       try {
-        await updateCharacterStatus(characterId, 'ARCHIVED')
+        await deleteCharacter(characterId)
+        setCharacterList((previous) => previous.filter((characterRecord) => characterRecord.id !== characterId))
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event(ADMIN_OVERVIEW_REFRESH_EVENT))
+        }
         await loadOfficialCharacters(false)
       } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'Failed to archive character.')
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to delete character.')
       } finally {
         setBusyCharacterId(null)
       }
@@ -129,7 +167,7 @@ const OfficialVrmsPage = () => {
         <div>
           <h1 className="font-[family-name:var(--font-heading)] text-[29px] font-normal leading-none text-white">Official Characters</h1>
           <p className="mt-1 text-[15px] font-[family-name:var(--font-heading)] font-normal text-[#9ab0cd]">
-            VRMs uploaded by admin accounts (e.g. Upload VRM while signed in as admin). These appear in the Official gallery when approved and public.
+            Manage and publish official, curated VRMs produced by the platform.
           </p>
         </div>
 
@@ -146,6 +184,21 @@ const OfficialVrmsPage = () => {
       {errorMessage ? (
         <section className="mt-5 rounded-lg border border-rose-300/30 bg-rose-300/10 px-4 py-3 text-sm text-rose-100">{errorMessage}</section>
       ) : null}
+
+      <AdminModalDialog
+        open={deleteConfirmTarget !== null}
+        title="Remove this official character?"
+        message={
+          deleteConfirmTarget
+            ? `Are you sure you want to remove "${deleteConfirmTarget.name}"? It will disappear from this Official Characters page and from the public gallery, the record will be deleted, and uploaded VRM and preview files will be removed from the server. This cannot be undone. If you are unsure, click Cancel.`
+            : ''
+        }
+        onClose={() => setDeleteConfirmTarget(null)}
+        onConfirm={runConfirmedDeleteOfficial}
+        confirmLabel="Yes, remove permanently"
+        cancelLabel="Cancel"
+        confirmVariant="danger"
+      />
 
       <section className="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-[#0b0f14]/95">
         <div className="overflow-x-auto">
@@ -184,7 +237,7 @@ const OfficialVrmsPage = () => {
                       key={characterRecord.id}
                       vrmRecord={toOfficialVrmRecord(characterRecord)}
                       isBusy={busyCharacterId === characterRecord.id}
-                      onArchive={characterRecord.status === 'ARCHIVED' ? undefined : handleArchive}
+                      onDeleteRequest={requestDeleteOfficialCharacter}
                     />
                   ))
                 : null}

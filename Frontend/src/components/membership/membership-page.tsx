@@ -504,7 +504,7 @@ const MembershipPage = () => {
                   summary="Base access plan for public website and character browsing."
                   benefitList={[
                     'Browse approved public VRoid gallery',
-                    'View character pages and screenshots',
+                    'View character pages and gallery',
                     'Submit public reviews and hearts',
                     'Use account profile and favorites'
                   ]}

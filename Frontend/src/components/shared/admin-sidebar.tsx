@@ -2,6 +2,7 @@
 
 import AdminSidebarItem from '@/components/ui-elements/admin-sidebar-item'
 import { useAuth } from '@/components/providers/auth-provider'
+import { ADMIN_OVERVIEW_REFRESH_EVENT } from '@/lib/admin-overview-events'
 import { apiGet } from '@/lib/api-client'
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -15,6 +16,7 @@ type AdminSidebarEntry = {
   href: string
   icon: ReactNode
   badgeText?: string
+  badgeVariant?: 'default' | 'danger'
 }
 
 type AdminSidebarGroup = {
@@ -98,42 +100,49 @@ const AdminSidebar = ({ activeKey }: AdminSidebarProps) => {
   const { sessionUser, logoutUser } = useAuth()
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [pendingReviewCount, setPendingReviewCount] = useState<number | null>(null)
+  const [newOfficialVrmsCount, setNewOfficialVrmsCount] = useState<number | null>(null)
   const [signOutError, setSignOutError] = useState<string | null>(null)
 
-  const fetchPendingReviewCount = useCallback(async () => {
+  const syncOverviewBadges = useCallback(async () => {
     try {
-      const payload = await apiGet<{ data: { pendingCharacters: number } }>('/stats/overview')
-      return payload.data.pendingCharacters
+      const payload = await apiGet<{ data: { pendingCharacters: number; newOfficialVrmsCount: number } }>('/stats/overview')
+      setPendingReviewCount(payload.data.pendingCharacters)
+      setNewOfficialVrmsCount(payload.data.newOfficialVrmsCount)
     } catch {
-      return null
+      setPendingReviewCount(null)
+      setNewOfficialVrmsCount(null)
     }
   }, [])
 
   useEffect(() => {
     let isCancelled = false
 
-    const syncPendingCount = async () => {
-      const count = await fetchPendingReviewCount()
-      if (!isCancelled) {
-        setPendingReviewCount(count)
+    const runSync = async () => {
+      if (isCancelled) {
+        return
       }
+
+      await syncOverviewBadges()
     }
 
-    Promise.resolve().then(async () => {
-      await syncPendingCount()
-    })
+    Promise.resolve().then(runSync)
 
     const refreshTimerId = window.setInterval(() => {
-      Promise.resolve().then(async () => {
-        await syncPendingCount()
-      })
+      Promise.resolve().then(runSync)
     }, 45000)
+
+    const handleOverviewRefresh = () => {
+      Promise.resolve().then(runSync)
+    }
+
+    window.addEventListener(ADMIN_OVERVIEW_REFRESH_EVENT, handleOverviewRefresh)
 
     return () => {
       isCancelled = true
       window.clearInterval(refreshTimerId)
+      window.removeEventListener(ADMIN_OVERVIEW_REFRESH_EVENT, handleOverviewRefresh)
     }
-  }, [fetchPendingReviewCount, pathname])
+  }, [syncOverviewBadges, pathname])
 
   const sidebarGroupList = useMemo<AdminSidebarGroup[]>(
     () => [
@@ -149,7 +158,17 @@ const AdminSidebar = ({ activeKey }: AdminSidebarProps) => {
       {
         id: 'content',
         title: 'Content',
-        entryList: [{ id: 'official-vrms', label: 'Official VRMs', href: '/admin/official-vrms', icon: <StarsIcon /> }]
+        entryList: [
+          {
+            id: 'official-vrms',
+            label: 'Official VRMs',
+            href: '/admin/official-vrms',
+            icon: <StarsIcon />,
+            ...(newOfficialVrmsCount !== null && newOfficialVrmsCount > 0
+              ? { badgeText: String(newOfficialVrmsCount), badgeVariant: 'danger' as const }
+              : {})
+          }
+        ]
       },
       {
         id: 'moderation',
@@ -170,7 +189,7 @@ const AdminSidebar = ({ activeKey }: AdminSidebarProps) => {
         entryList: [{ id: 'global-settings', label: 'Global Settings', href: '/admin/global-settings', icon: <CogIcon /> }]
       }
     ],
-    [pendingReviewCount]
+    [pendingReviewCount, newOfficialVrmsCount]
   )
 
   const handleSignOut = async () => {
@@ -226,6 +245,7 @@ const AdminSidebar = ({ activeKey }: AdminSidebarProps) => {
                   icon={entryItem.icon}
                   isActive={entryItem.id === activeKey}
                   badgeText={entryItem.badgeText}
+                  badgeVariant={entryItem.badgeVariant}
                 />
               ))}
             </div>

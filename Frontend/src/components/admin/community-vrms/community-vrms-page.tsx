@@ -2,8 +2,12 @@
 /* eslint-disable @next/next/no-img-element */
 
 import AdminPageShell from '@/components/shared/admin-page-shell'
-import { listCharacters, updateCharacterStatus, updateCharacterVisibility, type CharacterListRecord } from '@/lib/character-api'
-import { useEffect, useMemo, useState } from 'react'
+import AdminModalDialog from '@/components/ui-elements/admin-modal-dialog'
+import { AdminVrmMetricHeartIcon, AdminVrmMetricViewsIcon } from '@/components/ui-elements/admin-vrm-metric-icons'
+import { deleteCharacter, listCharacters, updateCharacterVisibility, type CharacterListRecord } from '@/lib/character-api'
+import Link from 'next/link'
+import { createPortal } from 'react-dom'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 type CommunityVrmFilterValue = 'all' | 'public' | 'private' | 'removed'
 
@@ -17,19 +21,42 @@ const communityVrmFilterOptions: Array<{ value: CommunityVrmFilterValue; label: 
 const isRemovedCharacter = (characterRecord: CharacterListRecord) =>
   characterRecord.status === 'REJECTED' || characterRecord.status === 'ARCHIVED'
 
-const matchesCommunityVrmFilter = (characterRecord: CharacterListRecord, filter: CommunityVrmFilterValue) => {
-  if (filter === 'all') {
-    return true
+/** Single status column: public / private / removed (UNLISTED counts as private). */
+type CommunityVrmRowStatus = 'public' | 'private' | 'removed'
+
+const getCommunityVrmRowStatus = (characterRecord: CharacterListRecord): CommunityVrmRowStatus => {
+  if (isRemovedCharacter(characterRecord)) {
+    return 'removed'
   }
 
+  if (characterRecord.visibility === 'PUBLIC') {
+    return 'public'
+  }
+
+  return 'private'
+}
+
+/** Pill styles aligned with admin reference: blue public, cool grey private, red removed. */
+const communityVrmRowStatusClassName: Record<CommunityVrmRowStatus, string> = {
+  public: 'border border-blue-500/55 bg-blue-950/55 text-blue-400',
+  private: 'border border-slate-600/65 bg-[#222831] text-[#b6c4d8]',
+  removed: 'border border-red-500/55 bg-red-950/50 text-red-400'
+}
+
+const matchesCommunityVrmFilter = (characterRecord: CharacterListRecord, filter: CommunityVrmFilterValue) => {
   const removed = isRemovedCharacter(characterRecord)
 
   if (filter === 'removed') {
     return removed
   }
 
+  // Removed (rejected/archived) only appear under the Removed tab, not in All / Public / Private.
   if (removed) {
     return false
+  }
+
+  if (filter === 'all') {
+    return true
   }
 
   if (filter === 'public') {
@@ -52,6 +79,231 @@ const SearchIcon = () => {
   )
 }
 
+// Match admin users table actions: size-9 hit target, rounded-lg, same gray + hover as admin-user-table-row.
+const communityVrmActionLinkClassName =
+  'inline-flex size-9 items-center justify-center rounded-lg text-[#9ca3af] transition hover:bg-white/5 hover:text-[#d4d4d8]'
+
+const communityVrmActionButtonClassName =
+  'inline-flex size-9 items-center justify-center rounded-lg text-[#9ca3af] transition hover:bg-white/5 hover:text-[#d4d4d8] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-[#9ca3af]'
+
+const CommunityVrmEyeIcon = () => (
+  <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+    <path d="M2.7 12s3.5-6 9.3-6 9.3 6 9.3 6-3.5 6-9.3 6-9.3-6-9.3-6Z" />
+    <circle cx="12" cy="12" r="2.2" />
+  </svg>
+)
+
+const CommunityVrmGearIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    className="size-[18px]"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden
+  >
+    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+)
+
+const CommunityVrmRemoveIcon = () => (
+  <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+    <circle cx="12" cy="12" r="8.6" />
+    <path d="M9 9l6 6M15 9l-6 6" strokeLinecap="round" />
+  </svg>
+)
+
+const VISIBILITY_MENU_MIN_WIDTH_PX = 136
+
+type CommunityVrmRowActionsProps = {
+  characterRecord: CharacterListRecord
+  busyCharacterId: string | null
+  onSetVisibility: (characterId: string, visibility: 'PUBLIC' | 'PRIVATE') => void
+  onMarkRemoved: (characterId: string, characterName: string) => void
+}
+
+const CommunityVrmRowActions = ({ characterRecord, busyCharacterId, onSetVisibility, onMarkRemoved }: CommunityVrmRowActionsProps) => {
+  const [visibilityMenuOpen, setVisibilityMenuOpen] = useState(false)
+  const [visibilityMenuPosition, setVisibilityMenuPosition] = useState<{ top: number; left: number } | null>(null)
+  const visibilityMenuAnchorRef = useRef<HTMLDivElement>(null)
+  const visibilityMenuPortalRef = useRef<HTMLDivElement>(null)
+
+  const rowBusy = busyCharacterId === characterRecord.id
+
+  useLayoutEffect(() => {
+    if (!visibilityMenuOpen) {
+      setVisibilityMenuPosition(null)
+      return
+    }
+
+    const updatePosition = () => {
+      const anchor = visibilityMenuAnchorRef.current
+      if (!anchor) {
+        return
+      }
+
+      const rect = anchor.getBoundingClientRect()
+      const left = Math.min(
+        Math.max(8, rect.right - VISIBILITY_MENU_MIN_WIDTH_PX),
+        window.innerWidth - VISIBILITY_MENU_MIN_WIDTH_PX - 8
+      )
+
+      setVisibilityMenuPosition({
+        top: rect.bottom + 4,
+        left
+      })
+    }
+
+    updatePosition()
+    window.addEventListener('scroll', updatePosition, true)
+    window.addEventListener('resize', updatePosition)
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true)
+      window.removeEventListener('resize', updatePosition)
+    }
+  }, [visibilityMenuOpen])
+
+  useEffect(() => {
+    if (!visibilityMenuOpen) {
+      return
+    }
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node
+      if (visibilityMenuAnchorRef.current?.contains(target)) {
+        return
+      }
+
+      if (visibilityMenuPortalRef.current?.contains(target)) {
+        return
+      }
+
+      setVisibilityMenuOpen(false)
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setVisibilityMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('touchstart', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('touchstart', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [visibilityMenuOpen])
+
+  const handlePickVisibility = (picked: 'PUBLIC' | 'PRIVATE') => {
+    setVisibilityMenuOpen(false)
+    const currentVisibility = characterRecord.visibility
+    if (picked === 'PUBLIC' && currentVisibility === 'PUBLIC') {
+      return
+    }
+
+    if (picked === 'PRIVATE' && currentVisibility === 'PRIVATE') {
+      return
+    }
+
+    onSetVisibility(characterRecord.id, picked)
+  }
+
+  const isPublicCurrent = characterRecord.visibility === 'PUBLIC'
+  const isPrivateCurrent = characterRecord.visibility === 'PRIVATE' || characterRecord.visibility === 'UNLISTED'
+
+  return (
+    <div className="inline-flex items-center gap-2">
+      <Link
+        href={`/characters/${encodeURIComponent(characterRecord.slug)}`}
+        className={communityVrmActionLinkClassName}
+        aria-label={`View ${characterRecord.name} in gallery`}
+      >
+        <CommunityVrmEyeIcon />
+      </Link>
+
+      <div className="inline-flex" ref={visibilityMenuAnchorRef}>
+        <button
+          type="button"
+          onClick={() => setVisibilityMenuOpen((open) => !open)}
+          disabled={rowBusy}
+          className={communityVrmActionButtonClassName}
+          aria-expanded={visibilityMenuOpen}
+          aria-haspopup="menu"
+          aria-label={`Options for ${characterRecord.name}: visibility and review`}
+        >
+          {rowBusy ? <span className="text-[10px] text-ember-300">…</span> : <CommunityVrmGearIcon />}
+        </button>
+      </div>
+
+      {visibilityMenuOpen && visibilityMenuPosition && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              ref={visibilityMenuPortalRef}
+              role="menu"
+              style={{
+                position: 'fixed',
+                top: visibilityMenuPosition.top,
+                left: visibilityMenuPosition.left,
+                zIndex: 100,
+                minWidth: VISIBILITY_MENU_MIN_WIDTH_PX
+              }}
+              className="rounded-lg border border-white/15 bg-[#12161c] py-1 shadow-lg shadow-black/40"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => handlePickVisibility('PUBLIC')}
+                className={`flex w-full items-center px-3 py-2 text-left text-sm transition hover:bg-white/5 ${
+                  isPublicCurrent ? 'text-ember-300' : 'text-white/90'
+                }`}
+              >
+                Public
+                {isPublicCurrent ? <span className="ml-auto pl-2 text-[10px] uppercase text-white/40">current</span> : null}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => handlePickVisibility('PRIVATE')}
+                className={`flex w-full items-center px-3 py-2 text-left text-sm transition hover:bg-white/5 ${
+                  isPrivateCurrent ? 'text-ember-300' : 'text-white/90'
+                }`}
+              >
+                Private
+                {isPrivateCurrent ? <span className="ml-auto pl-2 text-[10px] uppercase text-white/40">current</span> : null}
+              </button>
+              <div className="my-1 border-t border-white/10" role="separator" aria-hidden="true" />
+              <Link
+                href={`/upload-vrm?edit=${encodeURIComponent(characterRecord.id)}`}
+                role="menuitem"
+                className="flex w-full items-center px-3 py-2 text-left text-sm text-white/90 transition hover:bg-white/5"
+                onClick={() => setVisibilityMenuOpen(false)}
+              >
+                Review
+              </Link>
+            </div>,
+            document.body
+          )
+        : null}
+
+      <button
+        type="button"
+        className={communityVrmActionButtonClassName}
+        aria-label={`Permanently delete ${characterRecord.name} and uploaded assets`}
+        disabled={rowBusy}
+        onClick={() => onMarkRemoved(characterRecord.id, characterRecord.name)}
+      >
+        <CommunityVrmRemoveIcon />
+      </button>
+    </div>
+  )
+}
+
 const CommunityVrmsPage = () => {
   const [communityFilter, setCommunityFilter] = useState<CommunityVrmFilterValue>('all')
   const [searchValue, setSearchValue] = useState('')
@@ -59,6 +311,7 @@ const CommunityVrmsPage = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [characterList, setCharacterList] = useState<CharacterListRecord[]>([])
   const [busyCharacterId, setBusyCharacterId] = useState<string | null>(null)
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{ id: string; name: string } | null>(null)
 
   const loadCharacters = async (withSpinner = true) => {
     if (withSpinner) {
@@ -67,7 +320,12 @@ const CommunityVrmsPage = () => {
     setErrorMessage(null)
 
     try {
-      const payload = await listCharacters({ search: searchValue, galleryScope: 'community', limit: 200 })
+      const payload = await listCharacters({
+        search: searchValue,
+        galleryScope: 'community',
+        adminCommunityAll: true,
+        limit: 200
+      })
       setCharacterList(payload.data)
     } catch (error) {
       setCharacterList([])
@@ -87,7 +345,7 @@ const CommunityVrmsPage = () => {
       setErrorMessage(null)
 
       try {
-        const payload = await listCharacters({ galleryScope: 'community', limit: 200 })
+        const payload = await listCharacters({ galleryScope: 'community', adminCommunityAll: true, limit: 200 })
         if (!isCancelled) {
           setCharacterList(payload.data)
         }
@@ -129,16 +387,27 @@ const CommunityVrmsPage = () => {
     })
   }, [characterList, searchValue, communityFilter])
 
-  const handleApprove = (characterId: string) => {
+  const requestDeleteCharacter = (characterId: string, characterName: string) => {
+    setDeleteConfirmTarget({ id: characterId, name: characterName })
+  }
+
+  const runConfirmedPermanentDelete = () => {
+    const target = deleteConfirmTarget
+    if (!target) {
+      return
+    }
+
+    const characterId = target.id
+
     Promise.resolve().then(async () => {
       setBusyCharacterId(characterId)
       setErrorMessage(null)
 
       try {
-        await updateCharacterStatus(characterId, 'APPROVED')
-        await updateCharacterVisibility(characterId, 'PUBLIC')
+        await deleteCharacter(characterId)
+        setCharacterList((previous) => previous.filter((characterRecord) => characterRecord.id !== characterId))
       } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'Failed to approve character.')
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to delete character.')
       } finally {
         await loadCharacters(false)
         setBusyCharacterId(null)
@@ -146,49 +415,17 @@ const CommunityVrmsPage = () => {
     })
   }
 
-  const handleReject = (characterId: string) => {
+  const handleSetVisibility = (characterId: string, visibility: 'PUBLIC' | 'PRIVATE') => {
     Promise.resolve().then(async () => {
       setBusyCharacterId(characterId)
       setErrorMessage(null)
 
       try {
-        await updateCharacterStatus(characterId, 'REJECTED')
-      } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'Failed to reject character.')
-      } finally {
+        await updateCharacterVisibility(characterId, visibility)
         await loadCharacters(false)
-        setBusyCharacterId(null)
-      }
-    })
-  }
-
-  const handlePublish = (characterId: string) => {
-    Promise.resolve().then(async () => {
-      setBusyCharacterId(characterId)
-      setErrorMessage(null)
-
-      try {
-        await updateCharacterVisibility(characterId, 'PUBLIC')
       } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'Failed to publish character.')
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to update visibility.')
       } finally {
-        await loadCharacters(false)
-        setBusyCharacterId(null)
-      }
-    })
-  }
-
-  const handleUnpublish = (characterId: string) => {
-    Promise.resolve().then(async () => {
-      setBusyCharacterId(characterId)
-      setErrorMessage(null)
-
-      try {
-        await updateCharacterVisibility(characterId, 'PRIVATE')
-      } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'Failed to unpublish character.')
-      } finally {
-        await loadCharacters(false)
         setBusyCharacterId(null)
       }
     })
@@ -235,6 +472,21 @@ const CommunityVrmsPage = () => {
         <section className="mt-5 rounded-lg border border-rose-300/30 bg-rose-300/10 px-4 py-3 text-sm text-rose-100">{errorMessage}</section>
       ) : null}
 
+      <AdminModalDialog
+        open={deleteConfirmTarget !== null}
+        title="Delete character permanently?"
+        message={
+          deleteConfirmTarget
+            ? `Permanently delete "${deleteConfirmTarget.name}"? This removes the character record, gallery data, and locally hosted VRM and preview files. This cannot be undone.`
+            : ''
+        }
+        onClose={() => setDeleteConfirmTarget(null)}
+        onConfirm={runConfirmedPermanentDelete}
+        confirmLabel="Delete permanently"
+        cancelLabel="Cancel"
+        confirmVariant="danger"
+      />
+
       <section className="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-[#0b0f14]/95">
         <div className="overflow-x-auto">
           <table className="min-w-full">
@@ -245,7 +497,6 @@ const CommunityVrmsPage = () => {
                 <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Uploader</th>
                 <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Metrics</th>
                 <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Status</th>
-                <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Visibility</th>
                 <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Actions</th>
               </tr>
             </thead>
@@ -253,7 +504,7 @@ const CommunityVrmsPage = () => {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-[#7c8aa3]">
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-[#7c8aa3]">
                     Loading characters...
                   </td>
                 </tr>
@@ -261,83 +512,68 @@ const CommunityVrmsPage = () => {
 
               {!isLoading && filteredCharacterList.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-[#7c8aa3]">
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-[#7c8aa3]">
                     No VRMs match your filters.
                   </td>
                 </tr>
               ) : null}
 
               {!isLoading
-                ? filteredCharacterList.map((characterRecord) => (
-                    <tr key={characterRecord.id} className="border-t border-white/10">
-                      <td className="px-4 py-4 align-middle">
-                        {characterRecord.previewImageUrl ? (
-                          <img
-                            src={characterRecord.previewImageUrl}
-                            alt=""
-                            className="size-12 rounded-md border border-white/10 object-cover"
-                          />
-                        ) : (
-                          <div className="flex size-12 items-center justify-center rounded-md border border-white/10 bg-[#1a1f28] text-[10px] text-[#4a5a72]">
-                            —
+                ? filteredCharacterList.map((characterRecord) => {
+                    const rowStatus = getCommunityVrmRowStatus(characterRecord)
+
+                    return (
+                      <tr key={characterRecord.id} className="border-t border-white/10">
+                        <td className="px-4 py-4 align-middle">
+                          {characterRecord.previewImageUrl ? (
+                            <img
+                              src={characterRecord.previewImageUrl}
+                              alt=""
+                              className="size-12 rounded-md border border-white/10 object-cover object-top"
+                            />
+                          ) : (
+                            <div className="flex size-12 items-center justify-center rounded-md border border-white/10 bg-[#1a1f28] text-[10px] text-[#4a5a72]">
+                              —
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-4 align-middle">
+                          <p className="font-[family-name:var(--font-heading)] text-[17px] font-normal leading-none text-white">{characterRecord.name}</p>
+                          <p className="mt-1 text-sm text-[#6f809d]">{characterRecord.slug}</p>
+                        </td>
+                        <td className="px-4 py-4 align-middle text-[15px] font-[family-name:var(--font-heading)] font-normal text-[#9ca9c2]">
+                          {characterRecord.owner.username}
+                        </td>
+                        <td className="px-4 py-4 align-middle">
+                          <div className="inline-flex items-center gap-3 text-xs font-normal text-[#a8b6d0]">
+                            <span className="inline-flex items-center gap-1 text-pink-400">
+                              <AdminVrmMetricHeartIcon />
+                              {characterRecord.heartsCount}
+                            </span>
+                            <span className="inline-flex items-center gap-1" title="Views">
+                              <AdminVrmMetricViewsIcon />
+                              {characterRecord.viewsCount}
+                            </span>
                           </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-4 align-middle">
-                        <p className="font-[family-name:var(--font-heading)] text-[17px] font-normal leading-none text-white">{characterRecord.name}</p>
-                        <p className="mt-1 text-sm text-[#6f809d]">{characterRecord.slug}</p>
-                      </td>
-                      <td className="px-4 py-4 align-middle text-[15px] font-[family-name:var(--font-heading)] font-normal text-[#9ca9c2]">
-                        {characterRecord.owner.username}
-                      </td>
-                      <td className="px-4 py-4 align-middle text-xs text-[#a8b6d0]">
-                        <p>Hearts: {characterRecord.heartsCount}</p>
-                        <p>Views: {characterRecord.viewsCount}</p>
-                      </td>
-                      <td className="px-4 py-4 align-middle text-xs uppercase tracking-[0.08em] text-white/80">{characterRecord.status}</td>
-                      <td className="px-4 py-4 align-middle text-xs uppercase tracking-[0.08em] text-white/80">{characterRecord.visibility}</td>
-                      <td className="px-4 py-4 align-middle">
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            className="rounded-md border border-emerald-500/40 bg-emerald-500/15 px-2 py-1 text-[10px] uppercase text-emerald-200 disabled:opacity-60"
-                            aria-label={`Approve ${characterRecord.name}`}
-                            onClick={() => handleApprove(characterRecord.id)}
-                            disabled={busyCharacterId === characterRecord.id}
+                        </td>
+                        <td className="px-4 py-4 align-middle">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-normal capitalize tracking-[0.06em] ${communityVrmRowStatusClassName[rowStatus]}`}
                           >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-md border border-rose-500/40 bg-rose-500/15 px-2 py-1 text-[10px] uppercase text-rose-200 disabled:opacity-60"
-                            aria-label={`Reject ${characterRecord.name}`}
-                            onClick={() => handleReject(characterRecord.id)}
-                            disabled={busyCharacterId === characterRecord.id}
-                          >
-                            Reject
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-md border border-amber-500/40 bg-amber-500/15 px-2 py-1 text-[10px] uppercase text-amber-200 disabled:opacity-60"
-                            aria-label={`Publish ${characterRecord.name}`}
-                            onClick={() => handlePublish(characterRecord.id)}
-                            disabled={busyCharacterId === characterRecord.id || characterRecord.status !== 'APPROVED'}
-                          >
-                            Publish
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-md border border-white/20 bg-white/5 px-2 py-1 text-[10px] uppercase text-white/80 disabled:opacity-60"
-                            aria-label={`Unpublish ${characterRecord.name}`}
-                            onClick={() => handleUnpublish(characterRecord.id)}
-                            disabled={busyCharacterId === characterRecord.id}
-                          >
-                            Unpublish
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                            {rowStatus}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 align-middle">
+                          <CommunityVrmRowActions
+                            characterRecord={characterRecord}
+                            busyCharacterId={busyCharacterId}
+                            onSetVisibility={handleSetVisibility}
+                            onMarkRemoved={requestDeleteCharacter}
+                          />
+                        </td>
+                      </tr>
+                    )
+                  })
                 : null}
             </tbody>
           </table>

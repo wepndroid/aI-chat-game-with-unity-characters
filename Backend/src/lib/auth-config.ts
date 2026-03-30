@@ -28,11 +28,8 @@ const parseBoolean = (value: string | undefined, fallbackValue: boolean) => {
   return fallbackValue
 }
 
-/** When true, session + API expose every user as ADMIN (DB rows unchanged). Default: on outside production. */
-const forceAllUsersAdminForTesting = parseBoolean(
-  process.env.FORCE_ALL_USERS_ADMIN,
-  process.env.NODE_ENV !== 'production'
-)
+/** When true, session + API expose every user as ADMIN (DB rows unchanged). Default false so real DB roles apply. */
+const forceAllUsersAdminForTesting = parseBoolean(process.env.FORCE_ALL_USERS_ADMIN, false)
 
 const backendPublicUrl = process.env.BACKEND_PUBLIC_URL?.trim() || 'http://127.0.0.1:4000'
 const frontendPublicUrl = process.env.FRONTEND_URL?.trim() || 'http://127.0.0.1:7000'

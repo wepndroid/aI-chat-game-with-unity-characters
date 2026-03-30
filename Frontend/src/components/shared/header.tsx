@@ -188,7 +188,7 @@ const Header = () => {
                   Profile
                 </Link>
               ) : null}
-              {sessionUser ? (
+              {sessionUser?.role === 'ADMIN' ? (
                 <Link href="/admin/dashboard" className="transition hover:text-ember-300" aria-label="Go to admin dashboard">
                   Admin
                 </Link>
@@ -241,7 +241,7 @@ const Header = () => {
                 Profile
               </Link>
             ) : null}
-            {sessionUser ? (
+            {sessionUser?.role === 'ADMIN' ? (
               <Link href="/admin/dashboard" className="transition hover:text-ember-300" aria-label="Go to admin dashboard">
                 Admin
               </Link>

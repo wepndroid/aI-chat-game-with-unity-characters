@@ -174,9 +174,9 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
   const [threePreviewLoadProgress, setThreePreviewLoadProgress] = useState<number | null>(null)
   const [threePreviewErrorMessage, setThreePreviewErrorMessage] = useState<string | null>(null)
   const [isThreePreviewExpanded, setIsThreePreviewExpanded] = useState(false)
-  const [activeScreenshotIndex, setActiveScreenshotIndex] = useState(0)
   const [isHeartSubmitting, setIsHeartSubmitting] = useState(false)
-  const [characterActionMessage, setCharacterActionMessage] = useState<string | null>(null)
+  const [heartToast, setHeartToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null)
+  const heartToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [reviewList, setReviewList] = useState<CharacterReviewRecord[]>([])
   const [isReviewsLoading, setIsReviewsLoading] = useState(false)
   const [reviewsErrorMessage, setReviewsErrorMessage] = useState<string | null>(null)
@@ -189,6 +189,27 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
   const previewContainerRef = useCallback((node: HTMLDivElement | null) => {
     threePreviewContainerReference.current = node
     setThreePreviewContainerRevision((previousRevision) => previousRevision + 1)
+  }, [])
+
+  const showHeartToast = useCallback((message: string, variant: 'success' | 'error') => {
+    if (heartToastTimeoutRef.current) {
+      clearTimeout(heartToastTimeoutRef.current)
+      heartToastTimeoutRef.current = null
+    }
+
+    setHeartToast({ message, variant })
+    heartToastTimeoutRef.current = setTimeout(() => {
+      setHeartToast(null)
+      heartToastTimeoutRef.current = null
+    }, 4000)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (heartToastTimeoutRef.current) {
+        clearTimeout(heartToastTimeoutRef.current)
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -205,7 +226,11 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
 
       setIsLoading(true)
       setErrorMessage(null)
-      setCharacterActionMessage(null)
+      if (heartToastTimeoutRef.current) {
+        clearTimeout(heartToastTimeoutRef.current)
+        heartToastTimeoutRef.current = null
+      }
+      setHeartToast(null)
 
       try {
         const payload = await getCharacterDetail(characterId)
@@ -217,7 +242,6 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
         setCharacterRecord(payload.data)
         setIsThreePreviewOpen(false)
         setThreePreviewErrorMessage(null)
-        setActiveScreenshotIndex(0)
       } catch (error) {
         if (isCancelled) {
           return
@@ -270,39 +294,6 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
       isCancelled = true
     }
   }, [sessionUser?.id])
-
-  const screenshotImageList = useMemo(() => {
-    if (!characterRecord) {
-      return []
-    }
-
-    const deduplicatedImageSet = new Set<string>()
-    const imageList: string[] = []
-
-    if (characterRecord.previewImageUrl) {
-      deduplicatedImageSet.add(characterRecord.previewImageUrl)
-      imageList.push(characterRecord.previewImageUrl)
-    }
-
-    for (const screenshot of characterRecord.screenshots) {
-      const normalizedImageUrl = screenshot.imageUrl.trim()
-
-      if (!normalizedImageUrl || deduplicatedImageSet.has(normalizedImageUrl)) {
-        continue
-      }
-
-      deduplicatedImageSet.add(normalizedImageUrl)
-      imageList.push(normalizedImageUrl)
-    }
-
-    return imageList
-  }, [characterRecord])
-
-  const activePreviewImageUrl = screenshotImageList[activeScreenshotIndex] ?? characterRecord?.previewImageUrl ?? null
-
-  useEffect(() => {
-    setActiveScreenshotIndex(0)
-  }, [characterRecord?.id])
 
   const refreshReviewList = useCallback(async (selectedCharacterId: string) => {
     setIsReviewsLoading(true)
@@ -400,7 +391,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     }
 
     if (!sessionUser) {
-      setCharacterActionMessage('Please sign in before using hearts/favorites.')
+      showHeartToast('Please sign in before using hearts/favorites.', 'error')
       return
     }
 
@@ -409,7 +400,6 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     }
 
     setIsHeartSubmitting(true)
-    setCharacterActionMessage(null)
 
     try {
       const payload = await toggleCharacterHeart(characterRecord.id)
@@ -422,8 +412,12 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
             }
           : previousCharacter
       )
+      showHeartToast(
+        payload.data.hasHearted ? 'Added to your favorites.' : 'Removed from your favorites.',
+        'success'
+      )
     } catch (error) {
-      setCharacterActionMessage(error instanceof Error ? error.message : 'Failed to toggle heart.')
+      showHeartToast(error instanceof Error ? error.message : 'Failed to update favorites.', 'error')
     } finally {
       setIsHeartSubmitting(false)
     }
@@ -828,7 +822,10 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                     </div>
                   ) : (
                     <div className="relative z-[1]">
-                      <CharacterPreviewVisual previewImageUrl={activePreviewImageUrl} characterName={characterRecord.name} />
+                      <CharacterPreviewVisual
+                        previewImageUrl={characterRecord.previewImageUrl}
+                        characterName={characterRecord.name}
+                      />
                     </div>
                   )}
                   {canUseCharacterActions && !characterRecord.vroidFileUrl ? (
@@ -837,28 +834,6 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                     </p>
                   ) : null}
                 </div>
-
-                {screenshotImageList.length > 1 ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {screenshotImageList.map((imageUrl, index) => (
-                      <button
-                        key={imageUrl + index.toString()}
-                        type="button"
-                        onClick={() => {
-                          setIsThreePreviewOpen(false)
-                          setIsThreePreviewExpanded(false)
-                          setActiveScreenshotIndex(index)
-                        }}
-                        className={`relative h-16 w-14 overflow-hidden rounded border ${
-                          activeScreenshotIndex === index ? 'border-ember-300' : 'border-white/20'
-                        }`}
-                        aria-label={`Open screenshot ${index + 1}`}
-                      >
-                        <Image src={imageUrl} alt={`${characterRecord.name} screenshot ${index + 1}`} fill unoptimized className="object-cover" />
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
 
                 <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
                   {characterStats.map((statItem) => (
@@ -964,7 +939,6 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                     <DescriptionHeartIcon className="size-[13px]" />
                   </button>
                 </div>
-                {characterActionMessage ? <p className="mt-3 text-xs text-white/70">{characterActionMessage}</p> : null}
                 {isPatreonGated ? (
                   <p className="mt-4 rounded-md border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-amber-100">
                     {canAccessGatedContent ? 'Patreon content unlocked' : `Locked | ${formatTierLabel(characterRecord.gatedAccess.requiredTierCents)}`}
@@ -998,7 +972,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                 ) : (
                   <Link
                     href={playDemoHref}
-                    className="mt-8 inline-flex h-14 w-full items-center justify-center gap-3 rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 font-[family-name:var(--font-heading)] text-[40px] font-semibold italic uppercase leading-none text-white transition hover:brightness-110"
+                    className="mt-8 inline-flex h-14 w-full items-center justify-center gap-3 rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 font-[family-name:var(--font-heading)] text-[calc(40px*2/3)] font-semibold italic uppercase leading-none text-white transition hover:brightness-110"
                     aria-label="Start chat in the WebGL demo with this character"
                   >
                     Start Chat
@@ -1012,6 +986,20 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
           ) : null}
         </div>
       </section>
+
+      {heartToast ? (
+        <div
+          className={`fixed bottom-6 right-6 z-[200] max-w-[min(calc(100vw-2rem),22rem)] rounded-lg border px-4 py-3 text-sm shadow-[0_12px_40px_rgba(0,0,0,0.45)] ${
+            heartToast.variant === 'error'
+              ? 'border-rose-300/35 bg-[#1c1012] text-rose-100'
+              : 'border-emerald-300/35 bg-[#0f1614] text-emerald-100'
+          }`}
+          role={heartToast.variant === 'error' ? 'alert' : 'status'}
+          aria-live={heartToast.variant === 'error' ? 'assertive' : 'polite'}
+        >
+          {heartToast.message}
+        </div>
+      ) : null}
     </main>
   )
 }

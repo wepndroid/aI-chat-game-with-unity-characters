@@ -3,6 +3,7 @@ import type { Request } from 'express'
 import { Router } from 'express'
 import { z } from 'zod'
 import { assertSafeCharacterAssetUrls } from '../lib/character-asset-url'
+import { tryDeleteTrustedUploadFile } from '../lib/delete-local-upload-file'
 import { optionalAuth, requireAdmin, requireAuth, requireVerifiedEmail } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
 import { buildUniqueSlug } from '../lib/slug'
@@ -27,14 +28,15 @@ const createCharacterSchema = z.object({
   exampleDialogs: z.string().trim().max(12000).optional(),
   vroidFileUrl: z.string().url().optional(),
   previewImageUrl: z.string().url().optional(),
-  screenshotUrls: z.array(z.string().url().max(2048)).max(16).optional(),
   legacyFileHash: z.string().trim().regex(/^[a-fA-F0-9]{64}$/).optional(),
   legacyTier: z.number().int().min(0).max(9).optional(),
   legacyHeyWaifu: z.number().int().min(0).max(1).optional(),
   isPatreonGated: z.boolean().optional(),
   minimumTierCents: z.number().int().min(0).optional(),
   visibility: z.nativeEnum(CharacterVisibility).optional(),
-  officialListing: z.boolean().optional()
+  officialListing: z.boolean().optional(),
+  /** Admin only: save as DRAFT / PRIVATE instead of publishing. Ignored for non-admin. */
+  draft: z.boolean().optional()
 })
 
 const updateCharacterSchema = z
@@ -49,7 +51,6 @@ const updateCharacterSchema = z
     exampleDialogs: z.string().trim().max(12000).nullable().optional(),
     vroidFileUrl: z.string().url().nullable().optional(),
     previewImageUrl: z.string().url().nullable().optional(),
-    screenshotUrls: z.array(z.string().url().max(2048)).max(16).optional(),
     legacyFileHash: z.string().trim().regex(/^[a-fA-F0-9]{64}$/).nullable().optional(),
     legacyTier: z.number().int().min(0).max(9).nullable().optional(),
     legacyHeyWaifu: z.number().int().min(0).max(1).nullable().optional(),
@@ -68,7 +69,9 @@ const listCharactersQuerySchema = z.object({
   search: z.string().trim().max(120).optional(),
   galleryScope: z.enum(['all', 'curated', 'community', 'mine']).optional(),
   sort: z.enum(['name', 'hearts', 'views', 'newest']).optional().default('newest'),
-  limit: z.coerce.number().int().min(1).max(200).default(24)
+  limit: z.coerce.number().int().min(1).max(200).default(24),
+  adminCuratedAll: z.enum(['true', '1']).optional(),
+  adminCommunityAll: z.enum(['true', '1']).optional()
 })
 
 const updateCharacterStatusSchema = z.object({
@@ -86,26 +89,6 @@ const characterParamsSchema = z.object({
 const reviewQueueQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50)
 })
-
-const normalizeScreenshotUrls = (screenshotUrlList: string[] | undefined) => {
-  if (!screenshotUrlList) {
-    return []
-  }
-
-  const deduplicatedUrlList = new Set<string>()
-
-  for (const screenshotUrl of screenshotUrlList) {
-    const normalizedUrl = screenshotUrl.trim()
-
-    if (normalizedUrl.length === 0) {
-      continue
-    }
-
-    deduplicatedUrlList.add(normalizedUrl)
-  }
-
-  return [...deduplicatedUrlList]
-}
 
 const toCharacterAccessActor = (request: Request): CharacterAccessActor => {
   const authUser = request.authUser
@@ -137,7 +120,9 @@ characterRoutes.get('/characters', optionalAuth, async (request, response, next)
       status: query.status,
       visibility: query.visibility,
       search: query.search,
-      galleryScope
+      galleryScope,
+      adminCuratedAll: query.adminCuratedAll !== undefined,
+      adminCommunityAll: query.adminCommunityAll !== undefined
     })
 
     const orderBy: Prisma.CharacterOrderByWithRelationInput =
@@ -318,15 +303,6 @@ characterRoutes.get('/characters/:characterId', optionalAuth, async (request, re
             id: true,
             username: true
           }
-        },
-        screenshots: {
-          orderBy: {
-            sortOrder: 'asc'
-          },
-          select: {
-            imageUrl: true,
-            sortOrder: true
-          }
         }
       }
     })
@@ -420,10 +396,6 @@ characterRoutes.get('/characters/:characterId', optionalAuth, async (request, re
         officialListing: character.officialListing,
         hasHearted,
         owner: character.owner,
-        screenshots: character.screenshots.map((screenshot) => ({
-          imageUrl: screenshot.imageUrl,
-          sortOrder: screenshot.sortOrder
-        })),
         createdAt: character.createdAt,
         updatedAt: character.updatedAt,
         publishedAt: character.publishedAt,
@@ -443,8 +415,7 @@ characterRoutes.post('/characters', requireVerifiedEmail, async (request, respon
     const payload = createCharacterSchema.parse(request.body)
     assertSafeCharacterAssetUrls({
       vroidFileUrl: payload.vroidFileUrl,
-      previewImageUrl: payload.previewImageUrl,
-      screenshotUrls: payload.screenshotUrls
+      previewImageUrl: payload.previewImageUrl
     })
     const actor = toCharacterAccessActor(request)
 
@@ -457,10 +428,18 @@ characterRoutes.post('/characters', requireVerifiedEmail, async (request, respon
 
     const slugSuffix = Date.now().toString().slice(-6)
     const generatedSlug = buildUniqueSlug(payload.name, slugSuffix)
-    const normalizedScreenshotUrls = normalizeScreenshotUrls(payload.screenshotUrls)
 
     // Official / curated listing follows the uploader: only admin accounts (e.g. Upload VRM in admin) are official.
     const officialListing = actor.role === 'ADMIN'
+    const isAdmin = actor.role === 'ADMIN'
+    const adminSaveAsDraft = isAdmin && payload.draft === true
+    const nextStatus = isAdmin ? (adminSaveAsDraft ? 'DRAFT' : 'APPROVED') : 'PENDING'
+    const nextVisibility = adminSaveAsDraft
+      ? 'PRIVATE'
+      : isAdmin
+        ? (payload.visibility ?? 'PUBLIC')
+        : (payload.visibility ?? 'PRIVATE')
+    const publishedAt = nextStatus === 'APPROVED' && nextVisibility === 'PUBLIC' ? new Date() : null
 
     const createdCharacter = await prisma.$transaction(async (transactionClient) => {
       const nextCharacter = await transactionClient.character.create({
@@ -482,9 +461,10 @@ characterRoutes.post('/characters', requireVerifiedEmail, async (request, respon
           legacyHeyWaifu: payload.legacyHeyWaifu,
           isPatreonGated: payload.isPatreonGated ?? false,
           minimumTierCents: payload.minimumTierCents,
-          visibility: payload.visibility ?? 'PRIVATE',
+          visibility: nextVisibility,
           officialListing,
-          status: 'PENDING'
+          status: nextStatus,
+          ...(publishedAt ? { publishedAt } : { publishedAt: null })
         },
         select: {
           id: true,
@@ -495,16 +475,6 @@ characterRoutes.post('/characters', requireVerifiedEmail, async (request, respon
           createdAt: true
         }
       })
-
-      if (normalizedScreenshotUrls.length > 0) {
-        await transactionClient.characterScreenshot.createMany({
-          data: normalizedScreenshotUrls.map((imageUrl, index) => ({
-            characterId: nextCharacter.id,
-            imageUrl,
-            sortOrder: index
-          }))
-        })
-      }
 
       return nextCharacter
     })
@@ -523,8 +493,7 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
     const payload = updateCharacterSchema.parse(request.body)
     assertSafeCharacterAssetUrls({
       vroidFileUrl: payload.vroidFileUrl,
-      previewImageUrl: payload.previewImageUrl,
-      screenshotUrls: payload.screenshotUrls
+      previewImageUrl: payload.previewImageUrl
     })
 
     const actor = toCharacterAccessActor(request)
@@ -566,8 +535,6 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
       return
     }
 
-    const normalizedScreenshotUrls = normalizeScreenshotUrls(payload.screenshotUrls)
-    const hasScreenshotPayload = payload.screenshotUrls !== undefined
     const shouldResetStatusToPending =
       actor.role !== 'ADMIN' && existingCharacter.status === 'APPROVED' && Object.keys(payload).length > 0
 
@@ -610,24 +577,6 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
           updatedAt: true
         }
       })
-
-      if (hasScreenshotPayload) {
-        await transactionClient.characterScreenshot.deleteMany({
-          where: {
-            characterId: existingCharacter.id
-          }
-        })
-
-        if (normalizedScreenshotUrls.length > 0) {
-          await transactionClient.characterScreenshot.createMany({
-            data: normalizedScreenshotUrls.map((imageUrl, index) => ({
-              characterId: existingCharacter.id,
-              imageUrl,
-              sortOrder: index
-            }))
-          })
-        }
-      }
 
       return nextCharacter
     })
@@ -920,13 +869,61 @@ characterRoutes.patch('/characters/:characterId/visibility', requireAdmin, async
   }
 })
 
+characterRoutes.delete('/characters/:characterId', requireAdmin, async (request, response, next) => {
+  try {
+    const { characterId } = characterParamsSchema.parse(request.params)
+
+    const existingCharacter = await prisma.character.findFirst({
+      where: {
+        OR: [{ id: characterId }, { slug: characterId }]
+      },
+      select: {
+        id: true,
+        vroidFileUrl: true,
+        previewImageUrl: true
+      }
+    })
+
+    if (!existingCharacter) {
+      response.status(404).json({
+        message: 'Character not found.'
+      })
+      return
+    }
+
+    const assetUrlList = [existingCharacter.vroidFileUrl, existingCharacter.previewImageUrl]
+
+    await prisma.character.delete({
+      where: {
+        id: existingCharacter.id
+      }
+    })
+
+    await Promise.all(assetUrlList.map((assetUrl) => tryDeleteTrustedUploadFile(assetUrl)))
+
+    response.json({
+      data: {
+        deleted: true,
+        id: existingCharacter.id
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 characterRoutes.get('/admin/characters/review-queue', requireAdmin, async (request, response, next) => {
   try {
     const query = reviewQueueQuerySchema.parse(request.query)
 
     const pendingCharacterList = await prisma.character.findMany({
       where: {
-        status: 'PENDING'
+        status: 'PENDING',
+        owner: {
+          role: {
+            not: 'ADMIN'
+          }
+        }
       },
       take: query.limit,
       orderBy: {
@@ -951,6 +948,38 @@ characterRoutes.get('/admin/characters/review-queue', requireAdmin, async (reque
 
     response.json({
       data: pendingCharacterList
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+characterRoutes.post('/admin/me/official-vrms-seen', requireAdmin, async (request, response, next) => {
+  try {
+    const authUser = request.authUser
+
+    if (!authUser) {
+      response.status(401).json({
+        message: 'Authentication required.'
+      })
+      return
+    }
+
+    const seenAt = new Date()
+
+    await prisma.user.update({
+      where: {
+        id: authUser.userId
+      },
+      data: {
+        officialVrmsListSeenAt: seenAt
+      }
+    })
+
+    response.json({
+      data: {
+        officialVrmsListSeenAt: seenAt.toISOString()
+      }
     })
   } catch (error) {
     next(error)

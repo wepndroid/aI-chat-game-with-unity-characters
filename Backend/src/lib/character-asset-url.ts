@@ -131,17 +131,9 @@ const assertSafeAssetUrl = (rawUrl: string | null | undefined, fieldLabel: strin
   }
 }
 
-const assertSafeCharacterAssetUrls = (payload: {
-  vroidFileUrl?: string | null
-  previewImageUrl?: string | null
-  screenshotUrls?: string[]
-}) => {
+const assertSafeCharacterAssetUrls = (payload: { vroidFileUrl?: string | null; previewImageUrl?: string | null }) => {
   assertSafeAssetUrl(payload.vroidFileUrl, 'VRM file URL', ['.vrm'])
   assertSafeAssetUrl(payload.previewImageUrl, 'Preview image URL', ['.png', '.jpg', '.jpeg', '.webp', '.gif'])
-
-  for (const screenshotUrl of payload.screenshotUrls ?? []) {
-    assertSafeAssetUrl(screenshotUrl, 'Screenshot URL', ['.png', '.jpg', '.jpeg', '.webp', '.gif'])
-  }
 }
 
 export { assertSafeCharacterAssetUrls, isSafeExternalUrl, isTrustedSelfHostedAssetUrl, normalizeTrustedOrigins, UPLOAD_PATH_PREFIX }

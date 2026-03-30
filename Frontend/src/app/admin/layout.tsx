@@ -5,7 +5,7 @@ type AdminLayoutProps = Readonly<{
 }>
 
 const AdminLayout = ({ children }: AdminLayoutProps) => {
-  return <RouteAccessGuard>{children}</RouteAccessGuard>
+  return <RouteAccessGuard requiredRole="ADMIN">{children}</RouteAccessGuard>
 }
 
 export default AdminLayout

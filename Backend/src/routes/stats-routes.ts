@@ -190,8 +190,17 @@ const buildDeploymentChecks = () => {
   }
 }
 
-statsRoutes.get('/stats/overview', requireAdmin, async (_request, response, next) => {
+statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next) => {
   try {
+    const authUser = request.authUser
+
+    if (!authUser) {
+      response.status(401).json({
+        message: 'Authentication required.'
+      })
+      return
+    }
+
     const now = new Date()
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
@@ -228,7 +237,12 @@ statsRoutes.get('/stats/overview', requireAdmin, async (_request, response, next
       }),
       prisma.character.count({
         where: {
-          status: 'PENDING'
+          status: 'PENDING',
+          owner: {
+            role: {
+              not: 'ADMIN'
+            }
+          }
         }
       }),
       prisma.review.count(),
@@ -274,6 +288,30 @@ statsRoutes.get('/stats/overview', requireAdmin, async (_request, response, next
         }
       })
     ])
+
+    const adminSeenRecord = await prisma.user.findUnique({
+      where: {
+        id: authUser.userId
+      },
+      select: {
+        officialVrmsListSeenAt: true
+      }
+    })
+
+    const newOfficialVrmsCount = await prisma.character.count({
+      where: {
+        owner: {
+          role: 'ADMIN'
+        },
+        ...(adminSeenRecord?.officialVrmsListSeenAt
+          ? {
+              createdAt: {
+                gt: adminSeenRecord.officialVrmsListSeenAt
+              }
+            }
+          : {})
+      }
+    })
 
     const topCharacters = await prisma.character.findMany({
       where: {
@@ -331,6 +369,7 @@ statsRoutes.get('/stats/overview', requireAdmin, async (_request, response, next
         totalCharacters,
         approvedCharacters,
         pendingCharacters,
+        newOfficialVrmsCount,
         totalReviews,
         totalHearts: totalHeartsResult._sum.heartsCount ?? 0,
         totalViews: totalViewsResult._sum.viewsCount ?? 0,

@@ -78,8 +78,17 @@ const RouteAccessGuard = ({ children, requiredRole, requireVerifiedEmail = false
                 Access Denied
               </h1>
               <p className="mt-3 max-w-[680px] text-sm leading-7 text-white/72">
-                You are signed in as <span className="uppercase">{sessionUser.role.toLowerCase()}</span>, but this area requires{' '}
-                <span className="uppercase">{requiredRole.toLowerCase()}</span> role permissions.
+                {requiredRole === 'ADMIN' ? (
+                  <>
+                    The admin panel is only available to administrator accounts. You are signed in as{' '}
+                    <span className="uppercase">{sessionUser.role.toLowerCase()}</span>.
+                  </>
+                ) : (
+                  <>
+                    You are signed in as <span className="uppercase">{sessionUser.role.toLowerCase()}</span>, but this area requires{' '}
+                    <span className="uppercase">{requiredRole.toLowerCase()}</span> role permissions.
+                  </>
+                )}
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <Link

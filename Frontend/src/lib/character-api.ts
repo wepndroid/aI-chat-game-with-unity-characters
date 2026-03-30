@@ -1,4 +1,4 @@
-import { apiGet, apiPatch, apiPost, apiPostFormData } from '@/lib/api-client'
+import { apiDelete, apiGet, apiPatch, apiPost, apiPostFormData } from '@/lib/api-client'
 
 type CharacterListRecord = {
   id: string
@@ -59,10 +59,6 @@ type CharacterDetailRecord = {
     hasAccess: boolean
     requiredTierCents: number | null
   }
-  screenshots: Array<{
-    imageUrl: string
-    sortOrder: number
-  }>
 }
 
 type CharacterListResponse = {
@@ -84,7 +80,6 @@ type CreateCharacterPayload = {
   exampleDialogs?: string
   vroidFileUrl?: string
   previewImageUrl?: string
-  screenshotUrls?: string[]
   legacyFileHash?: string
   legacyTier?: number
   legacyHeyWaifu?: number
@@ -92,6 +87,8 @@ type CreateCharacterPayload = {
   minimumTierCents?: number
   visibility?: CharacterVisibility
   officialListing?: boolean
+  /** Admin only: create as draft (DRAFT + PRIVATE). Ignored for non-admin. */
+  draft?: boolean
 }
 
 type UpdateCharacterPayload = {
@@ -105,7 +102,6 @@ type UpdateCharacterPayload = {
   exampleDialogs?: string | null
   vroidFileUrl?: string | null
   previewImageUrl?: string | null
-  screenshotUrls?: string[]
   legacyFileHash?: string | null
   legacyTier?: number | null
   legacyHeyWaifu?: number | null
@@ -206,6 +202,13 @@ type UpdateCharacterVisibilityResponse = {
   }
 }
 
+type DeleteCharacterResponse = {
+  data: {
+    deleted: boolean
+    id: string
+  }
+}
+
 type ToggleCharacterHeartResponse = {
   data: {
     hasHearted: boolean
@@ -223,7 +226,16 @@ type CharacterAssetUploadResponse = {
 type GalleryScope = 'all' | 'curated' | 'community' | 'mine'
 type GallerySort = 'name' | 'hearts' | 'views' | 'newest'
 
-const listCharacters = async (options?: { search?: string; galleryScope?: GalleryScope; sort?: GallerySort; limit?: number }) => {
+const listCharacters = async (options?: {
+  search?: string
+  galleryScope?: GalleryScope
+  sort?: GallerySort
+  limit?: number
+  /** Admin only: list every admin-owned curated row (Official VRMs admin table). Omit for public gallery parity. */
+  adminCuratedAll?: boolean
+  /** Admin only: list every community-owned row (Community VRMs admin table). Omit for public Community tab parity. */
+  adminCommunityAll?: boolean
+}) => {
   const query = new URLSearchParams()
 
   if (options?.search && options.search.trim().length > 0) {
@@ -236,6 +248,14 @@ const listCharacters = async (options?: { search?: string; galleryScope?: Galler
 
   if (options?.sort) {
     query.set('sort', options.sort)
+  }
+
+  if (options?.adminCuratedAll) {
+    query.set('adminCuratedAll', 'true')
+  }
+
+  if (options?.adminCommunityAll) {
+    query.set('adminCommunityAll', 'true')
   }
 
   query.set('limit', String(options?.limit ?? 72))
@@ -302,8 +322,14 @@ const updateCharacterVisibility = async (characterId: string, visibility: Charac
   })
 }
 
+const deleteCharacter = async (characterId: string) => {
+  const normalizedCharacterId = characterId.trim()
+  return apiDelete<DeleteCharacterResponse>(`/characters/${encodeURIComponent(normalizedCharacterId)}`)
+}
+
 export {
   createCharacter,
+  deleteCharacter,
   getCharacterDetail,
   listAdminReviewQueue,
   listCharacters,
@@ -317,6 +343,7 @@ export {
 }
 export type {
   CharacterAssetUploadResponse,
+  DeleteCharacterResponse,
   AdminReviewQueueRecord,
   CharacterDetailRecord,
   CharacterListRecord,

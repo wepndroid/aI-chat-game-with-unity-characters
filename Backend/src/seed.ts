@@ -3,16 +3,59 @@ import { buildUniqueSlug } from './lib/slug'
 
 const prisma = new PrismaClient()
 
+/** Only this account may have ADMIN in the database (enforced on each seed run). */
+const SOLE_ADMIN_EMAIL = 'ghostlady0613@gmail.com'
+
 const run = async () => {
-  const adminUser = await prisma.user.upsert({
+  await prisma.user.updateMany({
+    where: {
+      role: 'ADMIN',
+      NOT: {
+        email: SOLE_ADMIN_EMAIL
+      }
+    },
+    data: {
+      role: 'USER'
+    }
+  })
+
+  const soleAdmin = await prisma.user.findUnique({
+    where: {
+      email: SOLE_ADMIN_EMAIL
+    },
+    select: {
+      id: true,
+      email: true
+    }
+  })
+
+  if (soleAdmin) {
+    await prisma.user.update({
+      where: {
+        id: soleAdmin.id
+      },
+      data: {
+        role: 'ADMIN',
+        isEmailVerified: true
+      }
+    })
+  } else {
+    console.warn(
+      `Seed: no user with email ${SOLE_ADMIN_EMAIL}. Sign up that address first, then re-run seed to grant ADMIN.`
+    )
+  }
+
+  const demoUser = await prisma.user.upsert({
     where: {
       email: 'admin@secretwaifu.com'
     },
-    update: {},
+    update: {
+      role: 'USER'
+    },
     create: {
       email: 'admin@secretwaifu.com',
       username: 'adminsenpai',
-      role: 'ADMIN',
+      role: 'USER',
       isEmailVerified: true
     }
   })
@@ -32,11 +75,13 @@ const run = async () => {
 
   const existingCharacterCount = await prisma.character.count()
 
+  const officialSampleOwnerId = soleAdmin?.id ?? demoUser.id
+
   if (existingCharacterCount === 0) {
     await prisma.character.createMany({
       data: [
         {
-          ownerId: adminUser.id,
+          ownerId: officialSampleOwnerId,
           slug: buildUniqueSlug('Airi Akizuki', 'official'),
           name: 'Airi Akizuki',
           fullName: 'Airi Akizuki',
@@ -116,7 +161,9 @@ const run = async () => {
     }
   })
 
-  console.log(`Seed complete. Admin: ${adminUser.email}, Creator: ${creatorUser.email}`)
+  console.log(
+    `Seed complete. Sole admin: ${SOLE_ADMIN_EMAIL}${soleAdmin ? ' (updated)' : ' (missing — see warning)'}. Demo user: ${demoUser.email}. Creator: ${creatorUser.email}`
+  )
 }
 
 run()

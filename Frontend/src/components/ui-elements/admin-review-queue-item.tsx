@@ -1,4 +1,4 @@
-﻿/* eslint-disable @next/next/no-img-element */
+/* eslint-disable @next/next/no-img-element */
 type AdminReviewQueueItemProps = {
   characterName: string
   creatorName: string
@@ -15,7 +15,7 @@ const AdminReviewQueueItem = ({ characterName, creatorName, previewImageUrl, fla
             <img
               src={previewImageUrl}
               alt=""
-              className="size-11 shrink-0 rounded-md border border-white/10 object-cover"
+              className="size-11 shrink-0 rounded-md border border-white/10 object-cover object-top"
             />
           ) : (
             <div className="flex size-11 shrink-0 items-center justify-center rounded-md border border-white/10 bg-[#1a1f28] text-[10px] text-[#4a5a72]">

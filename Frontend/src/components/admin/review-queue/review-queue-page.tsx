@@ -148,9 +148,9 @@ const ReviewQueuePage = () => {
           </p>
         </div>
 
-        <div className="inline-flex items-center gap-3 rounded-xl border border-ember-500/35 bg-ember-500/10 px-4 py-3 text-ember-300">
-          <span className="font-[family-name:var(--font-heading)] text-[24px] font-normal leading-none">{pendingReviewCount}</span>
-          <span className="text-[12px] font-normal uppercase tracking-[0.08em] text-ember-200">Pending Reviews</span>
+        <div className="inline-flex items-center gap-[18px] rounded-xl border border-ember-500/35 bg-ember-500/10 px-5 py-3.5 text-ember-300">
+          <span className="font-[family-name:var(--font-heading)] text-[36px] font-normal leading-none">{pendingReviewCount}</span>
+          <span className="text-[18px] font-normal uppercase tracking-[0.08em] text-ember-200">Pending Reviews</span>
         </div>
       </div>
 

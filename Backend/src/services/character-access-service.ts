@@ -193,6 +193,10 @@ const buildCharacterListWhereClause = (
     visibility?: CharacterVisibility
     search?: string
     galleryScope?: GalleryScope
+    /** When true, admin `curated` lists every admin-owned row (admin UI). Default catalog omits non–public-approved. */
+    adminCuratedAll?: boolean
+    /** When true, admin `community` lists every non-admin-owned row (moderation UI). Default matches public Community tab. */
+    adminCommunityAll?: boolean
   }
 ) => {
   const galleryScope = params.galleryScope ?? 'all'
@@ -230,8 +234,17 @@ const buildCharacterListWhereClause = (
     }
 
     if (galleryScope === 'curated') {
+      const catalogOnly =
+        !params.adminCuratedAll && params.status === undefined && params.visibility === undefined
+
       return {
         owner: { role: 'ADMIN' },
+        ...(catalogOnly
+          ? {
+              status: 'APPROVED',
+              visibility: 'PUBLIC'
+            }
+          : {}),
         ...searchClause,
         ...statusClause,
         ...visibilityClause
@@ -239,8 +252,17 @@ const buildCharacterListWhereClause = (
     }
 
     if (galleryScope === 'community') {
+      const catalogOnly =
+        !params.adminCommunityAll && params.status === undefined && params.visibility === undefined
+
       return {
         owner: { role: { not: 'ADMIN' } },
+        ...(catalogOnly
+          ? {
+              status: 'APPROVED',
+              visibility: 'PUBLIC'
+            }
+          : {}),
         ...searchClause,
         ...statusClause,
         ...visibilityClause
