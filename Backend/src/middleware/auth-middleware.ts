@@ -1,6 +1,12 @@
 import type { NextFunction, Request, Response } from 'express'
 import { authConfig } from '../lib/auth-config'
+import { sendBannedAccountForbidden } from '../lib/banned-account-response'
 import { resolveAuthenticatedSessionUser } from '../services/auth-service'
+
+/**
+ * Session resolution (`optionalAuth` / `requireAuth`) loads the user and checks `user.isBanned`.
+ * Banned users always get 403 + `ACCOUNT_BANNED` before route handlers run.
+ */
 
 const resolveTokenFromRequest = (request: Request) => {
   const tokenFromCookie = request.cookies?.[authConfig.cookieName]
@@ -22,6 +28,11 @@ const optionalAuth = (request: Request, _response: Response, next: NextFunction)
 
   const run = async () => {
     const authenticatedSessionUser = await resolveAuthenticatedSessionUser(token)
+
+    if (authenticatedSessionUser === 'banned') {
+      sendBannedAccountForbidden(_response)
+      return
+    }
 
     if (!authenticatedSessionUser) {
       request.authUser = undefined

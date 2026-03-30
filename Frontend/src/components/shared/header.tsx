@@ -35,37 +35,17 @@ const normalizeOAuthErrorMessage = (rawMessage: string | null) => {
   return rawMessage
 }
 
-const readInitialSignInModalState = (pathname: string | null) => {
-  if (typeof window === 'undefined' || pathname !== '/') {
-    return {
-      shouldOpen: false,
-      errorMessage: null as string | null
-    }
-  }
-
-  const url = new URL(window.location.href)
-  const shouldOpenSignIn = url.searchParams.get(signInQueryFlagKey) === '1'
-  const oauthStatus = url.searchParams.get(oauthQueryFlagKey)
-  const oauthMessage = url.searchParams.get(oauthMessageQueryFlagKey)
-  const shouldHandleOAuthError = oauthStatus === 'error'
-
-  return {
-    shouldOpen: shouldOpenSignIn || shouldHandleOAuthError,
-    errorMessage: shouldHandleOAuthError ? normalizeOAuthErrorMessage(oauthMessage) : null
-  }
-}
-
 const Header = () => {
   const pathname = usePathname()
   const googleOauthEnabled = isGoogleOauthEnabled()
   const { sessionUser, isAuthLoading, loginUser, logoutUser, clearAuthError } = useAuth()
-  const [initialSignInModalState] = useState(() => readInitialSignInModalState(pathname))
-  const [isSignInModalOpen, setIsSignInModalOpen] = useState(initialSignInModalState.shouldOpen)
+  /** Closed on first paint so SSR and client match; open from URL in useEffect after hydrate. */
+  const [isSignInModalOpen, setIsSignInModalOpen] = useState(false)
   const [emailInputValue, setEmailInputValue] = useState('')
   const [passwordInputValue, setPasswordInputValue] = useState('')
   const [isSigningIn, setIsSigningIn] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
-  const [signInErrorMessage, setSignInErrorMessage] = useState<string | null>(initialSignInModalState.errorMessage)
+  const [signInErrorMessage, setSignInErrorMessage] = useState<string | null>(null)
 
   const handleOpenSignInModal = () => {
     const redirectUrl = new URL(window.location.origin)
@@ -150,10 +130,16 @@ const Header = () => {
     const url = new URL(window.location.href)
     const shouldOpenSignIn = url.searchParams.get(signInQueryFlagKey) === '1'
     const oauthStatus = url.searchParams.get(oauthQueryFlagKey)
+    const oauthMessage = url.searchParams.get(oauthMessageQueryFlagKey)
     const shouldHandleOAuthError = oauthStatus === 'error'
 
     if (!shouldOpenSignIn && !shouldHandleOAuthError) {
       return
+    }
+
+    setIsSignInModalOpen(true)
+    if (shouldHandleOAuthError) {
+      setSignInErrorMessage(normalizeOAuthErrorMessage(oauthMessage))
     }
 
     clearAuthError()

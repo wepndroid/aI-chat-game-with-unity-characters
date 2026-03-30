@@ -3,7 +3,6 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAdmin } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
-import { revokeAllSessionsForUser } from '../services/auth-service'
 
 const userRoutes = Router()
 
@@ -236,10 +235,6 @@ userRoutes.patch('/users/:userId/banned', requireAdmin, async (request, response
         isBanned: true
       }
     })
-
-    if (payload.banned) {
-      await revokeAllSessionsForUser(userId, new Date())
-    }
 
     response.json({
       data: updatedUser

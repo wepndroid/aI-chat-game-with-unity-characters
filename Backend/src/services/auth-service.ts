@@ -50,7 +50,10 @@ const createOpaqueSessionForUser = async (userId: string, clientMeta: SessionCli
   return rawSessionToken
 }
 
-const resolveAuthenticatedSessionUser = async (rawSessionToken: string): Promise<AuthenticatedSessionUser | null> => {
+/** `banned` = session was valid but the user is banned (all sessions revoked). */
+type ResolveSessionResult = AuthenticatedSessionUser | null | 'banned'
+
+const resolveAuthenticatedSessionUser = async (rawSessionToken: string): Promise<ResolveSessionResult> => {
   const sessionTokenHash = hashOpaqueSessionToken(rawSessionToken)
   const now = new Date()
 
@@ -81,15 +84,8 @@ const resolveAuthenticatedSessionUser = async (rawSessionToken: string): Promise
   }
 
   if (existingSession.user.isBanned) {
-    await prisma.session.update({
-      where: {
-        id: existingSession.id
-      },
-      data: {
-        revokedAt: now
-      }
-    })
-    return null
+    await revokeAllSessionsForUser(existingSession.userId, now)
+    return 'banned'
   }
 
   await prisma.session.update({
@@ -143,4 +139,4 @@ export {
   resolveAuthenticatedSessionUser,
   revokeOpaqueSessionByToken
 }
-export type { AuthenticatedSessionUser, SessionClientMeta }
+export type { AuthenticatedSessionUser, ResolveSessionResult, SessionClientMeta }
