@@ -332,10 +332,6 @@ const UploadVrmPage = () => {
                 <p className="mb-4 rounded-md border border-white/20 bg-white/5 px-3 py-2 text-xs text-white/75">Loading character data...</p>
               ) : null}
 
-              <p className="text-sm text-white/65">
-                Upload your <span className="text-white/90">VRM</span> and an optional preview image. Files are stored on this site.
-              </p>
-
               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                 <div>
                   <UploadDropzone
