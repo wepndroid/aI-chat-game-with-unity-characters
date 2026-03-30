@@ -6,7 +6,7 @@ import { isPatreonOauthEnabled } from '../lib/patreon-config'
 import { googleOAuthConfig } from '../lib/oauth-config'
 import { requireAdmin } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
-import { getRuntimeAdminSettings, toMaskedApiKeys, updateRuntimeAdminSettings } from '../lib/runtime-admin-settings'
+import { getRuntimeAdminSettings, updateRuntimeAdminSettings } from '../lib/runtime-admin-settings'
 
 const statsRoutes = Router()
 
@@ -506,10 +506,7 @@ statsRoutes.get('/admin/global-settings', requireAdmin, async (_request, respons
   try {
     const settings = await getRuntimeAdminSettings()
     response.json({
-      data: {
-        ...settings,
-        apiKeys: toMaskedApiKeys(settings.apiKeys)
-      }
+      data: settings
     })
   } catch (error) {
     next(error)
@@ -543,10 +540,7 @@ statsRoutes.patch('/admin/global-settings', requireAdmin, async (request, respon
     })
 
     response.json({
-      data: {
-        ...nextSettings,
-        apiKeys: toMaskedApiKeys(nextSettings.apiKeys)
-      }
+      data: nextSettings
     })
   } catch (error) {
     next(error)

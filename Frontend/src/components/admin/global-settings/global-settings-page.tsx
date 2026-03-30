@@ -75,6 +75,7 @@ const fromLocalInputDateTime = (value: string) => (value.trim().length > 0 ? new
 const GlobalSettingsPage = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
@@ -93,7 +94,6 @@ const GlobalSettingsPage = () => {
   const [maintenanceEndAt, setMaintenanceEndAt] = useState('')
   const [maintenanceAdminBypass, setMaintenanceAdminBypass] = useState(true)
   const [maintenanceReadOnlyMode, setMaintenanceReadOnlyMode] = useState(false)
-  const [blockedRoutePrefixesCsv, setBlockedRoutePrefixesCsv] = useState('')
   const [googleClientId, setGoogleClientId] = useState('')
   const [googleClientSecret, setGoogleClientSecret] = useState('')
   const [googleRedirectUri, setGoogleRedirectUri] = useState('')
@@ -130,17 +130,16 @@ const GlobalSettingsPage = () => {
         setMaintenanceEndAt(toLocalInputDateTime(settings.maintenance.endAtIso))
         setMaintenanceAdminBypass(settings.maintenance.adminBypass)
         setMaintenanceReadOnlyMode(settings.maintenance.readOnlyMode)
-        setBlockedRoutePrefixesCsv(settings.maintenance.blockedRoutePrefixes.join(', '))
         setGoogleClientId(settings.apiKeys.googleClientId)
-        setGoogleClientSecret('')
+        setGoogleClientSecret(settings.apiKeys.googleClientSecret)
         setGoogleRedirectUri(settings.apiKeys.googleRedirectUri)
         setPatreonClientId(settings.apiKeys.patreonClientId)
-        setPatreonClientSecret('')
+        setPatreonClientSecret(settings.apiKeys.patreonClientSecret)
         setPatreonRedirectUri(settings.apiKeys.patreonRedirectUri)
         setSmtpHost(settings.apiKeys.smtpHost)
         setSmtpPort(String(settings.apiKeys.smtpPort))
         setSmtpUser(settings.apiKeys.smtpUser)
-        setSmtpPass('')
+        setSmtpPass(settings.apiKeys.smtpPass)
         setSmtpFrom(settings.apiKeys.smtpFrom)
       } catch (error) {
         if (!isCancelled) setErrorMessage(error instanceof Error ? error.message : 'Failed to load global settings.')
@@ -184,7 +183,7 @@ const GlobalSettingsPage = () => {
             endAtIso: fromLocalInputDateTime(maintenanceEndAt),
             adminBypass: maintenanceAdminBypass,
             readOnlyMode: maintenanceReadOnlyMode,
-            blockedRoutePrefixes: parseCsv(blockedRoutePrefixesCsv)
+            blockedRoutePrefixes: []
           },
           apiKeys: {
             googleClientId: googleClientId.trim(),
@@ -202,9 +201,11 @@ const GlobalSettingsPage = () => {
         }
         await apiPatch<RuntimeAdminSettingsResponse>('/admin/global-settings', payload)
         setSuccessMessage('Global settings saved successfully.')
-        setGoogleClientSecret('')
-        setPatreonClientSecret('')
-        setSmtpPass('')
+        setIsEditing(false)
+        const refreshed = await apiGet<RuntimeAdminSettingsResponse>('/admin/global-settings')
+        setGoogleClientSecret(refreshed.data.apiKeys.googleClientSecret)
+        setPatreonClientSecret(refreshed.data.apiKeys.patreonClientSecret)
+        setSmtpPass(refreshed.data.apiKeys.smtpPass)
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Failed to save global settings.')
       } finally {
@@ -221,6 +222,7 @@ const GlobalSettingsPage = () => {
       {errorMessage ? <p className="mt-4 rounded-md border border-rose-300/30 bg-rose-300/10 px-3 py-2 text-sm text-rose-100">{errorMessage}</p> : null}
       {successMessage ? <p className="mt-4 rounded-md border border-emerald-300/30 bg-emerald-300/10 px-3 py-2 text-sm text-emerald-100">{successMessage}</p> : null}
 
+      <fieldset disabled={!isEditing || isLoading || isSaving} className="contents">
       <section className={sectionClassName}>
         <h2 className="font-[family-name:var(--font-heading)] text-[21px] font-normal leading-none text-white">Upload limits</h2>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -268,7 +270,6 @@ const GlobalSettingsPage = () => {
           <label><span className={labelClassName}>Start time (optional)</span><input type="datetime-local" className={inputClassName} value={maintenanceStartAt} onChange={(event) => setMaintenanceStartAt(event.target.value)} /></label>
           <label><span className={labelClassName}>End time (optional)</span><input type="datetime-local" className={inputClassName} value={maintenanceEndAt} onChange={(event) => setMaintenanceEndAt(event.target.value)} /></label>
         </div>
-        <label className="mt-4 block"><span className={labelClassName}>Selective blocks: route prefixes (comma-separated)</span><input className={inputClassName} value={blockedRoutePrefixesCsv} onChange={(event) => setBlockedRoutePrefixesCsv(event.target.value)} placeholder="/api/characters/assets/upload, /api/reviews" /></label>
       </section>
 
       <section className={sectionClassName}>
@@ -277,25 +278,38 @@ const GlobalSettingsPage = () => {
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label><span className={labelClassName}>Google client ID</span><input className={inputClassName} value={googleClientId} onChange={(event) => setGoogleClientId(event.target.value)} /></label>
           <label><span className={labelClassName}>Google redirect URI</span><input className={inputClassName} value={googleRedirectUri} onChange={(event) => setGoogleRedirectUri(event.target.value)} /></label>
-          <label className="md:col-span-2"><span className={labelClassName}>Google client secret (replace)</span><input className={inputClassName} value={googleClientSecret} onChange={(event) => setGoogleClientSecret(event.target.value)} type="password" /></label>
+          <label className="md:col-span-2"><span className={labelClassName}>Google client secret (replace)</span><input className={inputClassName} value={googleClientSecret} onChange={(event) => setGoogleClientSecret(event.target.value)} type="text" /></label>
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label><span className={labelClassName}>Patreon client ID</span><input className={inputClassName} value={patreonClientId} onChange={(event) => setPatreonClientId(event.target.value)} /></label>
           <label><span className={labelClassName}>Patreon redirect URI</span><input className={inputClassName} value={patreonRedirectUri} onChange={(event) => setPatreonRedirectUri(event.target.value)} /></label>
-          <label className="md:col-span-2"><span className={labelClassName}>Patreon client secret (replace)</span><input className={inputClassName} value={patreonClientSecret} onChange={(event) => setPatreonClientSecret(event.target.value)} type="password" /></label>
+          <label className="md:col-span-2"><span className={labelClassName}>Patreon client secret (replace)</span><input className={inputClassName} value={patreonClientSecret} onChange={(event) => setPatreonClientSecret(event.target.value)} type="text" /></label>
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label><span className={labelClassName}>SMTP host</span><input className={inputClassName} value={smtpHost} onChange={(event) => setSmtpHost(event.target.value)} /></label>
           <label><span className={labelClassName}>SMTP port</span><input className={inputClassName} value={smtpPort} onChange={(event) => setSmtpPort(event.target.value)} /></label>
           <label><span className={labelClassName}>SMTP user</span><input className={inputClassName} value={smtpUser} onChange={(event) => setSmtpUser(event.target.value)} /></label>
           <label><span className={labelClassName}>SMTP from</span><input className={inputClassName} value={smtpFrom} onChange={(event) => setSmtpFrom(event.target.value)} /></label>
-          <label className="md:col-span-2"><span className={labelClassName}>SMTP password (replace)</span><input className={inputClassName} value={smtpPass} onChange={(event) => setSmtpPass(event.target.value)} type="password" /></label>
+          <label className="md:col-span-2"><span className={labelClassName}>SMTP password (replace)</span><input className={inputClassName} value={smtpPass} onChange={(event) => setSmtpPass(event.target.value)} type="text" /></label>
         </div>
       </section>
+      </fieldset>
 
       <div className="mt-6">
-        <button type="button" className="inline-flex h-11 items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 text-[11px] font-bold uppercase tracking-[0.1em] text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70" disabled={isLoading || isSaving} onClick={handleSave}>
-          {isSaving ? 'Saving...' : 'Save Global Settings'}
+        <button
+          type="button"
+          className="inline-flex h-11 items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 text-[11px] font-bold uppercase tracking-[0.1em] text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+          disabled={isLoading || isSaving}
+          onClick={() => {
+            if (!isEditing) {
+              setIsEditing(true)
+              setSuccessMessage(null)
+              return
+            }
+            handleSave()
+          }}
+        >
+          {isSaving ? 'Saving...' : isEditing ? 'Save Global Settings' : 'Edit Global Settings'}
         </button>
       </div>
     </AdminPageShell>

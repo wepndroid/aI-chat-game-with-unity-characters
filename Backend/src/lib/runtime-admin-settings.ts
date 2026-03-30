@@ -56,6 +56,34 @@ type RuntimeAdminSettings = {
 
 const SETTINGS_SINGLETON_ID = 'singleton'
 
+const envApiKeyDefaults: ApiKeysSettings = {
+  googleClientId: process.env.GOOGLE_OAUTH_CLIENT_ID?.trim() || '',
+  googleClientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim() || '',
+  googleRedirectUri: process.env.GOOGLE_OAUTH_REDIRECT_URI?.trim() || '',
+  patreonClientId: process.env.PATREON_CLIENT_ID?.trim() || '',
+  patreonClientSecret: process.env.PATREON_CLIENT_SECRET?.trim() || '',
+  patreonRedirectUri: process.env.PATREON_REDIRECT_URI?.trim() || '',
+  smtpHost: process.env.EMAIL_SMTP_HOST?.trim() || '',
+  smtpPort: Number(process.env.EMAIL_SMTP_PORT || 587),
+  smtpUser: process.env.EMAIL_SMTP_USER?.trim() || '',
+  smtpPass: process.env.EMAIL_SMTP_PASS?.trim() || '',
+  smtpFrom: process.env.EMAIL_FROM?.trim() || ''
+}
+
+const getApiKeysFromEnvExact = (): ApiKeysSettings => ({
+  googleClientId: process.env.GOOGLE_OAUTH_CLIENT_ID?.trim() || '',
+  googleClientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim() || '',
+  googleRedirectUri: process.env.GOOGLE_OAUTH_REDIRECT_URI?.trim() || '',
+  patreonClientId: process.env.PATREON_CLIENT_ID?.trim() || '',
+  patreonClientSecret: process.env.PATREON_CLIENT_SECRET?.trim() || '',
+  patreonRedirectUri: process.env.PATREON_REDIRECT_URI?.trim() || '',
+  smtpHost: process.env.EMAIL_SMTP_HOST?.trim() || '',
+  smtpPort: Number(process.env.EMAIL_SMTP_PORT || 587),
+  smtpUser: process.env.EMAIL_SMTP_USER?.trim() || '',
+  smtpPass: process.env.EMAIL_SMTP_PASS?.trim() || '',
+  smtpFrom: process.env.EMAIL_FROM?.trim() || ''
+})
+
 const defaultRuntimeAdminSettings: RuntimeAdminSettings = {
   uploadLimits: {
     maxVrmSizeMb: 100,
@@ -84,17 +112,7 @@ const defaultRuntimeAdminSettings: RuntimeAdminSettings = {
     blockedRoutePrefixes: []
   },
   apiKeys: {
-    googleClientId: '',
-    googleClientSecret: '',
-    googleRedirectUri: '',
-    patreonClientId: '',
-    patreonClientSecret: '',
-    patreonRedirectUri: '',
-    smtpHost: '',
-    smtpPort: 587,
-    smtpUser: '',
-    smtpPass: '',
-    smtpFrom: ''
+    ...envApiKeyDefaults
   }
 }
 
@@ -174,17 +192,22 @@ const normalize = (input: Partial<RuntimeAdminSettings>): RuntimeAdminSettings =
         : []
     },
     apiKeys: {
-      googleClientId: typeof apiKeys.googleClientId === 'string' ? apiKeys.googleClientId.trim() : '',
-      googleClientSecret: typeof apiKeys.googleClientSecret === 'string' ? apiKeys.googleClientSecret.trim() : '',
-      googleRedirectUri: typeof apiKeys.googleRedirectUri === 'string' ? apiKeys.googleRedirectUri.trim() : '',
-      patreonClientId: typeof apiKeys.patreonClientId === 'string' ? apiKeys.patreonClientId.trim() : '',
-      patreonClientSecret: typeof apiKeys.patreonClientSecret === 'string' ? apiKeys.patreonClientSecret.trim() : '',
-      patreonRedirectUri: typeof apiKeys.patreonRedirectUri === 'string' ? apiKeys.patreonRedirectUri.trim() : '',
-      smtpHost: typeof apiKeys.smtpHost === 'string' ? apiKeys.smtpHost.trim() : '',
+      googleClientId: typeof apiKeys.googleClientId === 'string' ? apiKeys.googleClientId.trim() : defaultRuntimeAdminSettings.apiKeys.googleClientId,
+      googleClientSecret:
+        typeof apiKeys.googleClientSecret === 'string' ? apiKeys.googleClientSecret.trim() : defaultRuntimeAdminSettings.apiKeys.googleClientSecret,
+      googleRedirectUri:
+        typeof apiKeys.googleRedirectUri === 'string' ? apiKeys.googleRedirectUri.trim() : defaultRuntimeAdminSettings.apiKeys.googleRedirectUri,
+      patreonClientId:
+        typeof apiKeys.patreonClientId === 'string' ? apiKeys.patreonClientId.trim() : defaultRuntimeAdminSettings.apiKeys.patreonClientId,
+      patreonClientSecret:
+        typeof apiKeys.patreonClientSecret === 'string' ? apiKeys.patreonClientSecret.trim() : defaultRuntimeAdminSettings.apiKeys.patreonClientSecret,
+      patreonRedirectUri:
+        typeof apiKeys.patreonRedirectUri === 'string' ? apiKeys.patreonRedirectUri.trim() : defaultRuntimeAdminSettings.apiKeys.patreonRedirectUri,
+      smtpHost: typeof apiKeys.smtpHost === 'string' ? apiKeys.smtpHost.trim() : defaultRuntimeAdminSettings.apiKeys.smtpHost,
       smtpPort: clamp(Number(apiKeys.smtpPort ?? defaultRuntimeAdminSettings.apiKeys.smtpPort), 1, 65535),
-      smtpUser: typeof apiKeys.smtpUser === 'string' ? apiKeys.smtpUser.trim() : '',
-      smtpPass: typeof apiKeys.smtpPass === 'string' ? apiKeys.smtpPass.trim() : '',
-      smtpFrom: typeof apiKeys.smtpFrom === 'string' ? apiKeys.smtpFrom.trim() : ''
+      smtpUser: typeof apiKeys.smtpUser === 'string' ? apiKeys.smtpUser.trim() : defaultRuntimeAdminSettings.apiKeys.smtpUser,
+      smtpPass: typeof apiKeys.smtpPass === 'string' ? apiKeys.smtpPass.trim() : defaultRuntimeAdminSettings.apiKeys.smtpPass,
+      smtpFrom: typeof apiKeys.smtpFrom === 'string' ? apiKeys.smtpFrom.trim() : defaultRuntimeAdminSettings.apiKeys.smtpFrom
     }
   }
 }
@@ -212,7 +235,7 @@ const getRuntimeAdminSettings = async () => {
   }
 
   const row = rows[0]
-  return normalize({
+  const normalized = normalize({
     uploadLimits: safeJsonParse(row.uploadLimitsJson, defaultRuntimeAdminSettings.uploadLimits),
     requestLimits: safeJsonParse(row.requestLimitsJson, defaultRuntimeAdminSettings.requestLimits),
     sessionLogin: safeJsonParse(row.sessionLoginJson, defaultRuntimeAdminSettings.sessionLogin),
@@ -220,6 +243,11 @@ const getRuntimeAdminSettings = async () => {
     maintenance: safeJsonParse(row.maintenanceJson, defaultRuntimeAdminSettings.maintenance),
     apiKeys: safeJsonParse(row.apiKeysJson, defaultRuntimeAdminSettings.apiKeys)
   })
+
+  return {
+    ...normalized,
+    apiKeys: getApiKeysFromEnvExact()
+  }
 }
 
 const updateRuntimeAdminSettings = async (nextSettingsInput: Partial<RuntimeAdminSettings>) => {
