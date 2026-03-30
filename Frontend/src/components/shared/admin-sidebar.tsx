@@ -101,16 +101,21 @@ const AdminSidebar = ({ activeKey }: AdminSidebarProps) => {
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [pendingReviewCount, setPendingReviewCount] = useState<number | null>(null)
   const [newOfficialVrmsCount, setNewOfficialVrmsCount] = useState<number | null>(null)
+  const [newCommunityVrmsCount, setNewCommunityVrmsCount] = useState<number | null>(null)
   const [signOutError, setSignOutError] = useState<string | null>(null)
 
   const syncOverviewBadges = useCallback(async () => {
     try {
-      const payload = await apiGet<{ data: { pendingCharacters: number; newOfficialVrmsCount: number } }>('/stats/overview')
+      const payload = await apiGet<{
+        data: { pendingCharacters: number; newOfficialVrmsCount: number; newCommunityVrmsCount: number }
+      }>('/stats/overview')
       setPendingReviewCount(payload.data.pendingCharacters)
       setNewOfficialVrmsCount(payload.data.newOfficialVrmsCount)
+      setNewCommunityVrmsCount(payload.data.newCommunityVrmsCount)
     } catch {
       setPendingReviewCount(null)
       setNewOfficialVrmsCount(null)
+      setNewCommunityVrmsCount(null)
     }
   }, [])
 
@@ -152,7 +157,15 @@ const AdminSidebar = ({ activeKey }: AdminSidebarProps) => {
         entryList: [
           { id: 'dashboard', label: 'Dashboard', href: '/admin/dashboard', icon: <DashboardGridIcon /> },
           { id: 'users', label: 'Users', href: '/admin/users', icon: <UserGroupIcon /> },
-          { id: 'community-vrms', label: 'Community VRMs', href: '/admin/community-vrms', icon: <ServerIcon /> }
+          {
+            id: 'community-vrms',
+            label: 'Community VRMs',
+            href: '/admin/community-vrms',
+            icon: <ServerIcon />,
+            ...(newCommunityVrmsCount !== null && newCommunityVrmsCount > 0
+              ? { badgeText: String(newCommunityVrmsCount), badgeVariant: 'danger' as const }
+              : {})
+          }
         ]
       },
       {
@@ -189,7 +202,7 @@ const AdminSidebar = ({ activeKey }: AdminSidebarProps) => {
         entryList: [{ id: 'global-settings', label: 'Global Settings', href: '/admin/global-settings', icon: <CogIcon /> }]
       }
     ],
-    [pendingReviewCount, newOfficialVrmsCount]
+    [pendingReviewCount, newOfficialVrmsCount, newCommunityVrmsCount]
   )
 
   const handleSignOut = async () => {

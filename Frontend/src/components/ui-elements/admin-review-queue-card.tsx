@@ -1,5 +1,4 @@
 /* eslint-disable @next/next/no-img-element */
-import Link from 'next/link'
 
 type AdminReviewQueueCardRecord = {
   id: string
@@ -12,12 +11,9 @@ type AdminReviewQueueCardRecord = {
 
 type AdminReviewQueueCardProps = {
   queueRecord: AdminReviewQueueCardRecord
-  characterSlug: string
-  characterId: string
   previewImageUrl?: string | null
   onApprove: (recordId: string) => void
   onReject: (recordId: string) => void
-  onSelect?: (recordId: string) => void
   isBusy?: boolean
 }
 
@@ -57,12 +53,9 @@ const ScanBadge = ({ queueRecord }: { queueRecord: AdminReviewQueueCardRecord })
 
 const AdminReviewQueueCard = ({
   queueRecord,
-  characterSlug,
-  characterId,
   previewImageUrl,
   onApprove,
   onReject,
-  onSelect,
   isBusy = false
 }: AdminReviewQueueCardProps) => {
   const handleApproveClick = () => {
@@ -93,13 +86,7 @@ const AdminReviewQueueCard = ({
         <div className="mt-4 sm:mt-0">
           <div className="inline-flex items-center gap-3">
             <h3 className="font-[family-name:var(--font-heading)] text-[22px] font-normal leading-none text-white">
-              <button
-                type="button"
-                className="text-left transition hover:text-ember-200/95"
-                onClick={() => onSelect?.(queueRecord.id)}
-              >
-                {queueRecord.title}
-              </button>
+              {queueRecord.title}
             </h3>
             <span className="inline-flex shrink-0 items-center rounded-full border border-yellow-400/35 bg-yellow-400/10 px-2.5 py-1 text-xs font-normal text-yellow-300">
               Pending
@@ -137,21 +124,6 @@ const AdminReviewQueueCard = ({
             <RejectIcon />
             Reject
           </button>
-
-          <Link
-            href={`/characters/${encodeURIComponent(characterSlug)}`}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-white/10 bg-[#232833]/90 text-sm font-normal text-[#d0d7e6] transition hover:bg-[#2d3441]"
-            aria-label={`Open ${queueRecord.title} in gallery`}
-          >
-            Gallery
-          </Link>
-          <Link
-            href={`/upload-vrm?edit=${encodeURIComponent(characterId)}`}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-white/10 bg-[#232833]/90 text-sm font-normal text-[#d0d7e6] transition hover:bg-[#2d3441]"
-            aria-label={`Edit ${queueRecord.title}`}
-          >
-            Edit submission
-          </Link>
         </div>
       </div>
     </article>

@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push --skip-generate",
-    "prisma:sync": "npm run prisma:generate && npm run prisma:push",
+    "prisma:sync": "prisma db push",
     "prisma:migrate": "prisma migrate dev --name init",
     "prisma:studio": "prisma studio",
     "seed": "tsx src/seed.ts",

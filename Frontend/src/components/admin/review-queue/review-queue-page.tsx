@@ -2,9 +2,17 @@
 
 import AdminPageShell from '@/components/shared/admin-page-shell'
 import AdminReviewQueueCard, { type AdminReviewQueueCardRecord } from '@/components/ui-elements/admin-review-queue-card'
+import AdminReviewRejectDialog from '@/components/ui-elements/admin-review-reject-dialog'
 import { descriptionHasModeratorKeywordHint } from '@/lib/admin-review-description'
 import { listAdminReviewQueue, updateCharacterStatus, updateCharacterVisibility, type AdminReviewQueueRecord } from '@/lib/character-api'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ADMIN_OVERVIEW_REFRESH_EVENT } from '@/lib/admin-overview-events'
+import { useCallback, useEffect, useState } from 'react'
+
+const dispatchAdminOverviewRefresh = () => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(ADMIN_OVERVIEW_REFRESH_EVENT))
+  }
+}
 
 const formatRelativeTimeLabel = (isoValue: string) => {
   const targetMs = Date.parse(isoValue)
@@ -47,64 +55,39 @@ const toQueueCardRecord = (queueRecord: AdminReviewQueueRecord): AdminReviewQueu
 
 const ReviewQueuePage = () => {
   const [queueRecordList, setQueueRecordList] = useState<AdminReviewQueueRecord[]>([])
-  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [busyRecordId, setBusyRecordId] = useState<string | null>(null)
+  const [rejectModalTarget, setRejectModalTarget] = useState<{ id: string; name: string } | null>(null)
+  const [isRejectSubmitting, setIsRejectSubmitting] = useState(false)
 
-  const loadReviewQueue = useCallback(
-    async (options?: { withSpinner?: boolean; preserveSelection?: boolean }) => {
-      const withSpinner = options?.withSpinner ?? true
-      const preserveSelection = options?.preserveSelection ?? true
+  const loadReviewQueue = useCallback(async (options?: { withSpinner?: boolean }) => {
+    const withSpinner = options?.withSpinner ?? true
 
+    if (withSpinner) {
+      setIsLoading(true)
+    }
+
+    setErrorMessage(null)
+
+    try {
+      const payload = await listAdminReviewQueue()
+      setQueueRecordList(payload.data)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to load review queue.')
+      setQueueRecordList([])
+    } finally {
       if (withSpinner) {
-        setIsLoading(true)
+        setIsLoading(false)
       }
-
-      setErrorMessage(null)
-
-      try {
-        const payload = await listAdminReviewQueue()
-        const nextQueueList = payload.data
-
-        setQueueRecordList(nextQueueList)
-        setSelectedRecordId((previousSelectedId) => {
-          if (!preserveSelection) {
-            return nextQueueList[0]?.id ?? null
-          }
-
-          if (previousSelectedId && nextQueueList.some((queueRecord) => queueRecord.id === previousSelectedId)) {
-            return previousSelectedId
-          }
-
-          return nextQueueList[0]?.id ?? null
-        })
-      } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'Failed to load review queue.')
-        setQueueRecordList([])
-        setSelectedRecordId(null)
-      } finally {
-        if (withSpinner) {
-          setIsLoading(false)
-        }
-      }
-    },
-    []
-  )
+    }
+  }, [])
 
   useEffect(() => {
-    void loadReviewQueue({ withSpinner: true, preserveSelection: false })
+    void loadReviewQueue({ withSpinner: true })
   }, [loadReviewQueue])
 
   const pendingReviewCount = queueRecordList.length
-
-  const selectedQueueRecord = useMemo(() => {
-    if (!selectedRecordId) {
-      return null
-    }
-
-    return queueRecordList.find((queueRecord) => queueRecord.id === selectedRecordId) ?? null
-  }, [queueRecordList, selectedRecordId])
 
   const handleApproveRecord = (recordId: string) => {
     Promise.resolve().then(async () => {
@@ -112,8 +95,8 @@ const ReviewQueuePage = () => {
         setBusyRecordId(recordId)
         setErrorMessage(null)
         await updateCharacterStatus(recordId, 'APPROVED')
-        await updateCharacterVisibility(recordId, 'PUBLIC')
-        await loadReviewQueue({ withSpinner: false, preserveSelection: false })
+        await loadReviewQueue({ withSpinner: false })
+        dispatchAdminOverviewRefresh()
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Failed to approve character.')
       } finally {
@@ -122,20 +105,36 @@ const ReviewQueuePage = () => {
     })
   }
 
-  const handleRejectRecord = (recordId: string) => {
-    Promise.resolve().then(async () => {
-      try {
-        setBusyRecordId(recordId)
-        setErrorMessage(null)
-        await updateCharacterStatus(recordId, 'REJECTED')
-        await updateCharacterVisibility(recordId, 'PRIVATE')
-        await loadReviewQueue({ withSpinner: false, preserveSelection: false })
-      } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'Failed to reject character.')
-      } finally {
-        setBusyRecordId(null)
-      }
+  const handleRejectRequest = (recordId: string) => {
+    const record = queueRecordList.find((queueRecord) => queueRecord.id === recordId)
+    setRejectModalTarget({
+      id: recordId,
+      name: record?.name ?? 'this submission'
     })
+  }
+
+  const handleRejectConfirm = async (reason: string) => {
+    if (!rejectModalTarget) {
+      return
+    }
+
+    const recordId = rejectModalTarget.id
+
+    try {
+      setIsRejectSubmitting(true)
+      setBusyRecordId(recordId)
+      setErrorMessage(null)
+      await updateCharacterStatus(recordId, 'REJECTED', reason)
+      await updateCharacterVisibility(recordId, 'PRIVATE')
+      setRejectModalTarget(null)
+      await loadReviewQueue({ withSpinner: false })
+      dispatchAdminOverviewRefresh()
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to reject character.')
+    } finally {
+      setIsRejectSubmitting(false)
+      setBusyRecordId(null)
+    }
   }
 
   return (
@@ -175,30 +174,26 @@ const ReviewQueuePage = () => {
             <AdminReviewQueueCard
               key={queueRecord.id}
               queueRecord={toQueueCardRecord(queueRecord)}
-              characterSlug={queueRecord.slug}
-              characterId={queueRecord.id}
               previewImageUrl={queueRecord.previewImageUrl}
               onApprove={handleApproveRecord}
-              onReject={handleRejectRecord}
-              onSelect={setSelectedRecordId}
+              onReject={handleRejectRequest}
               isBusy={busyRecordId === queueRecord.id}
             />
           ))
         )}
       </div>
 
-      {selectedQueueRecord ? (
-        <section className="mt-4 rounded-2xl border border-white/10 bg-[#0f141d]/95 px-5 py-4">
-          <p className="text-[13px] font-normal uppercase tracking-[0.09em] text-[#8da0c0]">Selected Details</p>
-          <p className="mt-2 font-[family-name:var(--font-heading)] text-[19px] font-normal leading-none text-white">
-            {selectedQueueRecord.name}
-          </p>
-          <p className="mt-1 text-[14px] font-[family-name:var(--font-heading)] font-normal text-[#9cb0cc]">
-            Uploaded by <span className="text-ember-300">{selectedQueueRecord.owner.username}</span> - {formatRelativeTimeLabel(selectedQueueRecord.updatedAt)}
-          </p>
-          <p className="mt-2 text-[16px] text-white/80">{selectedQueueRecord.description || 'No submission description provided.'}</p>
-        </section>
-      ) : null}
+      <AdminReviewRejectDialog
+        open={rejectModalTarget !== null}
+        characterName={rejectModalTarget?.name ?? ''}
+        onClose={() => {
+          if (!isRejectSubmitting) {
+            setRejectModalTarget(null)
+          }
+        }}
+        onConfirm={handleRejectConfirm}
+        isSubmitting={isRejectSubmitting}
+      />
     </AdminPageShell>
   )
 }

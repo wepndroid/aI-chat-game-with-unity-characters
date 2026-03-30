@@ -4,18 +4,26 @@
 import AdminPageShell from '@/components/shared/admin-page-shell'
 import AdminModalDialog from '@/components/ui-elements/admin-modal-dialog'
 import { AdminVrmMetricHeartIcon, AdminVrmMetricViewsIcon } from '@/components/ui-elements/admin-vrm-metric-icons'
-import { deleteCharacter, listCharacters, updateCharacterVisibility, type CharacterListRecord } from '@/lib/character-api'
+import {
+  deleteCharacter,
+  listCharacters,
+  submitCharacterForReview,
+  updateCharacterVisibility,
+  type CharacterListRecord
+} from '@/lib/character-api'
+import { ADMIN_OVERVIEW_REFRESH_EVENT } from '@/lib/admin-overview-events'
+import { apiPost } from '@/lib/api-client'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { createPortal } from 'react-dom'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-type CommunityVrmFilterValue = 'all' | 'public' | 'private' | 'removed'
+type CommunityVrmFilterValue = 'all' | 'public' | 'private'
 
 const communityVrmFilterOptions: Array<{ value: CommunityVrmFilterValue; label: string }> = [
   { value: 'all', label: 'All status' },
   { value: 'public', label: 'Public' },
-  { value: 'private', label: 'Private' },
-  { value: 'removed', label: 'Removed' }
+  { value: 'private', label: 'Private' }
 ]
 
 const isRemovedCharacter = (characterRecord: CharacterListRecord) =>
@@ -46,17 +54,13 @@ const communityVrmRowStatusClassName: Record<CommunityVrmRowStatus, string> = {
 const matchesCommunityVrmFilter = (characterRecord: CharacterListRecord, filter: CommunityVrmFilterValue) => {
   const removed = isRemovedCharacter(characterRecord)
 
-  if (filter === 'removed') {
-    return removed
-  }
-
-  // Removed (rejected/archived) only appear under the Removed tab, not in All / Public / Private.
-  if (removed) {
-    return false
-  }
-
   if (filter === 'all') {
     return true
+  }
+
+  // Public / Private filters exclude rejected/archived rows (still shown under All with the Removed pill).
+  if (removed) {
+    return false
   }
 
   if (filter === 'public') {
@@ -109,23 +113,29 @@ const CommunityVrmGearIcon = () => (
   </svg>
 )
 
-const CommunityVrmRemoveIcon = () => (
+const CommunityVrmTrashIcon = () => (
   <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
-    <circle cx="12" cy="12" r="8.6" />
-    <path d="M9 9l6 6M15 9l-6 6" strokeLinecap="round" />
+    <path d="M4.8 6.8h14.4M9.3 6.8V5.4h5.4v1.4M8.4 9.3v8.4M12 9.3v8.4M15.6 9.3v8.4M6.8 6.8l.6 12a1.7 1.7 0 0 0 1.7 1.6h5.8a1.7 1.7 0 0 0 1.7-1.6l.6-12" />
   </svg>
 )
 
-const VISIBILITY_MENU_MIN_WIDTH_PX = 136
+const SETTINGS_MENU_MIN_WIDTH_PX = 200
 
 type CommunityVrmRowActionsProps = {
   characterRecord: CharacterListRecord
   busyCharacterId: string | null
   onSetVisibility: (characterId: string, visibility: 'PUBLIC' | 'PRIVATE') => void
+  onReview: (characterId: string) => void
   onMarkRemoved: (characterId: string, characterName: string) => void
 }
 
-const CommunityVrmRowActions = ({ characterRecord, busyCharacterId, onSetVisibility, onMarkRemoved }: CommunityVrmRowActionsProps) => {
+const CommunityVrmRowActions = ({
+  characterRecord,
+  busyCharacterId,
+  onSetVisibility,
+  onReview,
+  onMarkRemoved
+}: CommunityVrmRowActionsProps) => {
   const [visibilityMenuOpen, setVisibilityMenuOpen] = useState(false)
   const [visibilityMenuPosition, setVisibilityMenuPosition] = useState<{ top: number; left: number } | null>(null)
   const visibilityMenuAnchorRef = useRef<HTMLDivElement>(null)
@@ -147,8 +157,8 @@ const CommunityVrmRowActions = ({ characterRecord, busyCharacterId, onSetVisibil
 
       const rect = anchor.getBoundingClientRect()
       const left = Math.min(
-        Math.max(8, rect.right - VISIBILITY_MENU_MIN_WIDTH_PX),
-        window.innerWidth - VISIBILITY_MENU_MIN_WIDTH_PX - 8
+        Math.max(8, rect.right - SETTINGS_MENU_MIN_WIDTH_PX),
+        window.innerWidth - SETTINGS_MENU_MIN_WIDTH_PX - 8
       )
 
       setVisibilityMenuPosition({
@@ -235,7 +245,7 @@ const CommunityVrmRowActions = ({ characterRecord, busyCharacterId, onSetVisibil
           className={communityVrmActionButtonClassName}
           aria-expanded={visibilityMenuOpen}
           aria-haspopup="menu"
-          aria-label={`Options for ${characterRecord.name}: visibility and review`}
+          aria-label={`Options for ${characterRecord.name}: Public, Private, or Review`}
         >
           {rowBusy ? <span className="text-[10px] text-ember-300">…</span> : <CommunityVrmGearIcon />}
         </button>
@@ -251,7 +261,7 @@ const CommunityVrmRowActions = ({ characterRecord, busyCharacterId, onSetVisibil
                 top: visibilityMenuPosition.top,
                 left: visibilityMenuPosition.left,
                 zIndex: 100,
-                minWidth: VISIBILITY_MENU_MIN_WIDTH_PX
+                minWidth: SETTINGS_MENU_MIN_WIDTH_PX
               }}
               className="rounded-lg border border-white/15 bg-[#12161c] py-1 shadow-lg shadow-black/40"
             >
@@ -278,14 +288,18 @@ const CommunityVrmRowActions = ({ characterRecord, busyCharacterId, onSetVisibil
                 {isPrivateCurrent ? <span className="ml-auto pl-2 text-[10px] uppercase text-white/40">current</span> : null}
               </button>
               <div className="my-1 border-t border-white/10" role="separator" aria-hidden="true" />
-              <Link
-                href={`/upload-vrm?edit=${encodeURIComponent(characterRecord.id)}`}
+              <button
+                type="button"
                 role="menuitem"
-                className="flex w-full items-center px-3 py-2 text-left text-sm text-white/90 transition hover:bg-white/5"
-                onClick={() => setVisibilityMenuOpen(false)}
+                disabled={rowBusy}
+                className="flex w-full items-center px-3 py-2 text-left text-sm text-white/90 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-45"
+                onClick={() => {
+                  setVisibilityMenuOpen(false)
+                  onReview(characterRecord.id)
+                }}
               >
                 Review
-              </Link>
+              </button>
             </div>,
             document.body
           )
@@ -298,13 +312,14 @@ const CommunityVrmRowActions = ({ characterRecord, busyCharacterId, onSetVisibil
         disabled={rowBusy}
         onClick={() => onMarkRemoved(characterRecord.id, characterRecord.name)}
       >
-        <CommunityVrmRemoveIcon />
+        <CommunityVrmTrashIcon />
       </button>
     </div>
   )
 }
 
 const CommunityVrmsPage = () => {
+  const router = useRouter()
   const [communityFilter, setCommunityFilter] = useState<CommunityVrmFilterValue>('all')
   const [searchValue, setSearchValue] = useState('')
   const [isLoading, setIsLoading] = useState(true)
@@ -366,10 +381,34 @@ const CommunityVrmsPage = () => {
     }
   }, [])
 
+  useEffect(() => {
+    let isCancelled = false
+
+    Promise.resolve().then(async () => {
+      try {
+        await apiPost('/admin/me/community-vrms-seen', {})
+        if (!isCancelled && typeof window !== 'undefined') {
+          window.dispatchEvent(new Event(ADMIN_OVERVIEW_REFRESH_EVENT))
+        }
+      } catch {
+        // Sidebar badge is best-effort if this fails.
+      }
+    })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [])
+
   const filteredCharacterList = useMemo(() => {
     const normalizedSearchValue = searchValue.trim().toLowerCase()
 
     return characterList.filter((characterRecord) => {
+      // Pending submissions are listed only on Review Queue; once approved or rejected they appear here.
+      if (characterRecord.status === 'PENDING') {
+        return false
+      }
+
       if (!matchesCommunityVrmFilter(characterRecord, communityFilter)) {
         return false
       }
@@ -431,10 +470,39 @@ const CommunityVrmsPage = () => {
     })
   }
 
+  const handleReviewEnqueue = (characterId: string) => {
+    Promise.resolve().then(async () => {
+      setBusyCharacterId(characterId)
+      setErrorMessage(null)
+
+      try {
+        await submitCharacterForReview(characterId)
+        await loadCharacters(false)
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event(ADMIN_OVERVIEW_REFRESH_EVENT))
+        }
+        router.push('/admin/review-queue')
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to send character to review queue.')
+      } finally {
+        setBusyCharacterId(null)
+      }
+    })
+  }
+
   return (
     <AdminPageShell activeKey="community-vrms">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="font-[family-name:var(--font-heading)] text-[29px] font-normal leading-none text-white">VRM Database</h1>
+        <div>
+          <h1 className="font-[family-name:var(--font-heading)] text-[29px] font-normal leading-none text-white">VRM Database</h1>
+          <p className="mt-1 max-w-xl text-[14px] font-normal text-[#8ea0bf]">
+            Submissions awaiting approval are managed on the{' '}
+            <Link href="/admin/review-queue" className="text-ember-300 transition hover:text-ember-200">
+              Review Queue
+            </Link>{' '}
+            page. After a decision, they appear in this list.
+          </p>
+        </div>
 
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <label className="inline-flex h-11 items-center rounded-lg border border-ember-500/55 bg-[#12151b] px-3">
@@ -568,6 +636,7 @@ const CommunityVrmsPage = () => {
                             characterRecord={characterRecord}
                             busyCharacterId={busyCharacterId}
                             onSetVisibility={handleSetVisibility}
+                            onReview={handleReviewEnqueue}
                             onMarkRemoved={requestDeleteCharacter}
                           />
                         </td>

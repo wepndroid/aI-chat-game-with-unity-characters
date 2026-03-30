@@ -74,9 +74,23 @@ const listCharactersQuerySchema = z.object({
   adminCommunityAll: z.enum(['true', '1']).optional()
 })
 
-const updateCharacterStatusSchema = z.object({
-  status: z.nativeEnum(CharacterStatus)
-})
+const updateCharacterStatusSchema = z
+  .object({
+    status: z.nativeEnum(CharacterStatus),
+    rejectReason: z.string().trim().max(2000).optional()
+  })
+  .superRefine((data, ctx) => {
+    if (data.status === 'REJECTED') {
+      const reason = data.rejectReason?.trim() ?? ''
+      if (reason.length < 3) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Rejection reason is required (at least 3 characters).',
+          path: ['rejectReason']
+        })
+      }
+    }
+  })
 
 const updateCharacterVisibilitySchema = z.object({
   visibility: z.nativeEnum(CharacterVisibility)
@@ -886,11 +900,14 @@ characterRoutes.patch('/characters/:characterId/status', requireAdmin, async (re
       return
     }
 
-    const currentCharacter = await prisma.character.findUnique({
-      where: { id: characterId },
+    const currentCharacter = await prisma.character.findFirst({
+      where: {
+        OR: [{ id: characterId }, { slug: characterId }]
+      },
       select: {
         id: true,
-        visibility: true
+        visibility: true,
+        publishedAt: true
       }
     })
 
@@ -901,20 +918,32 @@ characterRoutes.patch('/characters/:characterId/status', requireAdmin, async (re
       return
     }
 
+    const rejectReasonTrimmed = payload.rejectReason?.trim() ?? ''
     const updatedCharacter = await prisma.character.update({
       where: {
-        id: characterId
+        id: currentCharacter.id
       },
       data: {
         status: payload.status,
-        publishedAt: payload.status === 'APPROVED' && currentCharacter.visibility === 'PUBLIC' ? new Date() : null
+        moderationRejectReason: payload.status === 'REJECTED' ? rejectReasonTrimmed : null,
+        ...(payload.status === 'APPROVED'
+          ? {
+              /** Moderation approve: always list publicly, regardless of prior visibility. */
+              visibility: 'PUBLIC',
+              publishedAt: currentCharacter.publishedAt ?? new Date()
+            }
+          : {
+              publishedAt: null
+            })
       },
       select: {
         id: true,
         name: true,
         status: true,
+        visibility: true,
         publishedAt: true,
-        updatedAt: true
+        updatedAt: true,
+        moderationRejectReason: true
       }
     })
 
@@ -1084,6 +1113,38 @@ characterRoutes.post('/admin/me/official-vrms-seen', requireAdmin, async (reques
     response.json({
       data: {
         officialVrmsListSeenAt: seenAt.toISOString()
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+characterRoutes.post('/admin/me/community-vrms-seen', requireAdmin, async (request, response, next) => {
+  try {
+    const authUser = request.authUser
+
+    if (!authUser) {
+      response.status(401).json({
+        message: 'Authentication required.'
+      })
+      return
+    }
+
+    const seenAt = new Date()
+
+    await prisma.user.update({
+      where: {
+        id: authUser.userId
+      },
+      data: {
+        communityVrmsListSeenAt: seenAt
+      }
+    })
+
+    response.json({
+      data: {
+        communityVrmsListSeenAt: seenAt.toISOString()
       }
     })
   } catch (error) {

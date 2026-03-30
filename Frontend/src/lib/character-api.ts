@@ -186,8 +186,10 @@ type UpdateCharacterStatusResponse = {
     id: string
     name: string
     status: CharacterStatus
+    visibility: CharacterVisibility
     publishedAt: string | null
     updatedAt: string
+    moderationRejectReason: string | null
   }
 }
 
@@ -343,10 +345,11 @@ const listAdminReviewQueue = async () => {
   return apiGet<AdminReviewQueueResponse>('/admin/characters/review-queue?limit=100')
 }
 
-const updateCharacterStatus = async (characterId: string, status: CharacterStatus) => {
+const updateCharacterStatus = async (characterId: string, status: CharacterStatus, rejectReason?: string) => {
   const normalizedCharacterId = characterId.trim()
   return apiPatch<UpdateCharacterStatusResponse>(`/characters/${encodeURIComponent(normalizedCharacterId)}/status`, {
-    status
+    status,
+    ...(status === 'REJECTED' && rejectReason !== undefined ? { rejectReason } : {})
   })
 }
 

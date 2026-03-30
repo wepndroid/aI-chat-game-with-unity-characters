@@ -294,7 +294,8 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
         id: authUser.userId
       },
       select: {
-        officialVrmsListSeenAt: true
+        officialVrmsListSeenAt: true,
+        communityVrmsListSeenAt: true
       }
     })
 
@@ -307,6 +308,27 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
           ? {
               createdAt: {
                 gt: adminSeenRecord.officialVrmsListSeenAt
+              }
+            }
+          : {})
+      }
+    })
+
+    /** Matches admin Community VRMs list: non-admin-owned rows not stuck in pending review. */
+    const newCommunityVrmsCount = await prisma.character.count({
+      where: {
+        owner: {
+          role: {
+            not: 'ADMIN'
+          }
+        },
+        status: {
+          not: 'PENDING'
+        },
+        ...(adminSeenRecord?.communityVrmsListSeenAt
+          ? {
+              createdAt: {
+                gt: adminSeenRecord.communityVrmsListSeenAt
               }
             }
           : {})
@@ -370,6 +392,7 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
         approvedCharacters,
         pendingCharacters,
         newOfficialVrmsCount,
+        newCommunityVrmsCount,
         totalReviews,
         totalHearts: totalHeartsResult._sum.heartsCount ?? 0,
         totalViews: totalViewsResult._sum.viewsCount ?? 0,
