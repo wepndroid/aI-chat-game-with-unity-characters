@@ -129,7 +129,7 @@ const OfficialVrmsPage = () => {
         <div>
           <h1 className="font-[family-name:var(--font-heading)] text-[29px] font-normal leading-none text-white">Official Characters</h1>
           <p className="mt-1 text-[15px] font-[family-name:var(--font-heading)] font-normal text-[#9ab0cd]">
-            Manage and publish official, curated VRMs produced by the platform.
+            VRMs uploaded by admin accounts (e.g. Upload VRM while signed in as admin). These appear in the Official gallery when approved and public.
           </p>
         </div>
 
@@ -173,7 +173,7 @@ const OfficialVrmsPage = () => {
               {!isLoading && characterList.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-10 text-center text-sm text-[#7c8aa3]">
-                    No official curated characters yet. Add one from Upload VRM (admins can mark &quot;Official / curated&quot;).
+                    No admin-uploaded VRMs yet. Use Upload VRM while signed in as an admin.
                   </td>
                 </tr>
               ) : null}

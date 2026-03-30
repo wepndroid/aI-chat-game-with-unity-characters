@@ -79,7 +79,7 @@ const AdminOfficialVrmRow = ({ vrmRecord, isBusy = false, onArchive }: AdminOffi
             <img
               src={vrmRecord.previewImageUrl}
               alt=""
-              className="size-10 shrink-0 rounded-md border border-white/10 object-cover"
+              className="size-10 shrink-0 rounded-md border border-white/10 object-cover object-top"
             />
           ) : (
             <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-md border border-ember-400/30 bg-gradient-to-br from-ember-300 to-ember-500 text-white" aria-hidden="true">

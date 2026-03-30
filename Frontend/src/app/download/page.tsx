@@ -13,7 +13,6 @@ const DownloadPage = () => {
   const patreonUrl = process.env.NEXT_PUBLIC_PATREON_URL ?? '/members'
   // Same env as home; default /support here so “Direct Website Purchase” is not a link to this same page when env is unset.
   const directPurchaseUrl = process.env.NEXT_PUBLIC_DIRECT_PURCHASE_URL?.trim() || '/support'
-  const windowsBuildUrl = process.env.NEXT_PUBLIC_WINDOWS_BUILD_URL?.trim() || '/download#windows-build'
 
   const purchasePathList: PurchasePathItem[] = [
     {
@@ -43,13 +42,6 @@ const DownloadPage = () => {
       description: 'Future-ready direct purchase path for first-party checkout flow.',
       ctaLabel: 'Open Direct Purchase',
       href: directPurchaseUrl
-    },
-    {
-      id: 'purchase-windows',
-      title: 'Windows Build Download',
-      description: 'Download the latest Windows build after account verification.',
-      ctaLabel: 'Open Build Download',
-      href: windowsBuildUrl
     }
   ]
 
@@ -71,11 +63,7 @@ const DownloadPage = () => {
 
           <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {purchasePathList.map((pathItem) => (
-              <article
-                key={pathItem.id}
-                id={pathItem.id === 'purchase-windows' ? 'windows-build' : undefined}
-                className="rounded-xl border border-white/10 bg-[#121212]/95 p-5"
-              >
+              <article key={pathItem.id} className="rounded-xl border border-white/10 bg-[#121212]/95 p-5">
                 <h2 className="font-[family-name:var(--font-heading)] text-3xl font-semibold italic leading-none text-white">
                   {pathItem.title}
                 </h2>

@@ -459,7 +459,8 @@ characterRoutes.post('/characters', requireVerifiedEmail, async (request, respon
     const generatedSlug = buildUniqueSlug(payload.name, slugSuffix)
     const normalizedScreenshotUrls = normalizeScreenshotUrls(payload.screenshotUrls)
 
-    const isOfficialListing = actor.role === 'ADMIN' && payload.officialListing === true
+    // Official / curated listing follows the uploader: only admin accounts (e.g. Upload VRM in admin) are official.
+    const officialListing = actor.role === 'ADMIN'
 
     const createdCharacter = await prisma.$transaction(async (transactionClient) => {
       const nextCharacter = await transactionClient.character.create({
@@ -482,7 +483,7 @@ characterRoutes.post('/characters', requireVerifiedEmail, async (request, respon
           isPatreonGated: payload.isPatreonGated ?? false,
           minimumTierCents: payload.minimumTierCents,
           visibility: payload.visibility ?? 'PRIVATE',
-          officialListing: isOfficialListing,
+          officialListing,
           status: 'PENDING'
         },
         select: {
@@ -542,7 +543,12 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
       select: {
         id: true,
         ownerId: true,
-        status: true
+        status: true,
+        owner: {
+          select: {
+            role: true
+          }
+        }
       }
     })
 
@@ -587,7 +593,7 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
           ...(payload.isPatreonGated !== undefined ? { isPatreonGated: payload.isPatreonGated } : {}),
           ...(payload.minimumTierCents !== undefined ? { minimumTierCents: payload.minimumTierCents } : {}),
           ...(payload.visibility !== undefined ? { visibility: payload.visibility } : {}),
-          ...(payload.officialListing !== undefined && actor.role === 'ADMIN' ? { officialListing: payload.officialListing } : {}),
+          officialListing: existingCharacter.owner.role === 'ADMIN',
           ...(shouldResetStatusToPending
             ? {
                 status: 'PENDING',

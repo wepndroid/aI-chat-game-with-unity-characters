@@ -162,12 +162,13 @@ const resolveCharacterAccess = async (actor: CharacterAccessActor, character: Ch
 
 type GalleryScope = 'all' | 'curated' | 'community' | 'mine'
 
+/** Official (curated) gallery: VRMs owned by admin accounts. Community: owned by non-admin users. */
 const buildPublicGalleryBranch = (galleryScope: GalleryScope): Prisma.CharacterWhereInput => {
   if (galleryScope === 'curated') {
     return {
       status: 'APPROVED',
       visibility: 'PUBLIC',
-      officialListing: true
+      owner: { role: 'ADMIN' }
     }
   }
 
@@ -175,7 +176,7 @@ const buildPublicGalleryBranch = (galleryScope: GalleryScope): Prisma.CharacterW
     return {
       status: 'APPROVED',
       visibility: 'PUBLIC',
-      officialListing: false
+      owner: { role: { not: 'ADMIN' } }
     }
   }
 
@@ -230,7 +231,7 @@ const buildCharacterListWhereClause = (
 
     if (galleryScope === 'curated') {
       return {
-        officialListing: true,
+        owner: { role: 'ADMIN' },
         ...searchClause,
         ...statusClause,
         ...visibilityClause
@@ -239,7 +240,7 @@ const buildCharacterListWhereClause = (
 
     if (galleryScope === 'community') {
       return {
-        officialListing: false,
+        owner: { role: { not: 'ADMIN' } },
         ...searchClause,
         ...statusClause,
         ...visibilityClause

@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import CharacterCard from '@/components/ui-elements/character-card'
 import CtaLinkButton from '@/components/ui-elements/cta-link-button'
@@ -69,7 +69,7 @@ const frequentlyAskedQuestions: FaqItemData[] = [
 ]
 
 const HomePage = () => {
-  const windowsExeHref = process.env.NEXT_PUBLIC_WINDOWS_BUILD_URL?.trim() || '/download#windows-build'
+  const windowsExeHref = process.env.NEXT_PUBLIC_WINDOWS_BUILD_URL?.trim() || '/download'
   const [topRatedCharacters, setTopRatedCharacters] = useState<CharacterCardData[]>([])
   const [isTopRatedLoading, setIsTopRatedLoading] = useState(true)
 
@@ -86,7 +86,7 @@ const HomePage = () => {
       id: 'windows',
       label: 'Windows',
       iconType: 'windows',
-      href: '/download#windows-build',
+      href: '/download',
       ariaLabel: 'Download and purchase options for Windows'
     },
     {

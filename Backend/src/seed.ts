@@ -36,7 +36,7 @@ const run = async () => {
     await prisma.character.createMany({
       data: [
         {
-          ownerId: creatorUser.id,
+          ownerId: adminUser.id,
           slug: buildUniqueSlug('Airi Akizuki', 'official'),
           name: 'Airi Akizuki',
           fullName: 'Airi Akizuki',

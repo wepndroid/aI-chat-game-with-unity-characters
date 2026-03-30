@@ -81,7 +81,7 @@ const AdminReviewQueueCard = ({
             <img
               src={previewImageUrl}
               alt=""
-              className="size-full object-cover"
+              className="size-full object-cover object-top"
             />
           ) : (
             <div className="flex size-full items-center justify-center text-center text-[12px] font-[family-name:var(--font-heading)] font-normal text-[#31405b]">

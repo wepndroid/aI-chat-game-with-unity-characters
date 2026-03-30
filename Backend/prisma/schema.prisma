@@ -86,7 +86,7 @@ model Character {
   legacyHeyWaifu   Int?
   status           CharacterStatus     @default(DRAFT)
   visibility       CharacterVisibility @default(PRIVATE)
-  /// When true, character is listed under Curated (official) gallery; otherwise Community.
+  /// True when the owning account is an admin (admin-uploaded VRMs); mirrored for API compatibility.
   officialListing  Boolean             @default(false)
   isPatreonGated   Boolean             @default(false)
   minimumTierCents Int?
