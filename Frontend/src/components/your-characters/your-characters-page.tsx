@@ -1,6 +1,7 @@
 'use client'
 
 import AccountSideMenu from '@/components/shared/account-side-menu'
+import { useAuth } from '@/components/providers/auth-provider'
 import DashboardStatCard from '@/components/ui-elements/dashboard-stat-card'
 import MyCharacterCard, { type CharacterModerationStatus, type MyCharacterCardRecord } from '@/components/ui-elements/my-character-card'
 import SearchField from '@/components/ui-elements/search-field'
@@ -10,21 +11,13 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 
 type CharacterStatusFilter = 'all' | CharacterModerationStatus
-type CharacterSortOption = 'recent' | 'most-viewed' | 'most-hearted' | 'needs-action'
 
 const statusFilterOptions: Array<{ value: CharacterStatusFilter; label: string }> = [
   { value: 'all', label: 'All Statuses' },
   { value: 'draft', label: 'Draft' },
   { value: 'pending', label: 'Pending Review' },
   { value: 'approved', label: 'Approved' },
-  { value: 'rejected', label: 'Needs Changes' }
-]
-
-const sortOptions: Array<{ value: CharacterSortOption; label: string }> = [
-  { value: 'recent', label: 'Recently Updated' },
-  { value: 'most-viewed', label: 'Most Viewed' },
-  { value: 'most-hearted', label: 'Most Hearted' },
-  { value: 'needs-action', label: 'Needs Action First' }
+  { value: 'rejected', label: 'Rejected' }
 ]
 
 const statusPriorityMap: Record<CharacterModerationStatus, number> = {
@@ -74,6 +67,7 @@ const toCardRecord = (characterRecord: CharacterMineRecord): MyCharacterCardReco
     title: characterRecord.name,
     summary: characterRecord.tagline?.trim() || 'No tagline yet. Update this character to improve discoverability.',
     moderationStatus: mappedStatus,
+    moderationRejectReason: characterRecord.moderationRejectReason,
     visibility: mappedVisibility,
     nsfwLevel: 'none',
     updatedAtLabel: formatRelativeTimeLabel(characterRecord.updatedAt),
@@ -84,12 +78,13 @@ const toCardRecord = (characterRecord: CharacterMineRecord): MyCharacterCardReco
 }
 
 const YourCharactersPage = () => {
+  const { sessionUser } = useAuth()
+  const isAdmin = sessionUser?.role === 'ADMIN'
   const [characterRecords, setCharacterRecords] = useState<MyCharacterCardRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [searchValue, setSearchValue] = useState('')
   const [statusFilter, setStatusFilter] = useState<CharacterStatusFilter>('all')
-  const [sortOption, setSortOption] = useState<CharacterSortOption>('recent')
 
   useEffect(() => {
     let isCancelled = false
@@ -131,10 +126,6 @@ const YourCharactersPage = () => {
     setStatusFilter(value as CharacterStatusFilter)
   }
 
-  const handleSortOptionChange = (value: string) => {
-    setSortOption(value as CharacterSortOption)
-  }
-
   const handleSubmitForReview = (characterId: string) => {
     Promise.resolve().then(async () => {
       try {
@@ -174,32 +165,10 @@ const YourCharactersPage = () => {
     })
 
     return [...filteredCharacters].sort((firstCharacter, secondCharacter) => {
-      if (sortOption === 'most-viewed') {
-        return secondCharacter.views - firstCharacter.views
-      }
-
-      if (sortOption === 'most-hearted') {
-        return secondCharacter.hearts - firstCharacter.hearts
-      }
-
-      if (sortOption === 'needs-action') {
-        return statusPriorityMap[firstCharacter.moderationStatus] - statusPriorityMap[secondCharacter.moderationStatus]
-      }
-
-      const updatedFirstCharacterIsFresh = firstCharacter.updatedAtLabel === 'Just now'
-      const updatedSecondCharacterIsFresh = secondCharacter.updatedAtLabel === 'Just now'
-
-      if (updatedFirstCharacterIsFresh && !updatedSecondCharacterIsFresh) {
-        return -1
-      }
-
-      if (!updatedFirstCharacterIsFresh && updatedSecondCharacterIsFresh) {
-        return 1
-      }
-
-      return 0
+      // Default: needs-action first, then stable order (already server-sorted by updatedAt).
+      return statusPriorityMap[firstCharacter.moderationStatus] - statusPriorityMap[secondCharacter.moderationStatus]
     })
-  }, [characterRecords, searchValue, sortOption, statusFilter])
+  }, [characterRecords, searchValue, statusFilter])
 
   const dashboardStats = useMemo(() => {
     const totalCount = characterRecords.length
@@ -250,13 +219,6 @@ const YourCharactersPage = () => {
                       onChange={handleStatusFilterChange}
                       ariaLabel="Filter your characters by moderation status"
                     />
-                    <SelectField
-                      label="Sort"
-                      value={sortOption}
-                      options={sortOptions}
-                      onChange={handleSortOptionChange}
-                      ariaLabel="Sort your character list"
-                    />
                   </div>
 
                   <div className="flex w-full flex-col gap-3 sm:flex-row xl:max-w-[520px]">
@@ -293,7 +255,12 @@ const YourCharactersPage = () => {
                     </div>
                   ) : !isLoading ? (
                     filteredAndSortedCharacters.map((characterItem) => (
-                      <MyCharacterCard key={characterItem.id} characterRecord={characterItem} onSubmitForReview={handleSubmitForReview} />
+                      <MyCharacterCard
+                        key={characterItem.id}
+                        characterRecord={characterItem}
+                        onSubmitForReview={isAdmin ? undefined : handleSubmitForReview}
+                        adminMode={Boolean(isAdmin)}
+                      />
                     ))
                   ) : null}
                 </div>

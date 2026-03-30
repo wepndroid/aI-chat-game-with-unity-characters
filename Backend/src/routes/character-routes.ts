@@ -1,4 +1,5 @@
 import { CharacterStatus, CharacterVisibility, Prisma } from '@prisma/client'
+import { randomUUID } from 'node:crypto'
 import type { Request } from 'express'
 import { Router } from 'express'
 import { z } from 'zod'
@@ -112,6 +113,13 @@ const chatStartBodySchema = z.object({
 
 const reviewQueueQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50)
+})
+
+const systemScanReportSchema = z.object({
+  overall: z.enum(['passed', 'flagged']),
+  issuesCount: z.coerce.number().int().min(0).max(9999).default(0),
+  summary: z.string().trim().min(1).max(240),
+  report: z.unknown()
 })
 
 const toCharacterAccessActor = (request: Request): CharacterAccessActor => {
@@ -259,6 +267,7 @@ characterRoutes.get('/characters/mine', requireAuth, async (request, response, n
         heartsCount: true,
         viewsCount: true,
         previewImageUrl: true,
+        moderationRejectReason: true,
         createdAt: true,
         updatedAt: true
       }
@@ -655,7 +664,9 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
     }
 
     const shouldResetStatusToPending =
-      actor.role !== 'ADMIN' && existingCharacter.status === 'APPROVED' && Object.keys(payload).length > 0
+      actor.role !== 'ADMIN' &&
+      (existingCharacter.status === 'APPROVED' || existingCharacter.status === 'REJECTED') &&
+      Object.keys(payload).length > 0
 
     const updatedCharacter = await prisma.$transaction(async (transactionClient) => {
       const nextCharacter = await transactionClient.character.update({
@@ -683,6 +694,7 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
           ...(shouldResetStatusToPending
             ? {
                 status: 'PENDING',
+                moderationRejectReason: null,
                 publishedAt: null
               }
             : {})
@@ -761,6 +773,7 @@ characterRoutes.post('/characters/:characterId/submit', requireVerifiedEmail, as
       },
       data: {
         status: 'PENDING',
+        moderationRejectReason: null,
         publishedAt: null
       },
       select: {
@@ -928,9 +941,9 @@ characterRoutes.patch('/characters/:characterId/status', requireAdmin, async (re
         moderationRejectReason: payload.status === 'REJECTED' ? rejectReasonTrimmed : null,
         ...(payload.status === 'APPROVED'
           ? {
-              /** Moderation approve: always list publicly, regardless of prior visibility. */
-              visibility: 'PUBLIC',
-              publishedAt: currentCharacter.publishedAt ?? new Date()
+              // Approval should not override creator's visibility choice.
+              publishedAt:
+                currentCharacter.visibility === 'PUBLIC' ? (currentCharacter.publishedAt ?? new Date()) : null
             }
           : {
               publishedAt: null
@@ -1080,8 +1093,161 @@ characterRoutes.get('/admin/characters/review-queue', requireAdmin, async (reque
       }
     })
 
+    const pendingCharacterIdList = pendingCharacterList.map((character) => character.id)
+    const scanRows =
+      pendingCharacterIdList.length > 0
+        ? await prisma.$queryRaw<
+            Array<{
+              characterId: string
+              overall: string
+              issuesCount: number
+              summary: string
+              createdAt: string | Date
+            }>
+          >`SELECT characterId, overall, issuesCount, summary, createdAt
+            FROM CharacterSystemScanReport
+            WHERE characterId IN (${Prisma.join(pendingCharacterIdList)})
+            ORDER BY datetime(createdAt) DESC`
+        : []
+
+    const latestScanByCharacterId = new Map<string, (typeof scanRows)[number]>()
+    for (const row of scanRows) {
+      if (!latestScanByCharacterId.has(row.characterId)) {
+        latestScanByCharacterId.set(row.characterId, row)
+      }
+    }
+
     response.json({
-      data: pendingCharacterList
+      data: pendingCharacterList.map((character) => ({
+        ...character,
+        systemScanSummary: latestScanByCharacterId.get(character.id)
+          ? {
+              overall: latestScanByCharacterId.get(character.id)!.overall,
+              issuesCount: latestScanByCharacterId.get(character.id)!.issuesCount,
+              summary: latestScanByCharacterId.get(character.id)!.summary,
+              createdAt:
+                typeof latestScanByCharacterId.get(character.id)!.createdAt === 'string'
+                  ? latestScanByCharacterId.get(character.id)!.createdAt
+                  : (latestScanByCharacterId.get(character.id)!.createdAt as Date).toISOString()
+            }
+          : null
+      }))
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+/** Accept a system scan report (Unity/WebGL -> postMessage -> web -> backend). */
+characterRoutes.post('/characters/:characterId/system-scan-report', requireAuth, async (request, response, next) => {
+  try {
+    const actor = toCharacterAccessActor(request)
+    const { characterId } = characterParamsSchema.parse(request.params)
+
+    if (!actor) {
+      response.status(401).json({
+        message: 'Authentication required.'
+      })
+      return
+    }
+
+    const payload = systemScanReportSchema.parse(request.body)
+
+    const character = await prisma.character.findFirst({
+      where: {
+        OR: [{ id: characterId }, { slug: characterId }]
+      },
+      select: {
+        id: true,
+        ownerId: true
+      }
+    })
+
+    if (!character) {
+      response.status(404).json({
+        message: 'Character not found.'
+      })
+      return
+    }
+
+    if (actor.role !== 'ADMIN' && character.ownerId !== actor.userId) {
+      response.status(403).json({
+        message: 'You are not allowed to submit scan reports for this character.'
+      })
+      return
+    }
+
+    const reportId = randomUUID()
+    const createdAt = new Date()
+
+    await prisma.$executeRaw`INSERT INTO CharacterSystemScanReport (id, characterId, overall, issuesCount, summary, reportJson, createdAt)
+      VALUES (${reportId}, ${character.id}, ${payload.overall}, ${payload.issuesCount}, ${payload.summary}, ${JSON.stringify(payload.report)}, ${createdAt.toISOString()})`
+
+    response.status(201).json({
+      data: {
+        id: reportId,
+        overall: payload.overall,
+        issuesCount: payload.issuesCount,
+        summary: payload.summary,
+        createdAt: createdAt.toISOString()
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+/** Admin: fetch the latest scan report for a character (used by Review Queue detail modal). */
+characterRoutes.get('/admin/characters/:characterId/system-scan-report', requireAdmin, async (request, response, next) => {
+  try {
+    const { characterId } = characterParamsSchema.parse(request.params)
+
+    const character = await prisma.character.findFirst({
+      where: {
+        OR: [{ id: characterId }, { slug: characterId }]
+      },
+      select: {
+        id: true
+      }
+    })
+
+    if (!character) {
+      response.status(404).json({
+        message: 'Character not found.'
+      })
+      return
+    }
+
+    const latestRows = await prisma.$queryRaw<
+      Array<{
+        id: string
+        overall: string
+        issuesCount: number
+        summary: string
+        reportJson: string
+        createdAt: string
+      }>
+    >`SELECT id, overall, issuesCount, summary, reportJson, createdAt
+      FROM CharacterSystemScanReport
+      WHERE characterId = ${character.id}
+      ORDER BY datetime(createdAt) DESC
+      LIMIT 1`
+
+    const latest = latestRows[0] ?? null
+
+    response.json({
+      data: latest
+        ? {
+            ...latest,
+            reportJson: (() => {
+              try {
+                return JSON.parse(latest.reportJson)
+              } catch {
+                return latest.reportJson
+              }
+            })()
+          }
+        : null
     })
   } catch (error) {
     next(error)

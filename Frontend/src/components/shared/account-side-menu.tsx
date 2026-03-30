@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { useAuth } from '@/components/providers/auth-provider'
 
 type AccountMenuKey = 'profile' | 'upload-vrm' | 'your-characters' | 'membership' | 'sign-out'
 
@@ -41,10 +42,17 @@ const MenuArrowIcon = ({ isActive }: MenuArrowIconProps) => {
 }
 
 const AccountSideMenu = ({ activeKey }: AccountSideMenuProps) => {
+  const { sessionUser } = useAuth()
+  const isAdmin = sessionUser?.role === 'ADMIN'
+
+  const visibleEntries = isAdmin
+    ? accountMenuEntries.filter((entry) => entry.key !== 'membership')
+    : accountMenuEntries
+
   return (
     <aside className="self-start pt-2">
       <nav className="flex min-w-[340px] max-w-[380px] flex-col gap-9">
-        {accountMenuEntries.map((entryItem) => {
+        {visibleEntries.map((entryItem) => {
           const isActive = entryItem.key === activeKey
           const textColorClassName = isActive ? 'text-ember-300' : 'text-[#747f96] hover:text-white/90'
 

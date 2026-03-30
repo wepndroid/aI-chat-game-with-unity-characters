@@ -10,6 +10,7 @@ type MyCharacterCardRecord = {
   title: string
   summary: string
   moderationStatus: CharacterModerationStatus
+  moderationRejectReason?: string | null
   visibility: CharacterVisibility
   nsfwLevel: CharacterNsfwLevel
   updatedAtLabel: string
@@ -20,17 +21,22 @@ type MyCharacterCardRecord = {
 
 type MyCharacterCardProps = {
   characterRecord: MyCharacterCardRecord
-  onSubmitForReview: (characterId: string) => void
+  onSubmitForReview?: (characterId: string) => void
+  adminMode?: boolean
 }
 
-const MyCharacterCard = ({ characterRecord, onSubmitForReview }: MyCharacterCardProps) => {
+const MyCharacterCard = ({ characterRecord, onSubmitForReview, adminMode = false }: MyCharacterCardProps) => {
   const handleSubmitButtonClick = () => {
-    onSubmitForReview(characterRecord.id)
+    onSubmitForReview?.(characterRecord.id)
   }
 
-  const showSubmitAction = characterRecord.moderationStatus === 'draft' || characterRecord.moderationStatus === 'rejected'
+  const showSubmitAction =
+    !adminMode &&
+    Boolean(onSubmitForReview) &&
+    (characterRecord.moderationStatus === 'draft' || characterRecord.moderationStatus === 'rejected')
   const isPendingReview = characterRecord.moderationStatus === 'pending'
   const isApproved = characterRecord.moderationStatus === 'approved'
+  const showRejectReason = characterRecord.moderationStatus === 'rejected' && Boolean(characterRecord.moderationRejectReason?.trim())
 
   return (
     <article className="rounded-xl border border-white/10 bg-[#131112]/95 p-4 shadow-[0_8px_22px_rgba(0,0,0,0.35)]">
@@ -41,10 +47,16 @@ const MyCharacterCard = ({ characterRecord, onSubmitForReview }: MyCharacterCard
           </h3>
           <p className="mt-1 text-xs text-white/55">Updated {characterRecord.updatedAtLabel}</p>
         </div>
-        <ModerationStatusChip status={characterRecord.moderationStatus} />
+        <ModerationStatusChip status={characterRecord.moderationStatus} mode={adminMode ? 'admin' : 'default'} />
       </div>
 
       <p className="mt-4 text-sm leading-6 text-white/80">{characterRecord.summary}</p>
+
+      {showRejectReason ? (
+        <p className="mt-3 rounded-md border border-rose-300/25 bg-rose-300/10 px-3 py-2 text-xs leading-relaxed text-rose-100">
+          Rejected: <span className="text-rose-100/90">{characterRecord.moderationRejectReason}</span>
+        </p>
+      ) : null}
 
       <div className="mt-4 grid grid-cols-2 gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-white/70">
         <p>Visibility: {characterRecord.visibility}</p>
@@ -63,7 +75,7 @@ const MyCharacterCard = ({ characterRecord, onSubmitForReview }: MyCharacterCard
           Edit Metadata
         </Link>
 
-        {showSubmitAction ? (
+        {!adminMode && showSubmitAction ? (
           <button
             type="button"
             onClick={handleSubmitButtonClick}
@@ -74,13 +86,13 @@ const MyCharacterCard = ({ characterRecord, onSubmitForReview }: MyCharacterCard
           </button>
         ) : null}
 
-        {isPendingReview ? (
+        {!adminMode && isPendingReview ? (
           <span className="inline-flex h-9 items-center justify-center rounded-md border border-amber-300/25 bg-amber-200/10 px-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-amber-100">
             Awaiting Approval
           </span>
         ) : null}
 
-        {isApproved ? (
+        {!adminMode && isApproved ? (
           <Link
             href={`/characters/${characterRecord.slug}`}
             className="inline-flex h-9 items-center justify-center rounded-md border border-emerald-300/35 bg-emerald-200/10 px-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-emerald-100 transition hover:border-emerald-200"

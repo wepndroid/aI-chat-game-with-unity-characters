@@ -113,12 +113,28 @@ model Character {
   reviews             Review[]
   hearts              CharacterHeart[]
   chatStartLedgerRows CharacterChatStartLedger[]
+  systemScanReports    CharacterSystemScanReport[]
   createdAt           DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
   publishedAt      DateTime?
 
   @@index([ownerId, status])
   @@index([status, visibility])
+}
+
+/// Moderation/system scan output (e.g. Unity-side checks) stored per character (append-only).
+model CharacterSystemScanReport {
+  id          String   @id @default(cuid())
+  characterId String
+  overall     String
+  issuesCount Int      @default(0)
+  summary     String
+  reportJson  Json
+  createdAt   DateTime @default(now())
+
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@index([characterId, createdAt])
 }
 
 model CharacterHeart {

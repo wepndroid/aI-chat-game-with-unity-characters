@@ -14,3 +14,33 @@ body {
     radial-gradient(circle at 50% 110%, rgba(244, 99, 19, 0.25), transparent 40%),
     #030303;
 }
+
+/* Global scrollbar style to match ember-on-dark project theme. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(244, 99, 19, 0.65) rgba(255, 255, 255, 0.08);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(244, 99, 19, 0.85), rgba(176, 66, 18, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(255, 138, 76, 0.95), rgba(212, 75, 9, 0.95));
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}

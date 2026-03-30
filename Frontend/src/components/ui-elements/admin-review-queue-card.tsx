@@ -14,6 +14,7 @@ type AdminReviewQueueCardProps = {
   previewImageUrl?: string | null
   onApprove: (recordId: string) => void
   onReject: (recordId: string) => void
+  onDetail?: (recordId: string) => void
   isBusy?: boolean
 }
 
@@ -35,17 +36,42 @@ const RejectIcon = () => {
   )
 }
 
+const DetailIcon = () => {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M9 12h6M9 16h6M9 8h6" strokeLinecap="round" />
+      <path d="M7 3.5h10A2.5 2.5 0 0 1 19.5 6v12A2.5 2.5 0 0 1 17 20.5H7A2.5 2.5 0 0 1 4.5 18V6A2.5 2.5 0 0 1 7 3.5Z" />
+    </svg>
+  )
+}
+
+const ScanOkIcon = () => (
+  <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <circle cx="12" cy="12" r="8" />
+    <path d="m8.5 12.1 2.1 2.2 4.9-4.9" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+)
+
+const ScanWarningIcon = () => (
+  <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <path d="M12 4.2 20 18a1 1 0 0 1-.86 1.5H4.86A1 1 0 0 1 4 18l8-13.8z" />
+    <path d="M12 9v5.2M12 17h.01" strokeLinecap="round" />
+  </svg>
+)
+
 const ScanBadge = ({ queueRecord }: { queueRecord: AdminReviewQueueCardRecord }) => {
   if (queueRecord.scanState === 'clean') {
     return (
-      <span className="inline-flex items-center rounded-md border border-emerald-500/35 bg-emerald-500/15 px-2.5 py-1 text-xs font-normal text-emerald-300">
+      <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/35 bg-emerald-500/15 px-2.5 py-1 text-xs font-normal text-emerald-300">
+        <ScanOkIcon />
         {queueRecord.scanMessage}
       </span>
     )
   }
 
   return (
-    <span className="inline-flex items-center rounded-md border border-rose-500/35 bg-rose-500/15 px-2.5 py-1 text-xs font-normal text-rose-300">
+    <span className="inline-flex items-center gap-1.5 rounded-md border border-rose-500/35 bg-rose-500/15 px-2.5 py-1 text-xs font-normal text-rose-300">
+      <ScanWarningIcon />
       {queueRecord.scanMessage}
     </span>
   )
@@ -56,6 +82,7 @@ const AdminReviewQueueCard = ({
   previewImageUrl,
   onApprove,
   onReject,
+  onDetail,
   isBusy = false
 }: AdminReviewQueueCardProps) => {
   const handleApproveClick = () => {
@@ -64,6 +91,10 @@ const AdminReviewQueueCard = ({
 
   const handleRejectClick = () => {
     onReject(queueRecord.id)
+  }
+
+  const handleDetailClick = () => {
+    onDetail?.(queueRecord.id)
   }
 
   return (
@@ -123,6 +154,17 @@ const AdminReviewQueueCard = ({
           >
             <RejectIcon />
             Reject
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDetailClick}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-white/20 bg-white/5 text-sm font-normal text-white/80 transition hover:border-white/30 hover:bg-white/10 hover:text-white"
+            aria-label={`View system scan details for ${queueRecord.title}`}
+            disabled={isBusy || !onDetail}
+          >
+            <DetailIcon />
+            Detail
           </button>
         </div>
       </div>

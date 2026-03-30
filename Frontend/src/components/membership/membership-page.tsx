@@ -10,6 +10,13 @@ import { apiGet, apiPost } from '@/lib/api-client'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+const PatreonIcon = ({ className = 'size-4' }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+    <circle cx="15.2" cy="8.9" r="5.3" fill="currentColor" />
+    <rect x="4.6" y="3.6" width="3.9" height="16.8" rx="1.5" fill="currentColor" />
+  </svg>
+)
+
 type MembershipTier = 'free' | 'just_models_900' | 'secretwaifu_1650'
 type PatreonEntitlementApiRecord = {
   id: string
@@ -423,10 +430,11 @@ const MembershipPage = () => {
                     type="button"
                     onClick={handleConnectPatreon}
                     disabled={!sessionUser || !sessionUser.isEmailVerified || connectionStatus === 'syncing'}
-                    className="inline-flex h-10 items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
                     aria-label="Connect Patreon and verify membership"
                   >
-                    {isPatreonLinked ? 'Reconnect Patreon' : 'Connect Patreon'}
+                    <span>{isPatreonLinked ? 'Reconnect Patreon' : 'Connect Patreon'}</span>
+                    <PatreonIcon className="size-[15px]" />
                   </button>
 
                   <button

@@ -2,13 +2,21 @@ type CharacterModerationStatus = 'draft' | 'pending' | 'approved' | 'rejected'
 
 type ModerationStatusChipProps = {
   status: CharacterModerationStatus
+  mode?: 'default' | 'admin'
 }
 
 const statusLabelMap: Record<CharacterModerationStatus, string> = {
   draft: 'Draft',
   pending: 'Pending Review',
   approved: 'Approved',
-  rejected: 'Needs Changes'
+  rejected: 'Rejected'
+}
+
+const adminStatusLabelMap: Record<CharacterModerationStatus, string> = {
+  draft: 'Draft',
+  pending: 'Submitted',
+  approved: 'Approved',
+  rejected: 'Rejected'
 }
 
 const statusClassNameMap: Record<CharacterModerationStatus, string> = {
@@ -18,13 +26,15 @@ const statusClassNameMap: Record<CharacterModerationStatus, string> = {
   rejected: 'border-rose-300/35 bg-rose-200/10 text-rose-100'
 }
 
-const ModerationStatusChip = ({ status }: ModerationStatusChipProps) => {
+const ModerationStatusChip = ({ status, mode = 'default' }: ModerationStatusChipProps) => {
+  const labelMap = mode === 'admin' ? adminStatusLabelMap : statusLabelMap
+
   return (
     <span
       className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] ${statusClassNameMap[status]}`}
-      aria-label={`Status ${statusLabelMap[status]}`}
+      aria-label={`Status ${labelMap[status]}`}
     >
-      {statusLabelMap[status]}
+      {labelMap[status]}
     </span>
   )
 }

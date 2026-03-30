@@ -257,6 +257,13 @@ const buildCharacterListWhereClause = (
 
       return {
         owner: { role: { not: 'ADMIN' } },
+        ...(params.adminCommunityAll && params.status === undefined
+          ? {
+              status: {
+                not: 'REJECTED'
+              }
+            }
+          : {}),
         ...(catalogOnly
           ? {
               status: 'APPROVED',

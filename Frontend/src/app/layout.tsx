@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Barlow_Condensed, Sora } from 'next/font/google'
 import { AuthProvider } from '@/components/providers/auth-provider'
+import UnityScanReportListener from '@/components/providers/unity-scan-report-listener'
 import Footer from '@/components/shared/footer'
 import Header from '@/components/shared/header'
 import './globals.css'
@@ -33,6 +34,7 @@ const RootLayout = ({ children }: RootLayoutProps) => {
         className={`${bodyFont.variable} ${headingFont.variable} bg-[#030303] text-white antialiased`}
       >
         <AuthProvider>
+          <UnityScanReportListener />
           <Header />
           {children}
           <Footer />

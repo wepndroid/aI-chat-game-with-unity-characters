@@ -155,6 +155,7 @@ type CharacterMineRecord = {
   officialListing: boolean
   viewsCount: number
   previewImageUrl: string | null
+  moderationRejectReason: string | null
   createdAt: string
   updatedAt: string
 }
@@ -171,6 +172,12 @@ type AdminReviewQueueRecord = {
   description: string | null
   createdAt: string
   updatedAt: string
+  systemScanSummary: null | {
+    overall: string
+    issuesCount: number
+    summary: string
+    createdAt: string
+  }
   owner: {
     id: string
     username: string

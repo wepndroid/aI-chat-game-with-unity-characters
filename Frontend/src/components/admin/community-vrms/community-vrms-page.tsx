@@ -404,8 +404,8 @@ const CommunityVrmsPage = () => {
     const normalizedSearchValue = searchValue.trim().toLowerCase()
 
     return characterList.filter((characterRecord) => {
-      // Pending submissions are listed only on Review Queue; once approved or rejected they appear here.
-      if (characterRecord.status === 'PENDING') {
+      // Pending submissions are listed only on Review Queue; rejected submissions should not be listed here.
+      if (characterRecord.status === 'PENDING' || characterRecord.status === 'REJECTED') {
         return false
       }
 

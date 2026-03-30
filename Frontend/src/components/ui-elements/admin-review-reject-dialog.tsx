@@ -90,7 +90,7 @@ const AdminReviewRejectDialog = ({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
-        className="relative z-10 w-full max-w-md rounded-2xl border border-ember-800/55 bg-[#0f141c] p-6 shadow-[0_24px_64px_rgba(0,0,0,0.55)]"
+        className="relative z-10 w-full max-w-3xl rounded-2xl border border-ember-800/55 bg-[#0f141c] p-6 shadow-[0_24px_64px_rgba(0,0,0,0.55)]"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <h2 id={titleId} className="font-[family-name:var(--font-heading)] text-xl font-normal leading-tight text-white">
@@ -98,7 +98,7 @@ const AdminReviewRejectDialog = ({
         </h2>
         <p id={descriptionId} className="mt-3 text-sm leading-6 text-[#a8b6d0]">
           Explain why <span className="text-ember-300">{characterName}</span> is being rejected. This is saved on the
-          character record for moderation history.
+          character record for moderation history. You can paste the copied scan details here.
         </p>
 
         <div className="mt-4">
@@ -117,7 +117,7 @@ const AdminReviewRejectDialog = ({
                 setLocalError(null)
               }
             }}
-            rows={4}
+            rows={12}
             disabled={isSubmitting}
             placeholder="e.g. Does not meet community guidelines for…"
             className="mt-2 w-full resize-y rounded-md border border-white/20 bg-[#0f1116]/90 px-4 py-2.5 text-sm text-white outline-none transition placeholder:text-white/50 focus:border-ember-300 focus:ring-2 focus:ring-ember-400/35 disabled:cursor-not-allowed disabled:opacity-60"

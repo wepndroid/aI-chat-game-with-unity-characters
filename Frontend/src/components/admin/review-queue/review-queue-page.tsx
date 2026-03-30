@@ -3,9 +3,10 @@
 import AdminPageShell from '@/components/shared/admin-page-shell'
 import AdminReviewQueueCard, { type AdminReviewQueueCardRecord } from '@/components/ui-elements/admin-review-queue-card'
 import AdminReviewRejectDialog from '@/components/ui-elements/admin-review-reject-dialog'
-import { descriptionHasModeratorKeywordHint } from '@/lib/admin-review-description'
+import AdminScanReportDialog from '@/components/ui-elements/admin-scan-report-dialog'
 import { listAdminReviewQueue, updateCharacterStatus, updateCharacterVisibility, type AdminReviewQueueRecord } from '@/lib/character-api'
 import { ADMIN_OVERVIEW_REFRESH_EVENT } from '@/lib/admin-overview-events'
+import { apiGet } from '@/lib/api-client'
 import { useCallback, useEffect, useState } from 'react'
 
 const dispatchAdminOverviewRefresh = () => {
@@ -39,17 +40,21 @@ const formatRelativeTimeLabel = (isoValue: string) => {
 }
 
 const toQueueCardRecord = (queueRecord: AdminReviewQueueRecord): AdminReviewQueueCardRecord => {
-  const looksFlagged = descriptionHasModeratorKeywordHint(queueRecord.description)
+  const scanSummary = queueRecord.systemScanSummary
+  const hasSystemScan = Boolean(scanSummary)
+  const isSystemScanFlagged = scanSummary?.overall === 'flagged'
+  const issuesCount = scanSummary?.issuesCount ?? 0
+  const systemMessage = scanSummary?.summary?.trim()
 
   return {
     id: queueRecord.id,
     title: queueRecord.name,
     uploader: queueRecord.owner.username,
     uploadedAgoLabel: formatRelativeTimeLabel(queueRecord.updatedAt),
-    scanState: looksFlagged ? 'flagged' : 'clean',
-    scanMessage: looksFlagged
-      ? 'Description matches common NSFW-related keywords—review manually'
-      : 'No keyword match for common NSFW terms—still review manually'
+    scanState: isSystemScanFlagged ? 'flagged' : 'clean',
+    scanMessage: hasSystemScan
+      ? systemMessage || (isSystemScanFlagged ? `System flagged ${issuesCount} potential issues (NSFW Check)` : 'System scans passed')
+      : 'No system scan report yet'
   }
 }
 
@@ -60,6 +65,10 @@ const ReviewQueuePage = () => {
   const [busyRecordId, setBusyRecordId] = useState<string | null>(null)
   const [rejectModalTarget, setRejectModalTarget] = useState<{ id: string; name: string } | null>(null)
   const [isRejectSubmitting, setIsRejectSubmitting] = useState(false)
+  const [detailModalTarget, setDetailModalTarget] = useState<{ id: string; name: string } | null>(null)
+  const [detailReport, setDetailReport] = useState<null | { overall: 'passed' | 'flagged'; issuesCount: number; summary: string; reportJson: unknown; createdAt: string }>(null)
+  const [detailError, setDetailError] = useState<string | null>(null)
+  const [isDetailLoading, setIsDetailLoading] = useState(false)
 
   const loadReviewQueue = useCallback(async (options?: { withSpinner?: boolean }) => {
     const withSpinner = options?.withSpinner ?? true
@@ -110,6 +119,43 @@ const ReviewQueuePage = () => {
     setRejectModalTarget({
       id: recordId,
       name: record?.name ?? 'this submission'
+    })
+  }
+
+  const handleDetailRequest = (recordId: string) => {
+    const record = queueRecordList.find((queueRecord) => queueRecord.id === recordId)
+    setDetailModalTarget({
+      id: recordId,
+      name: record?.name ?? 'this submission'
+    })
+    setDetailReport(null)
+    setDetailError(null)
+
+    Promise.resolve().then(async () => {
+      setIsDetailLoading(true)
+      try {
+        const payload = await apiGet<{ data: null | { overall: string; issuesCount: number; summary: string; reportJson: unknown; createdAt: string } }>(
+          `/admin/characters/${encodeURIComponent(recordId)}/system-scan-report`
+        )
+
+        if (!payload.data) {
+          setDetailReport(null)
+          return
+        }
+
+        const overall = payload.data.overall === 'flagged' ? 'flagged' : 'passed'
+        setDetailReport({
+          overall,
+          issuesCount: payload.data.issuesCount ?? 0,
+          summary: payload.data.summary ?? '',
+          reportJson: payload.data.reportJson,
+          createdAt: payload.data.createdAt
+        })
+      } catch (error) {
+        setDetailError(error instanceof Error ? error.message : 'Failed to load scan report.')
+      } finally {
+        setIsDetailLoading(false)
+      }
     })
   }
 
@@ -177,6 +223,7 @@ const ReviewQueuePage = () => {
               previewImageUrl={queueRecord.previewImageUrl}
               onApprove={handleApproveRecord}
               onReject={handleRejectRequest}
+              onDetail={handleDetailRequest}
               isBusy={busyRecordId === queueRecord.id}
             />
           ))
@@ -193,6 +240,20 @@ const ReviewQueuePage = () => {
         }}
         onConfirm={handleRejectConfirm}
         isSubmitting={isRejectSubmitting}
+      />
+
+      <AdminScanReportDialog
+        open={detailModalTarget !== null}
+        characterName={detailModalTarget?.name ?? ''}
+        report={detailReport}
+        isLoading={isDetailLoading}
+        errorMessage={detailError}
+        onClose={() => {
+          setDetailModalTarget(null)
+          setDetailReport(null)
+          setDetailError(null)
+          setIsDetailLoading(false)
+        }}
       />
     </AdminPageShell>
   )
