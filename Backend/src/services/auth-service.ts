@@ -2,6 +2,7 @@ import type { UserRole } from '@prisma/client'
 import type { Request } from 'express'
 import { authConfig, getEffectiveUserRoleForTesting } from '../lib/auth-config'
 import { prisma } from '../lib/prisma'
+import { getRuntimeAdminSettings } from '../lib/runtime-admin-settings'
 import { generateOpaqueSessionToken, hashOpaqueSessionToken } from '../lib/session-token'
 
 type SessionClientMeta = {
@@ -33,7 +34,9 @@ const createOpaqueSessionForUser = async (userId: string, clientMeta: SessionCli
   const rawSessionToken = generateOpaqueSessionToken()
   const sessionTokenHash = hashOpaqueSessionToken(rawSessionToken)
   const now = new Date()
-  const expiresAt = new Date(now.getTime() + authConfig.sessionTtlMs)
+  const runtimeSettings = await getRuntimeAdminSettings().catch(() => null)
+  const sessionTtlMs = runtimeSettings ? Math.max(10, runtimeSettings.sessionLogin.sessionTtlMinutes) * 60 * 1000 : authConfig.sessionTtlMs
+  const expiresAt = new Date(now.getTime() + sessionTtlMs)
 
   await prisma.session.create({
     data: {

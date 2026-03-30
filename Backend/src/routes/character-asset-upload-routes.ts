@@ -4,6 +4,7 @@ import path from 'node:path'
 import type { Request } from 'express'
 import { Router } from 'express'
 import multer from 'multer'
+import { getRuntimeAdminSettings } from '../lib/runtime-admin-settings'
 import { requireAuth, requireVerifiedEmail } from '../middleware/auth-middleware'
 
 const characterAssetUploadRoutes = Router()
@@ -121,7 +122,7 @@ characterAssetUploadRoutes.post(
       next()
     })
   },
-  (request, response) => {
+  async (request, response) => {
     const fileMap = request.files as Record<string, Express.Multer.File[]> | undefined
     const vrmFile = fileMap?.vrm?.[0]
     const previewFile = fileMap?.preview?.[0]
@@ -129,6 +130,36 @@ characterAssetUploadRoutes.post(
     if (!vrmFile && !previewFile) {
       response.status(400).json({
         message: 'Provide a VRM file and/or a preview image.'
+      })
+      return
+    }
+
+    const runtimeSettings = await getRuntimeAdminSettings().catch(() => null)
+    const uploadLimits = runtimeSettings?.uploadLimits
+    const maxVrmBytes = (uploadLimits?.maxVrmSizeMb ?? 100) * 1024 * 1024
+    const maxPreviewBytes = (uploadLimits?.maxPreviewImageSizeMb ?? 10) * 1024 * 1024
+    const allowedPreviewMimeTypes = uploadLimits?.allowedPreviewMimeTypes ?? ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+
+    if (vrmFile && vrmFile.size > maxVrmBytes) {
+      fs.unlink(vrmFile.path, () => {})
+      response.status(400).json({
+        message: `VRM exceeds max size limit (${uploadLimits?.maxVrmSizeMb ?? 100}MB).`
+      })
+      return
+    }
+
+    if (previewFile && previewFile.size > maxPreviewBytes) {
+      fs.unlink(previewFile.path, () => {})
+      response.status(400).json({
+        message: `Preview image exceeds max size limit (${uploadLimits?.maxPreviewImageSizeMb ?? 10}MB).`
+      })
+      return
+    }
+
+    if (previewFile && !allowedPreviewMimeTypes.includes(previewFile.mimetype)) {
+      fs.unlink(previewFile.path, () => {})
+      response.status(400).json({
+        message: 'Preview image type is not allowed by upload policy.'
       })
       return
     }

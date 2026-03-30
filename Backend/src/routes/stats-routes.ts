@@ -1,10 +1,12 @@
 import os from 'node:os'
 import { Router } from 'express'
-import { emailConfig, getIsSecureCookie } from '../lib/auth-config'
+import { z } from 'zod'
+import { emailConfig } from '../lib/auth-config'
 import { isPatreonOauthEnabled } from '../lib/patreon-config'
 import { googleOAuthConfig } from '../lib/oauth-config'
 import { requireAdmin } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
+import { getRuntimeAdminSettings, toMaskedApiKeys, updateRuntimeAdminSettings } from '../lib/runtime-admin-settings'
 
 const statsRoutes = Router()
 
@@ -153,34 +155,12 @@ const buildRecentActivity = async () => {
 }
 
 const buildDeploymentChecks = () => {
-  const webglEmbedUrl = process.env.NEXT_PUBLIC_WEBGL_EMBED_URL?.trim() || process.env.WEBGL_EMBED_URL?.trim() || ''
-  const trailerEmbedUrl = process.env.NEXT_PUBLIC_TRAILER_EMBED_URL?.trim() || process.env.TRAILER_EMBED_URL?.trim() || ''
-  const trailerVideoUrl = process.env.NEXT_PUBLIC_TRAILER_VIDEO_URL?.trim() || process.env.TRAILER_VIDEO_URL?.trim() || ''
-  const corsOrigin = process.env.CORS_ORIGIN?.trim() || ''
   const patreonEnabled = isPatreonOauthEnabled()
   const googleEnabled = googleOAuthConfig.enabled
   const smtpConfigured = Boolean(emailConfig.smtpHost && emailConfig.smtpUser && emailConfig.smtpPass)
-  const secureCookieEnabled = getIsSecureCookie()
-
-  const browserMatrix = ['Chrome', 'Firefox', 'Edge', 'Safari'].map((browserName) => ({
-    browser: browserName,
-    status: webglEmbedUrl ? 'ready' : 'pending' as const
-  }))
 
   return {
     checks: [
-      {
-        id: 'webgl',
-        label: 'WebGL Embed URL',
-        status: webglEmbedUrl ? 'ready' : 'pending',
-        detail: webglEmbedUrl || 'Missing NEXT_PUBLIC_WEBGL_EMBED_URL'
-      },
-      {
-        id: 'trailer',
-        label: 'Trailer Source',
-        status: trailerEmbedUrl || trailerVideoUrl ? 'ready' : 'pending',
-        detail: trailerEmbedUrl || trailerVideoUrl || 'Missing trailer embed/video env'
-      },
       {
         id: 'patreon',
         label: 'Patreon OAuth',
@@ -198,23 +178,65 @@ const buildDeploymentChecks = () => {
         label: 'SMTP',
         status: smtpConfigured ? 'ready' : 'pending',
         detail: smtpConfigured ? `${emailConfig.smtpHost}:${emailConfig.smtpPort}` : 'Missing SMTP credentials'
-      },
-      {
-        id: 'cookies',
-        label: 'Secure Auth Cookies',
-        status: secureCookieEnabled ? 'ready' : 'warning',
-        detail: secureCookieEnabled ? 'Production secure cookies enabled' : 'NODE_ENV is not production'
-      },
-      {
-        id: 'cors',
-        label: 'CORS Origin',
-        status: corsOrigin ? 'ready' : 'warning',
-        detail: corsOrigin || 'CORS_ORIGIN not explicitly configured'
       }
     ],
-    browserMatrix
+    browserMatrix: []
   }
 }
+
+const adminSettingsPatchSchema = z.object({
+  uploadLimits: z
+    .object({
+      maxVrmSizeMb: z.number().int().min(1).max(1024),
+      maxPreviewImageSizeMb: z.number().int().min(1).max(100),
+      allowedPreviewMimeTypes: z.array(z.string().min(1)).min(1)
+    })
+    .optional(),
+  requestLimits: z
+    .object({
+      generalPerMinute: z.number().int().min(10).max(10000),
+      authPerMinute: z.number().int().min(5).max(5000),
+      uploadPerMinute: z.number().int().min(1).max(5000)
+    })
+    .optional(),
+  sessionLogin: z
+    .object({
+      sessionTtlMinutes: z.number().int().min(10).max(60 * 24 * 90)
+    })
+    .optional(),
+  featureSwitches: z
+    .object({
+      publicUploadsEnabled: z.boolean(),
+      communityPageEnabled: z.boolean()
+    })
+    .optional(),
+  maintenance: z
+    .object({
+      enabled: z.boolean(),
+      message: z.string().min(1).max(500),
+      startAtIso: z.string().nullable(),
+      endAtIso: z.string().nullable(),
+      adminBypass: z.boolean(),
+      readOnlyMode: z.boolean(),
+      blockedRoutePrefixes: z.array(z.string())
+    })
+    .optional(),
+  apiKeys: z
+    .object({
+      googleClientId: z.string(),
+      googleClientSecret: z.string(),
+      googleRedirectUri: z.string(),
+      patreonClientId: z.string(),
+      patreonClientSecret: z.string(),
+      patreonRedirectUri: z.string(),
+      smtpHost: z.string(),
+      smtpPort: z.number().int().min(1).max(65535),
+      smtpUser: z.string(),
+      smtpPass: z.string(),
+      smtpFrom: z.string()
+    })
+    .optional()
+})
 
 statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next) => {
   try {
@@ -474,6 +496,57 @@ statsRoutes.get('/stats/deployment-checks', requireAdmin, async (_request, respo
 
     response.json({
       data: deploymentChecks
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+statsRoutes.get('/admin/global-settings', requireAdmin, async (_request, response, next) => {
+  try {
+    const settings = await getRuntimeAdminSettings()
+    response.json({
+      data: {
+        ...settings,
+        apiKeys: toMaskedApiKeys(settings.apiKeys)
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+statsRoutes.patch('/admin/global-settings', requireAdmin, async (request, response, next) => {
+  try {
+    const payload = adminSettingsPatchSchema.parse(request.body)
+    const previous = await getRuntimeAdminSettings()
+
+    const nextSettings = await updateRuntimeAdminSettings({
+      uploadLimits: payload.uploadLimits ?? previous.uploadLimits,
+      requestLimits: payload.requestLimits ?? previous.requestLimits,
+      sessionLogin: payload.sessionLogin ?? previous.sessionLogin,
+      featureSwitches: payload.featureSwitches ?? previous.featureSwitches,
+      maintenance: payload.maintenance ?? previous.maintenance,
+      apiKeys: payload.apiKeys
+        ? {
+            ...previous.apiKeys,
+            ...payload.apiKeys,
+            googleClientSecret:
+              payload.apiKeys.googleClientSecret.trim().length > 0 ? payload.apiKeys.googleClientSecret : previous.apiKeys.googleClientSecret,
+            patreonClientSecret:
+              payload.apiKeys.patreonClientSecret.trim().length > 0
+                ? payload.apiKeys.patreonClientSecret
+                : previous.apiKeys.patreonClientSecret,
+            smtpPass: payload.apiKeys.smtpPass.trim().length > 0 ? payload.apiKeys.smtpPass : previous.apiKeys.smtpPass
+          }
+        : previous.apiKeys
+    })
+
+    response.json({
+      data: {
+        ...nextSettings,
+        apiKeys: toMaskedApiKeys(nextSettings.apiKeys)
+      }
     })
   } catch (error) {
     next(error)

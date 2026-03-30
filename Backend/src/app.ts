@@ -9,6 +9,7 @@ import characterAssetUploadRoutes from './routes/character-asset-upload-routes'
 import characterRoutes from './routes/character-routes'
 import healthRoutes from './routes/health-routes'
 import legacyRoutes from './routes/legacy-routes'
+import { runtimeAdminSettingsMiddleware } from './middleware/runtime-admin-settings-middleware'
 import patreonRoutes from './routes/patreon-routes'
 import reviewRoutes from './routes/review-routes'
 import statsRoutes from './routes/stats-routes'
@@ -48,6 +49,7 @@ app.use(
 app.use(express.json({ limit: '10mb' }))
 app.use(cookieParser())
 app.use(morgan('dev'))
+app.use(runtimeAdminSettingsMiddleware)
 
 const uploadsRoot = path.join(process.cwd(), 'uploads')
 app.use('/uploads', express.static(uploadsRoot))
