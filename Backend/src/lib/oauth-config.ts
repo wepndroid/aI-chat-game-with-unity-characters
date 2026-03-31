@@ -27,11 +27,6 @@ const parseBoolean = (value: string | undefined, fallbackValue: boolean) => {
 }
 
 const frontendPublicUrl = process.env.FRONTEND_URL?.trim() || 'http://127.0.0.1:7000'
-const googleClientId = process.env.GOOGLE_OAUTH_CLIENT_ID?.trim() || ''
-const googleClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim() || ''
-const googleRedirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI?.trim() || ''
-const hasGoogleOAuthCredentials = Boolean(googleClientId && googleClientSecret && googleRedirectUri)
-const googleOAuthEnabled = parseBoolean(process.env.GOOGLE_OAUTH_ENABLED, hasGoogleOAuthCredentials)
 
 const oauthConfig = {
   stateCookieName: process.env.AUTH_OAUTH_STATE_COOKIE_NAME?.trim() || 'secretwaifu_oauth_state',
@@ -40,12 +35,29 @@ const oauthConfig = {
   frontendPublicUrl
 }
 
-const googleOAuthConfig = {
-  enabled: googleOAuthEnabled,
-  clientId: googleClientId,
-  clientSecret: googleClientSecret,
-  redirectUri: googleRedirectUri,
-  scopes: (process.env.GOOGLE_OAUTH_SCOPES?.trim() || 'openid email profile').split(/\s+/).filter(Boolean)
+type GoogleOAuthConfig = {
+  enabled: boolean
+  clientId: string
+  clientSecret: string
+  redirectUri: string
+  scopes: string[]
 }
 
-export { googleOAuthConfig, oauthConfig }
+const getGoogleOAuthConfig = (): GoogleOAuthConfig => {
+  const googleClientId = process.env.GOOGLE_OAUTH_CLIENT_ID?.trim() || ''
+  const googleClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim() || ''
+  const googleRedirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI?.trim() || ''
+  const hasGoogleOAuthCredentials = Boolean(googleClientId && googleClientSecret && googleRedirectUri)
+  const googleOAuthEnabled = parseBoolean(process.env.GOOGLE_OAUTH_ENABLED, hasGoogleOAuthCredentials)
+
+  return {
+    enabled: googleOAuthEnabled,
+    clientId: googleClientId,
+    clientSecret: googleClientSecret,
+    redirectUri: googleRedirectUri,
+    scopes: (process.env.GOOGLE_OAUTH_SCOPES?.trim() || 'openid email profile').split(/\s+/).filter(Boolean)
+  }
+}
+
+export { getGoogleOAuthConfig, oauthConfig }
+export type { GoogleOAuthConfig }

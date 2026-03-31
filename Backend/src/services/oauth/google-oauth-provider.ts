@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { googleOAuthConfig } from '../../lib/oauth-config'
+import { getGoogleOAuthConfig } from '../../lib/oauth-config'
 import type { OAuthProviderClient, OAuthProviderProfile } from './oauth-provider'
 
 const GOOGLE_AUTHORIZE_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
@@ -21,7 +21,9 @@ const googleUserInfoSchema = z.object({
 class GoogleOAuthProviderClient implements OAuthProviderClient {
   readonly providerKey = 'google' as const
 
-  constructor() {
+  private assertGoogleOAuthReady() {
+    const googleOAuthConfig = getGoogleOAuthConfig()
+
     if (!googleOAuthConfig.enabled) {
       throw new Error('Google OAuth is disabled. Set GOOGLE_OAUTH_ENABLED=true and configure Google OAuth credentials.')
     }
@@ -32,6 +34,8 @@ class GoogleOAuthProviderClient implements OAuthProviderClient {
   }
 
   buildAuthorizationUrl(stateToken: string) {
+    this.assertGoogleOAuthReady()
+    const googleOAuthConfig = getGoogleOAuthConfig()
     const url = new URL(GOOGLE_AUTHORIZE_URL)
 
     url.searchParams.set('response_type', 'code')
@@ -46,6 +50,8 @@ class GoogleOAuthProviderClient implements OAuthProviderClient {
   }
 
   async exchangeCodeForProfile(code: string): Promise<OAuthProviderProfile> {
+    this.assertGoogleOAuthReady()
+    const googleOAuthConfig = getGoogleOAuthConfig()
     const tokenResponse = await fetch(GOOGLE_TOKEN_URL, {
       method: 'POST',
       headers: {

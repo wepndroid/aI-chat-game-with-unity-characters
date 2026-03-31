@@ -38,7 +38,8 @@ const runtimeAdminSettingsMiddleware = async (request: Request, response: Respon
     const inWindow =
       (Number.isNaN(startAtMs) || nowMs >= startAtMs) && (Number.isNaN(endAtMs) || nowMs <= endAtMs)
     const maintenanceActive = maintenance.enabled && inWindow
-    const adminBypass = maintenance.adminBypass && isAdminUser
+    /** Admins always bypass maintenance, read-only mode, and route blocks so they can operate the site. */
+    const adminBypass = isAdminUser
     const isAuthOrHealthRoute = path.startsWith('/api/auth') || path.startsWith('/api/health')
 
     if (maintenanceActive && !adminBypass && !isAuthOrHealthRoute) {

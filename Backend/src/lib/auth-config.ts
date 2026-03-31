@@ -45,14 +45,23 @@ const authConfig = {
   resetPasswordUrlBase: process.env.AUTH_RESET_PASSWORD_URL_BASE?.trim() || `${frontendPublicUrl}/auth/reset-password`
 }
 
-const emailConfig = {
+type EmailConfig = {
+  from: string
+  smtpHost: string
+  smtpPort: number
+  smtpSecure: boolean
+  smtpUser: string
+  smtpPass: string
+}
+
+const getEmailConfig = (): EmailConfig => ({
   from: process.env.EMAIL_FROM?.trim() || 'SecretWaifu <no-reply@secretwaifu.local>',
   smtpHost: process.env.EMAIL_SMTP_HOST?.trim() || '',
   smtpPort: parseDuration(process.env.EMAIL_SMTP_PORT, 587),
   smtpSecure: parseBoolean(process.env.EMAIL_SMTP_SECURE, false),
   smtpUser: process.env.EMAIL_SMTP_USER?.trim() || '',
   smtpPass: process.env.EMAIL_SMTP_PASS?.trim() || ''
-}
+})
 
 const getIsSecureCookie = () => process.env.NODE_ENV === 'production'
 
@@ -60,4 +69,5 @@ const getEffectiveUserRoleForTesting = (role: UserRole): UserRole => {
   return forceAllUsersAdminForTesting ? 'ADMIN' : role
 }
 
-export { authConfig, emailConfig, forceAllUsersAdminForTesting, getEffectiveUserRoleForTesting, getIsSecureCookie }
+export { authConfig, forceAllUsersAdminForTesting, getEffectiveUserRoleForTesting, getEmailConfig, getIsSecureCookie }
+export type { EmailConfig }

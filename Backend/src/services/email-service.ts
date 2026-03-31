@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer'
-import { emailConfig } from '../lib/auth-config'
+import { getEmailConfig } from '../lib/auth-config'
 
 type VerificationEmailPayload = {
   toEmail: string
@@ -53,35 +53,37 @@ const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T
 }
 
 class EnvironmentEmailService implements EmailService {
-  private readonly smtpConfigured: boolean
-  private readonly transporter: nodemailer.Transporter | null
-
-  constructor() {
+  private createTransporter(): nodemailer.Transporter | null {
+    const emailConfig = getEmailConfig()
     const hasMinimumSmtpConfig = Boolean(
       emailConfig.smtpHost && emailConfig.smtpPort && emailConfig.smtpUser && emailConfig.smtpPass && emailConfig.from
     )
 
-    this.smtpConfigured = hasMinimumSmtpConfig
-    this.transporter = hasMinimumSmtpConfig
-      ? nodemailer.createTransport({
-          host: emailConfig.smtpHost,
-          port: emailConfig.smtpPort,
-          secure: emailConfig.smtpSecure,
-          connectionTimeout: emailSendTimeoutMs,
-          greetingTimeout: emailSendTimeoutMs,
-          socketTimeout: emailSendTimeoutMs,
-          auth: {
-            user: emailConfig.smtpUser,
-            pass: emailConfig.smtpPass
-          }
-        })
-      : null
+    if (!hasMinimumSmtpConfig) {
+      return null
+    }
+
+    return nodemailer.createTransport({
+      host: emailConfig.smtpHost,
+      port: emailConfig.smtpPort,
+      secure: emailConfig.smtpSecure,
+      connectionTimeout: emailSendTimeoutMs,
+      greetingTimeout: emailSendTimeoutMs,
+      socketTimeout: emailSendTimeoutMs,
+      auth: {
+        user: emailConfig.smtpUser,
+        pass: emailConfig.smtpPass
+      }
+    })
   }
 
   private async sendMessage(toEmail: string, subject: string, text: string, html: string) {
-    if (this.smtpConfigured && this.transporter) {
+    const emailConfig = getEmailConfig()
+    const transporter = this.createTransporter()
+
+    if (transporter) {
       await withTimeout(
-        this.transporter.sendMail({
+        transporter.sendMail({
           from: emailConfig.from,
           to: toEmail,
           subject,

@@ -72,6 +72,112 @@ const toLocalInputDateTime = (value: string | null) => {
 
 const fromLocalInputDateTime = (value: string) => (value.trim().length > 0 ? new Date(value).toISOString() : null)
 
+const applyGlobalSettingsToForm = (
+  settings: RuntimeAdminSettingsResponse['data'],
+  setters: {
+    setMaxVrmSizeMb: (v: string) => void
+    setMaxPreviewImageSizeMb: (v: string) => void
+    setAllowedPreviewMimeTypesCsv: (v: string) => void
+    setGeneralPerMinute: (v: string) => void
+    setAuthPerMinute: (v: string) => void
+    setUploadPerMinute: (v: string) => void
+    setSessionTtlMinutes: (v: string) => void
+    setPublicUploadsEnabled: (v: boolean) => void
+    setCommunityPageEnabled: (v: boolean) => void
+    setMaintenanceEnabled: (v: boolean) => void
+    setMaintenanceMessage: (v: string) => void
+    setMaintenanceStartAt: (v: string) => void
+    setMaintenanceEndAt: (v: string) => void
+    setMaintenanceReadOnlyMode: (v: boolean) => void
+    setGoogleClientId: (v: string) => void
+    setGoogleClientSecret: (v: string) => void
+    setGoogleRedirectUri: (v: string) => void
+    setPatreonClientId: (v: string) => void
+    setPatreonClientSecret: (v: string) => void
+    setPatreonRedirectUri: (v: string) => void
+    setSmtpHost: (v: string) => void
+    setSmtpPort: (v: string) => void
+    setSmtpUser: (v: string) => void
+    setSmtpPass: (v: string) => void
+    setSmtpFrom: (v: string) => void
+  }
+) => {
+  setters.setMaxVrmSizeMb(String(settings.uploadLimits.maxVrmSizeMb))
+  setters.setMaxPreviewImageSizeMb(String(settings.uploadLimits.maxPreviewImageSizeMb))
+  setters.setAllowedPreviewMimeTypesCsv(settings.uploadLimits.allowedPreviewMimeTypes.join(', '))
+  setters.setGeneralPerMinute(String(settings.requestLimits.generalPerMinute))
+  setters.setAuthPerMinute(String(settings.requestLimits.authPerMinute))
+  setters.setUploadPerMinute(String(settings.requestLimits.uploadPerMinute))
+  setters.setSessionTtlMinutes(String(settings.sessionLogin.sessionTtlMinutes))
+  setters.setPublicUploadsEnabled(settings.featureSwitches.publicUploadsEnabled)
+  setters.setCommunityPageEnabled(settings.featureSwitches.communityPageEnabled)
+  setters.setMaintenanceEnabled(settings.maintenance.enabled)
+  setters.setMaintenanceMessage(settings.maintenance.message)
+  setters.setMaintenanceStartAt(toLocalInputDateTime(settings.maintenance.startAtIso))
+  setters.setMaintenanceEndAt(toLocalInputDateTime(settings.maintenance.endAtIso))
+  setters.setMaintenanceReadOnlyMode(settings.maintenance.readOnlyMode)
+  setters.setGoogleClientId(settings.apiKeys.googleClientId)
+  setters.setGoogleClientSecret(settings.apiKeys.googleClientSecret)
+  setters.setGoogleRedirectUri(settings.apiKeys.googleRedirectUri)
+  setters.setPatreonClientId(settings.apiKeys.patreonClientId)
+  setters.setPatreonClientSecret(settings.apiKeys.patreonClientSecret)
+  setters.setPatreonRedirectUri(settings.apiKeys.patreonRedirectUri)
+  setters.setSmtpHost(settings.apiKeys.smtpHost)
+  setters.setSmtpPort(String(settings.apiKeys.smtpPort))
+  setters.setSmtpUser(settings.apiKeys.smtpUser)
+  setters.setSmtpPass(settings.apiKeys.smtpPass)
+  setters.setSmtpFrom(settings.apiKeys.smtpFrom)
+}
+
+const EyeIcon = ({ className = 'size-5' }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" strokeLinecap="round" strokeLinejoin="round" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+)
+
+const EyeOffIcon = ({ className = 'size-5' }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" strokeLinecap="round" strokeLinejoin="round" />
+    <line x1="1" y1="1" x2="23" y2="23" strokeLinecap="round" />
+  </svg>
+)
+
+type SecretFieldProps = {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  visible: boolean
+  onToggleVisible: () => void
+  disabled?: boolean
+}
+
+const SecretField = ({ label, value, onChange, visible, onToggleVisible, disabled }: SecretFieldProps) => (
+  <label className="md:col-span-2 block">
+    <span className={labelClassName}>{label}</span>
+    <div className="relative mt-1">
+      <input
+        className={`${inputClassName} pr-11`}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        type={visible ? 'text' : 'password'}
+        autoComplete="off"
+        disabled={disabled}
+      />
+      <button
+        type="button"
+        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-white/55 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40"
+        onClick={onToggleVisible}
+        aria-label={visible ? 'Hide value' : 'Show value'}
+        aria-pressed={visible}
+        disabled={disabled}
+      >
+        {visible ? <EyeOffIcon className="size-5" /> : <EyeIcon className="size-5" />}
+      </button>
+    </div>
+  </label>
+)
+
 const GlobalSettingsPage = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -92,7 +198,6 @@ const GlobalSettingsPage = () => {
   const [maintenanceMessage, setMaintenanceMessage] = useState('')
   const [maintenanceStartAt, setMaintenanceStartAt] = useState('')
   const [maintenanceEndAt, setMaintenanceEndAt] = useState('')
-  const [maintenanceAdminBypass, setMaintenanceAdminBypass] = useState(true)
   const [maintenanceReadOnlyMode, setMaintenanceReadOnlyMode] = useState(false)
   const [googleClientId, setGoogleClientId] = useState('')
   const [googleClientSecret, setGoogleClientSecret] = useState('')
@@ -105,6 +210,9 @@ const GlobalSettingsPage = () => {
   const [smtpUser, setSmtpUser] = useState('')
   const [smtpPass, setSmtpPass] = useState('')
   const [smtpFrom, setSmtpFrom] = useState('')
+  const [showGoogleSecret, setShowGoogleSecret] = useState(false)
+  const [showPatreonSecret, setShowPatreonSecret] = useState(false)
+  const [showSmtpPass, setShowSmtpPass] = useState(false)
 
   useEffect(() => {
     let isCancelled = false
@@ -114,33 +222,33 @@ const GlobalSettingsPage = () => {
       try {
         const payload = await apiGet<RuntimeAdminSettingsResponse>('/admin/global-settings')
         if (isCancelled) return
-        const settings = payload.data
-        setMaxVrmSizeMb(String(settings.uploadLimits.maxVrmSizeMb))
-        setMaxPreviewImageSizeMb(String(settings.uploadLimits.maxPreviewImageSizeMb))
-        setAllowedPreviewMimeTypesCsv(settings.uploadLimits.allowedPreviewMimeTypes.join(', '))
-        setGeneralPerMinute(String(settings.requestLimits.generalPerMinute))
-        setAuthPerMinute(String(settings.requestLimits.authPerMinute))
-        setUploadPerMinute(String(settings.requestLimits.uploadPerMinute))
-        setSessionTtlMinutes(String(settings.sessionLogin.sessionTtlMinutes))
-        setPublicUploadsEnabled(settings.featureSwitches.publicUploadsEnabled)
-        setCommunityPageEnabled(settings.featureSwitches.communityPageEnabled)
-        setMaintenanceEnabled(settings.maintenance.enabled)
-        setMaintenanceMessage(settings.maintenance.message)
-        setMaintenanceStartAt(toLocalInputDateTime(settings.maintenance.startAtIso))
-        setMaintenanceEndAt(toLocalInputDateTime(settings.maintenance.endAtIso))
-        setMaintenanceAdminBypass(settings.maintenance.adminBypass)
-        setMaintenanceReadOnlyMode(settings.maintenance.readOnlyMode)
-        setGoogleClientId(settings.apiKeys.googleClientId)
-        setGoogleClientSecret(settings.apiKeys.googleClientSecret)
-        setGoogleRedirectUri(settings.apiKeys.googleRedirectUri)
-        setPatreonClientId(settings.apiKeys.patreonClientId)
-        setPatreonClientSecret(settings.apiKeys.patreonClientSecret)
-        setPatreonRedirectUri(settings.apiKeys.patreonRedirectUri)
-        setSmtpHost(settings.apiKeys.smtpHost)
-        setSmtpPort(String(settings.apiKeys.smtpPort))
-        setSmtpUser(settings.apiKeys.smtpUser)
-        setSmtpPass(settings.apiKeys.smtpPass)
-        setSmtpFrom(settings.apiKeys.smtpFrom)
+        applyGlobalSettingsToForm(payload.data, {
+          setMaxVrmSizeMb,
+          setMaxPreviewImageSizeMb,
+          setAllowedPreviewMimeTypesCsv,
+          setGeneralPerMinute,
+          setAuthPerMinute,
+          setUploadPerMinute,
+          setSessionTtlMinutes,
+          setPublicUploadsEnabled,
+          setCommunityPageEnabled,
+          setMaintenanceEnabled,
+          setMaintenanceMessage,
+          setMaintenanceStartAt,
+          setMaintenanceEndAt,
+          setMaintenanceReadOnlyMode,
+          setGoogleClientId,
+          setGoogleClientSecret,
+          setGoogleRedirectUri,
+          setPatreonClientId,
+          setPatreonClientSecret,
+          setPatreonRedirectUri,
+          setSmtpHost,
+          setSmtpPort,
+          setSmtpUser,
+          setSmtpPass,
+          setSmtpFrom
+        })
       } catch (error) {
         if (!isCancelled) setErrorMessage(error instanceof Error ? error.message : 'Failed to load global settings.')
       } finally {
@@ -181,7 +289,7 @@ const GlobalSettingsPage = () => {
             message: maintenanceMessage.trim(),
             startAtIso: fromLocalInputDateTime(maintenanceStartAt),
             endAtIso: fromLocalInputDateTime(maintenanceEndAt),
-            adminBypass: maintenanceAdminBypass,
+            adminBypass: true,
             readOnlyMode: maintenanceReadOnlyMode,
             blockedRoutePrefixes: []
           },
@@ -199,13 +307,36 @@ const GlobalSettingsPage = () => {
             smtpFrom: smtpFrom.trim()
           }
         }
-        await apiPatch<RuntimeAdminSettingsResponse>('/admin/global-settings', payload)
+        const saved = await apiPatch<RuntimeAdminSettingsResponse>('/admin/global-settings', payload)
         setSuccessMessage('Global settings saved successfully.')
         setIsEditing(false)
-        const refreshed = await apiGet<RuntimeAdminSettingsResponse>('/admin/global-settings')
-        setGoogleClientSecret(refreshed.data.apiKeys.googleClientSecret)
-        setPatreonClientSecret(refreshed.data.apiKeys.patreonClientSecret)
-        setSmtpPass(refreshed.data.apiKeys.smtpPass)
+        applyGlobalSettingsToForm(saved.data, {
+          setMaxVrmSizeMb,
+          setMaxPreviewImageSizeMb,
+          setAllowedPreviewMimeTypesCsv,
+          setGeneralPerMinute,
+          setAuthPerMinute,
+          setUploadPerMinute,
+          setSessionTtlMinutes,
+          setPublicUploadsEnabled,
+          setCommunityPageEnabled,
+          setMaintenanceEnabled,
+          setMaintenanceMessage,
+          setMaintenanceStartAt,
+          setMaintenanceEndAt,
+          setMaintenanceReadOnlyMode,
+          setGoogleClientId,
+          setGoogleClientSecret,
+          setGoogleRedirectUri,
+          setPatreonClientId,
+          setPatreonClientSecret,
+          setPatreonRedirectUri,
+          setSmtpHost,
+          setSmtpPort,
+          setSmtpUser,
+          setSmtpPass,
+          setSmtpFrom
+        })
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Failed to save global settings.')
       } finally {
@@ -260,9 +391,11 @@ const GlobalSettingsPage = () => {
 
       <section className={sectionClassName}>
         <h2 className="font-[family-name:var(--font-heading)] text-[21px] font-normal leading-none text-white">Maintenance mode</h2>
+        <p className={hintClassName}>
+          Administrator accounts always have full API access (including while this page loads). Visitors who are not admins see the maintenance message when maintenance is on.
+        </p>
         <div className="mt-4 space-y-3">
           <label className="flex items-center gap-3 text-sm text-white"><input type="checkbox" checked={maintenanceEnabled} onChange={(event) => setMaintenanceEnabled(event.target.checked)} />Maintenance ON/OFF</label>
-          <label className="flex items-center gap-3 text-sm text-white"><input type="checkbox" checked={maintenanceAdminBypass} onChange={(event) => setMaintenanceAdminBypass(event.target.checked)} />Admin bypass</label>
           <label className="flex items-center gap-3 text-sm text-white"><input type="checkbox" checked={maintenanceReadOnlyMode} onChange={(event) => setMaintenanceReadOnlyMode(event.target.checked)} />Read-only mode</label>
         </div>
         <label className="mt-4 block"><span className={labelClassName}>Maintenance message</span><textarea className={inputClassName} rows={4} value={maintenanceMessage} onChange={(event) => setMaintenanceMessage(event.target.value)} /></label>
@@ -278,19 +411,40 @@ const GlobalSettingsPage = () => {
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label><span className={labelClassName}>Google client ID</span><input className={inputClassName} value={googleClientId} onChange={(event) => setGoogleClientId(event.target.value)} /></label>
           <label><span className={labelClassName}>Google redirect URI</span><input className={inputClassName} value={googleRedirectUri} onChange={(event) => setGoogleRedirectUri(event.target.value)} /></label>
-          <label className="md:col-span-2"><span className={labelClassName}>Google client secret (replace)</span><input className={inputClassName} value={googleClientSecret} onChange={(event) => setGoogleClientSecret(event.target.value)} type="text" /></label>
+          <SecretField
+            label="Google client secret (replace)"
+            value={googleClientSecret}
+            onChange={setGoogleClientSecret}
+            visible={showGoogleSecret}
+            onToggleVisible={() => setShowGoogleSecret((previous) => !previous)}
+            disabled={!isEditing || isLoading || isSaving}
+          />
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label><span className={labelClassName}>Patreon client ID</span><input className={inputClassName} value={patreonClientId} onChange={(event) => setPatreonClientId(event.target.value)} /></label>
           <label><span className={labelClassName}>Patreon redirect URI</span><input className={inputClassName} value={patreonRedirectUri} onChange={(event) => setPatreonRedirectUri(event.target.value)} /></label>
-          <label className="md:col-span-2"><span className={labelClassName}>Patreon client secret (replace)</span><input className={inputClassName} value={patreonClientSecret} onChange={(event) => setPatreonClientSecret(event.target.value)} type="text" /></label>
+          <SecretField
+            label="Patreon client secret (replace)"
+            value={patreonClientSecret}
+            onChange={setPatreonClientSecret}
+            visible={showPatreonSecret}
+            onToggleVisible={() => setShowPatreonSecret((previous) => !previous)}
+            disabled={!isEditing || isLoading || isSaving}
+          />
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label><span className={labelClassName}>SMTP host</span><input className={inputClassName} value={smtpHost} onChange={(event) => setSmtpHost(event.target.value)} /></label>
           <label><span className={labelClassName}>SMTP port</span><input className={inputClassName} value={smtpPort} onChange={(event) => setSmtpPort(event.target.value)} /></label>
           <label><span className={labelClassName}>SMTP user</span><input className={inputClassName} value={smtpUser} onChange={(event) => setSmtpUser(event.target.value)} /></label>
           <label><span className={labelClassName}>SMTP from</span><input className={inputClassName} value={smtpFrom} onChange={(event) => setSmtpFrom(event.target.value)} /></label>
-          <label className="md:col-span-2"><span className={labelClassName}>SMTP password (replace)</span><input className={inputClassName} value={smtpPass} onChange={(event) => setSmtpPass(event.target.value)} type="text" /></label>
+          <SecretField
+            label="SMTP password (replace)"
+            value={smtpPass}
+            onChange={setSmtpPass}
+            visible={showSmtpPass}
+            onToggleVisible={() => setShowSmtpPass((previous) => !previous)}
+            disabled={!isEditing || isLoading || isSaving}
+          />
         </div>
       </section>
       </fieldset>

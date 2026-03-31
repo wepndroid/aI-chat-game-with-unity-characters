@@ -31,7 +31,7 @@ type MaintenanceSettings = {
   blockedRoutePrefixes: string[]
 }
 
-type ApiKeysSettings = {
+export type ApiKeysSettings = {
   googleClientId: string
   googleClientSecret: string
   googleRedirectUri: string
@@ -83,6 +83,30 @@ const getApiKeysFromEnvExact = (): ApiKeysSettings => ({
   smtpPass: process.env.EMAIL_SMTP_PASS?.trim() || '',
   smtpFrom: process.env.EMAIL_FROM?.trim() || ''
 })
+
+const mergeApiKeysDbWithEnv = (dbApiKeys: ApiKeysSettings): ApiKeysSettings => {
+  const env = getApiKeysFromEnvExact()
+  const pick = (dbVal: string, envVal: string) => (dbVal.trim().length > 0 ? dbVal : envVal)
+  const smtpTouchedInDb =
+    dbApiKeys.smtpHost.trim().length > 0 ||
+    dbApiKeys.smtpUser.trim().length > 0 ||
+    dbApiKeys.smtpFrom.trim().length > 0 ||
+    dbApiKeys.smtpPass.trim().length > 0
+
+  return {
+    googleClientId: pick(dbApiKeys.googleClientId, env.googleClientId),
+    googleClientSecret: pick(dbApiKeys.googleClientSecret, env.googleClientSecret),
+    googleRedirectUri: pick(dbApiKeys.googleRedirectUri, env.googleRedirectUri),
+    patreonClientId: pick(dbApiKeys.patreonClientId, env.patreonClientId),
+    patreonClientSecret: pick(dbApiKeys.patreonClientSecret, env.patreonClientSecret),
+    patreonRedirectUri: pick(dbApiKeys.patreonRedirectUri, env.patreonRedirectUri),
+    smtpHost: pick(dbApiKeys.smtpHost, env.smtpHost),
+    smtpPort: smtpTouchedInDb ? dbApiKeys.smtpPort : env.smtpPort,
+    smtpUser: pick(dbApiKeys.smtpUser, env.smtpUser),
+    smtpPass: pick(dbApiKeys.smtpPass, env.smtpPass),
+    smtpFrom: pick(dbApiKeys.smtpFrom, env.smtpFrom)
+  }
+}
 
 const defaultRuntimeAdminSettings: RuntimeAdminSettings = {
   uploadLimits: {
@@ -246,7 +270,7 @@ const getRuntimeAdminSettings = async () => {
 
   return {
     ...normalized,
-    apiKeys: getApiKeysFromEnvExact()
+    apiKeys: mergeApiKeysDbWithEnv(normalized.apiKeys)
   }
 }
 

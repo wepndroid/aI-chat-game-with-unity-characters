@@ -1,9 +1,10 @@
 import os from 'node:os'
 import { Router } from 'express'
 import { z } from 'zod'
-import { emailConfig } from '../lib/auth-config'
+import { getEmailConfig } from '../lib/auth-config'
+import { applyApiKeysToProcessEnv, writeApiKeysToEnvFile } from '../lib/env-file-sync'
 import { isPatreonOauthEnabled } from '../lib/patreon-config'
-import { googleOAuthConfig } from '../lib/oauth-config'
+import { getGoogleOAuthConfig } from '../lib/oauth-config'
 import { requireAdmin } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
 import { getRuntimeAdminSettings, updateRuntimeAdminSettings } from '../lib/runtime-admin-settings'
@@ -156,8 +157,9 @@ const buildRecentActivity = async () => {
 
 const buildDeploymentChecks = () => {
   const patreonEnabled = isPatreonOauthEnabled()
-  const googleEnabled = googleOAuthConfig.enabled
-  const smtpConfigured = Boolean(emailConfig.smtpHost && emailConfig.smtpUser && emailConfig.smtpPass)
+  const googleEnabled = getGoogleOAuthConfig().enabled
+  const emailCfg = getEmailConfig()
+  const smtpConfigured = Boolean(emailCfg.smtpHost && emailCfg.smtpUser && emailCfg.smtpPass)
 
   return {
     checks: [
@@ -177,7 +179,7 @@ const buildDeploymentChecks = () => {
         id: 'smtp',
         label: 'SMTP',
         status: smtpConfigured ? 'ready' : 'pending',
-        detail: smtpConfigured ? `${emailConfig.smtpHost}:${emailConfig.smtpPort}` : 'Missing SMTP credentials'
+        detail: smtpConfigured ? `${emailCfg.smtpHost}:${emailCfg.smtpPort}` : 'Missing SMTP credentials'
       }
     ],
     browserMatrix: []
@@ -539,8 +541,13 @@ statsRoutes.patch('/admin/global-settings', requireAdmin, async (request, respon
         : previous.apiKeys
     })
 
+    applyApiKeysToProcessEnv(nextSettings.apiKeys)
+    writeApiKeysToEnvFile(nextSettings.apiKeys)
+
+    const refreshed = await getRuntimeAdminSettings()
+
     response.json({
-      data: nextSettings
+      data: refreshed
     })
   } catch (error) {
     next(error)
