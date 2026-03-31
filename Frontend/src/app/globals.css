@@ -44,3 +44,18 @@ body {
 *::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* Tiptap (first message rich editor + read-only preview — same surface) */
+.first-message-prosemirror {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.first-message-prosemirror:focus {
+  outline: none;
+}
+
+.first-message-prosemirror-readonly .ProseMirror {
+  cursor: default;
+  user-select: text;
+}

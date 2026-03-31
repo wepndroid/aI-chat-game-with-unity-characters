@@ -4,11 +4,21 @@ type UploadFieldProps = {
   onChange: (value: string) => void
   multiline?: boolean
   tokenLimit?: number
+  maxLength?: number
   accentBorder?: boolean
   placeholder?: string
 }
 
-const UploadField = ({ label, value, onChange, multiline = false, tokenLimit, accentBorder = false, placeholder = '' }: UploadFieldProps) => {
+const UploadField = ({
+  label,
+  value,
+  onChange,
+  multiline = false,
+  tokenLimit,
+  maxLength,
+  accentBorder = false,
+  placeholder = ''
+}: UploadFieldProps) => {
   const tokenCounter = tokenLimit ? `${Math.min(value.length, tokenLimit)} / ${tokenLimit} tokens` : null
   const borderClassName = accentBorder ? 'border-ember-400/60' : 'border-white/20'
 
@@ -22,6 +32,7 @@ const UploadField = ({ label, value, onChange, multiline = false, tokenLimit, ac
             onChange={(event) => onChange(event.target.value)}
             rows={2}
             placeholder={placeholder}
+            maxLength={maxLength}
             className={`w-full resize-none rounded-md border bg-black/20 px-3 py-2 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-ember-300 focus:ring-1 focus:ring-ember-300/30 ${borderClassName}`}
           />
         ) : (
@@ -30,6 +41,7 @@ const UploadField = ({ label, value, onChange, multiline = false, tokenLimit, ac
             value={value}
             onChange={(event) => onChange(event.target.value)}
             placeholder={placeholder}
+            maxLength={maxLength}
             className={`w-full rounded-md border bg-black/20 px-3 py-2 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-ember-300 focus:ring-1 focus:ring-ember-300/30 ${borderClassName}`}
           />
         )}

@@ -5,7 +5,11 @@ import MaintenanceWorkspaceGate from '@/components/shared/maintenance-workspace-
 import { useAuth } from '@/components/providers/auth-provider'
 import PreviewImageDropzone from '@/components/ui-elements/preview-image-dropzone'
 import UploadDropzone from '@/components/ui-elements/upload-dropzone'
+import FirstMessageRichEditor from '@/components/ui-elements/first-message-rich-editor'
+import FirstMessagePreviewBox from '@/components/ui-elements/first-message-preview-box'
 import UploadField from '@/components/ui-elements/upload-field'
+import { FIRST_MESSAGE_MAX_LENGTH, firstMessageToEditorHtml, isEmptyFirstMessageHtml } from '@/lib/first-message-preview'
+import { sanitizeFirstMessageHtml } from '@/lib/sanitize-first-message-html'
 import {
   createCharacter,
   getCharacterDetail,
@@ -26,7 +30,7 @@ type UploadVrmFormState = {
   description: string
   personality: string
   scenario: string
-  firstMessage: string
+  firstMessageText: string
   exampleDialogue: string
   isPublic: boolean
 }
@@ -39,7 +43,7 @@ const initialFormState: UploadVrmFormState = {
   description: '',
   personality: '',
   scenario: '',
-  firstMessage: '',
+  firstMessageText: '',
   exampleDialogue: '',
   isPublic: false
 }
@@ -70,6 +74,7 @@ const UploadVrmPage = () => {
   }
 
   const pageHeadingLabel = useMemo(() => (isEditing ? 'Edit VRM Character' : 'Upload VRM'), [isEditing])
+
 
   useEffect(() => {
     if (!isEditing) {
@@ -112,7 +117,7 @@ const UploadVrmPage = () => {
           description: payload.data.description ?? '',
           personality: payload.data.personality ?? '',
           scenario: payload.data.scenario ?? '',
-          firstMessage: payload.data.firstMessage ?? '',
+          firstMessageText: firstMessageToEditorHtml(payload.data.firstMessage ?? ''),
           exampleDialogue: payload.data.exampleDialogs ?? '',
           isPublic: payload.data.visibility === 'PUBLIC'
         })
@@ -162,6 +167,18 @@ const UploadVrmPage = () => {
       return
     }
 
+    const sanitizedFirstMessage = sanitizeFirstMessageHtml(formState.firstMessageText.trim())
+
+    if (sanitizedFirstMessage.length > FIRST_MESSAGE_MAX_LENGTH) {
+      setErrorMessage(
+        `First message is too long after sanitizing (${sanitizedFirstMessage.length} / ${FIRST_MESSAGE_MAX_LENGTH} characters).`
+      )
+      setStatusMessage(null)
+      return
+    }
+
+    const firstMessageForApi: string | null = isEmptyFirstMessageHtml(sanitizedFirstMessage) ? null : sanitizedFirstMessage
+
     setIsSubmitting(true)
     setErrorMessage(null)
     setStatusMessage(null)
@@ -199,7 +216,7 @@ const UploadVrmPage = () => {
         description: formState.description.trim() || null,
         personality: formState.personality.trim() || null,
         scenario: formState.scenario.trim() || null,
-        firstMessage: formState.firstMessage.trim() || null,
+        firstMessage: firstMessageForApi,
         exampleDialogs: formState.exampleDialogue.trim() || null,
         vroidFileUrl: vroidUrl || null,
         previewImageUrl: previewUrl || null
@@ -220,7 +237,7 @@ const UploadVrmPage = () => {
             description: formState.description.trim() || undefined,
             personality: formState.personality.trim() || undefined,
             scenario: formState.scenario.trim() || undefined,
-            firstMessage: formState.firstMessage.trim() || undefined,
+            firstMessage: firstMessageForApi || undefined,
             exampleDialogs: formState.exampleDialogue.trim() || undefined,
             vroidFileUrl: vroidUrl || undefined,
             previewImageUrl: previewUrl || undefined,
@@ -246,7 +263,7 @@ const UploadVrmPage = () => {
             description: formState.description.trim() || undefined,
             personality: formState.personality.trim() || undefined,
             scenario: formState.scenario.trim() || undefined,
-            firstMessage: formState.firstMessage.trim() || undefined,
+            firstMessage: firstMessageForApi || undefined,
             exampleDialogs: formState.exampleDialogue.trim() || undefined,
             vroidFileUrl: vroidUrl || undefined,
             previewImageUrl: previewUrl || undefined,
@@ -270,7 +287,7 @@ const UploadVrmPage = () => {
             description: formState.description.trim() || undefined,
             personality: formState.personality.trim() || undefined,
             scenario: formState.scenario.trim() || undefined,
-            firstMessage: formState.firstMessage.trim() || undefined,
+            firstMessage: firstMessageForApi || undefined,
             exampleDialogs: formState.exampleDialogue.trim() || undefined,
             vroidFileUrl: vroidUrl || undefined,
             previewImageUrl: previewUrl || undefined,
@@ -388,13 +405,36 @@ const UploadVrmPage = () => {
                   multiline
                   tokenLimit={800}
                 />
-                <UploadField
-                  label="First Message"
-                  value={formState.firstMessage}
-                  onChange={(value) => handleFieldChange('firstMessage', value)}
-                  multiline
-                  tokenLimit={800}
-                />
+
+                <div className="mt-1 rounded-md border border-white/10 bg-black/25 p-4 md:p-5">
+                  <div className="mb-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-white/50">First message</p>
+                    <p id="first-message-help" className="mt-1.5 text-[11px] leading-relaxed text-white/40">
+                      Rich text: select text and set <span className="text-white/55">font</span>, <span className="text-white/55">color</span>, bold,
+                      italic, and more. The preview shows the same HTML as the character page. Older characters stored as plain text still work; they
+                      are converted when you open edit. Leave the editor empty for no opening message.
+                    </p>
+                  </div>
+
+                  <label className="sr-only" htmlFor="upload-vrm-first-message">
+                    First message text
+                  </label>
+                  <FirstMessageRichEditor
+                    id="upload-vrm-first-message"
+                    aria-describedby="first-message-help"
+                    value={formState.firstMessageText}
+                    onChange={(value) => handleFieldChange('firstMessageText', value)}
+                    disabled={isEditLoading}
+                  />
+
+                  <div className="mt-4">
+                    <FirstMessagePreviewBox firstMessage={formState.firstMessageText} />
+                    <p className="mt-2 text-[10px] text-white/35" aria-live="polite">
+                      Plain-text messages use narration (italics) vs dialogue when split by a blank line; rich HTML is shown as formatted.
+                    </p>
+                  </div>
+                </div>
+
                 <UploadField
                   label="Example Dialogue"
                   value={formState.exampleDialogue}

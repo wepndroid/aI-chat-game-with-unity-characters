@@ -2,6 +2,8 @@
 
 import { useAuth } from '@/components/providers/auth-provider'
 import CharacterStatTile from '@/components/ui-elements/character-stat-tile'
+import FirstMessagePreviewBox from '@/components/ui-elements/first-message-preview-box'
+import StartChatIcon from '@/components/ui-elements/start-chat-icon'
 import {
   getCharacterDetail,
   recordCharacterChatStart,
@@ -15,8 +17,6 @@ import {
   updateCharacterReview,
   type CharacterReviewRecord
 } from '@/lib/review-api'
-import { apiGet } from '@/lib/api-client'
-import { resolveAvailableTierCents, type PatreonStatusSnapshot } from '@/lib/patreon-access'
 import {
   createVrmGLTFLoader,
   getVrmFromGltfUserData,
@@ -72,20 +72,6 @@ const formatReviewRelativeLabel = (value: string) => {
 
   const elapsedMonths = Math.floor(elapsedDays / 30)
   return `${elapsedMonths}mo ago`
-}
-
-const StartChatIcon = ({ className = 'size-8' }: { className?: string }) => {
-  return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-      <path
-        d="M12 2.75c-4.97 0-9 3.32-9 7.43 0 2.61 1.65 4.9 4.14 6.22-.09 1.11-.4 2.26-1.12 3.03a.6.6 0 0 0 .58 1.01c1.92-.35 3.49-1.2 4.45-1.86.31.03.62.05.95.05 4.97 0 9-3.32 9-7.43S16.97 2.75 12 2.75Z"
-        fill="currentColor"
-      />
-      <circle cx="8.5" cy="10.3" r="1.05" fill="#f48f49" />
-      <circle cx="12" cy="10.3" r="1.05" fill="#f48f49" />
-      <circle cx="15.5" cy="10.3" r="1.05" fill="#f48f49" />
-    </svg>
-  )
 }
 
 const ChatStatIcon = ({ className = 'size-4' }: { className?: string }) => {
@@ -166,7 +152,6 @@ const CharacterPreviewVisual = ({ previewImageUrl, characterName }: { previewIma
 
 const CharacterPage = ({ characterId }: CharacterPageProps) => {
   const { sessionUser } = useAuth()
-  const [patreonStatusSnapshot, setPatreonStatusSnapshot] = useState<PatreonStatusSnapshot | null>(null)
   const [isLoading, setIsLoading] = useState(Boolean(characterId))
   const [errorMessage, setErrorMessage] = useState<string | null>(characterId ? null : 'No character selected. Open one from the gallery.')
   const [characterRecord, setCharacterRecord] = useState<CharacterDetailRecord | null>(null)
@@ -270,32 +255,6 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     }
   }, [characterId])
 
-  useEffect(() => {
-    if (!sessionUser?.id) {
-      setPatreonStatusSnapshot(null)
-      return
-    }
-
-    let isCancelled = false
-
-    Promise.resolve().then(async () => {
-      try {
-        const payload = await apiGet<{ data: PatreonStatusSnapshot }>('/patreon/status')
-        if (!isCancelled) {
-          setPatreonStatusSnapshot(payload.data)
-        }
-      } catch {
-        if (!isCancelled) {
-          setPatreonStatusSnapshot(null)
-        }
-      }
-    })
-
-    return () => {
-      isCancelled = true
-    }
-  }, [sessionUser?.id])
-
   const refreshReviewList = useCallback(async (selectedCharacterId: string) => {
     setIsReviewsLoading(true)
     setReviewsErrorMessage(null)
@@ -341,23 +300,11 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     setReviewInputBody('')
   }, [ownReview])
 
-  const subscriptionTierCents = useMemo(() => {
-    if (!sessionUser || !patreonStatusSnapshot) {
-      return 0
-    }
-
-    return resolveAvailableTierCents(patreonStatusSnapshot)
-  }, [patreonStatusSnapshot, sessionUser])
-
-  const canPostReviewWithSubscription =
-    sessionUser?.role === 'ADMIN' || subscriptionTierCents > 0
-
   const canAccessGatedContent = characterRecord?.gatedAccess.hasAccess ?? false
   const isPatreonGated = characterRecord?.isPatreonGated ?? false
   const canUseCharacterActions = !isPatreonGated || canAccessGatedContent
   const canOpenThreePreview = canUseCharacterActions && Boolean(characterRecord?.vroidFileUrl)
   const descriptionText = characterRecord?.description ?? 'Character description is not available yet.'
-  const firstMessagePreviewText = characterRecord?.firstMessage?.trim() ?? ''
 
   const characterStats = useMemo(() => {
     if (!characterRecord) {
@@ -393,6 +340,8 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
 
     return sessionUser.id === characterRecord.owner.id
   }, [sessionUser?.id, characterRecord])
+
+  const canPostReview = Boolean(sessionUser?.isEmailVerified && !isViewerCharacterOwner)
 
   const handleToggleHeart = async () => {
     if (!characterRecord) {
@@ -883,27 +832,36 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                     <p className="text-[10px] font-semibold uppercase tracking-[0.09em] text-white/65">
                       {ownReview ? 'Update your comment' : 'Write a comment'}
                     </p>
-                    {!canPostReviewWithSubscription ? (
+                    {!sessionUser ? (
                       <p className="mt-2 text-[11px] leading-relaxed text-white/60">
-                        Written comments require an active Patreon subscription linked to your account.{' '}
-                        <Link href="/members" className="font-semibold text-ember-200 underline-offset-2 hover:text-ember-100">
-                          Connect Patreon
+                        Please sign in to leave a comment.{' '}
+                        <Link href="/?openSignIn=1" className="font-semibold text-ember-200 underline-offset-2 hover:text-ember-100">
+                          Sign in
                         </Link>
                       </p>
+                    ) : !sessionUser.isEmailVerified ? (
+                      <p className="mt-2 text-[11px] leading-relaxed text-white/60">
+                        Please verify your email before commenting.{' '}
+                        <Link href="/profile" className="font-semibold text-ember-200 underline-offset-2 hover:text-ember-100">
+                          Profile
+                        </Link>
+                      </p>
+                    ) : isViewerCharacterOwner ? (
+                      <p className="mt-2 text-[11px] leading-relaxed text-white/60">You cannot review your own character.</p>
                     ) : null}
                     <textarea
                       value={reviewInputBody}
                       onChange={(event) => setReviewInputBody(event.target.value)}
                       placeholder="Write your review..."
-                      disabled={!canPostReviewWithSubscription}
-                      className="mt-2 h-24 w-full resize-none rounded border border-white/20 bg-[#0d0d0d] px-3 py-2 text-xs text-white outline-none focus:border-ember-300 disabled:opacity-50"
+                      disabled={!canPostReview}
+                      className="mt-2 h-24 w-full resize-none rounded border border-white/20 bg-black px-3 py-2 text-xs text-white outline-none focus:border-ember-300 disabled:opacity-50"
                       aria-label="Review text"
                     />
                     <div className="mt-2 flex gap-2">
                       <button
                         type="button"
                         onClick={handleSubmitReview}
-                        disabled={isReviewSubmitting || !canPostReviewWithSubscription}
+                        disabled={isReviewSubmitting || !canPostReview}
                         className="rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-black disabled:opacity-70"
                         aria-label={ownReview ? 'Update comment' : 'Post comment'}
                       >
@@ -913,7 +871,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                         <button
                           type="button"
                           onClick={handleDeleteOwnReview}
-                          disabled={isReviewSubmitting || !canPostReviewWithSubscription}
+                          disabled={isReviewSubmitting || !canPostReview}
                           className="rounded-md border border-rose-300/35 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-rose-200 disabled:opacity-70"
                           aria-label="Delete your review"
                         >
@@ -967,19 +925,12 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                 ) : null}
 
                 <div className="mt-6">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.11em] text-amber-300">Description</p>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.11em] text-[#f59e0b]">Description</p>
                   <p className="mt-3 whitespace-pre-line text-[11px] leading-[1.75] text-white/75">{descriptionText}</p>
                 </div>
 
                 <div className="mt-6">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.11em] text-amber-300">First Message Preview</p>
-                  <div className="mt-3 rounded-md border border-amber-300/25 bg-[#171111] p-3">
-                    {firstMessagePreviewText.length > 0 ? (
-                      <p className="whitespace-pre-wrap text-[11px] italic leading-[1.7] text-white/75">{firstMessagePreviewText}</p>
-                    ) : (
-                      <p className="text-[11px] leading-[1.5] text-white/55">No first-message preview has been added yet.</p>
-                    )}
-                  </div>
+                  <FirstMessagePreviewBox showHeader firstMessage={characterRecord?.firstMessage} />
                 </div>
 
                 {isPatreonGated && !canAccessGatedContent ? (
