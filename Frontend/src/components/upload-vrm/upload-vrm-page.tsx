@@ -28,10 +28,7 @@ type UploadVrmFormState = {
   vroidFileUrl: string
   previewImageUrl: string
   description: string
-  personality: string
-  scenario: string
   firstMessageText: string
-  exampleDialogue: string
   isPublic: boolean
 }
 
@@ -41,10 +38,7 @@ const initialFormState: UploadVrmFormState = {
   vroidFileUrl: '',
   previewImageUrl: '',
   description: '',
-  personality: '',
-  scenario: '',
   firstMessageText: '',
-  exampleDialogue: '',
   isPublic: false
 }
 
@@ -115,10 +109,7 @@ const UploadVrmPage = () => {
           vroidFileUrl: payload.data.vroidFileUrl ?? '',
           previewImageUrl: loadedPreviewUrl,
           description: payload.data.description ?? '',
-          personality: payload.data.personality ?? '',
-          scenario: payload.data.scenario ?? '',
           firstMessageText: firstMessageToEditorHtml(payload.data.firstMessage ?? ''),
-          exampleDialogue: payload.data.exampleDialogs ?? '',
           isPublic: payload.data.visibility === 'PUBLIC'
         })
         setBaselinePreviewImageUrl(loadedPreviewUrl)
@@ -214,10 +205,7 @@ const UploadVrmPage = () => {
         fullName: normalizedName,
         tagline: formState.tagLine.trim() || null,
         description: formState.description.trim() || null,
-        personality: formState.personality.trim() || null,
-        scenario: formState.scenario.trim() || null,
         firstMessage: firstMessageForApi,
-        exampleDialogs: formState.exampleDialogue.trim() || null,
         vroidFileUrl: vroidUrl || null,
         previewImageUrl: previewUrl || null
       }
@@ -235,10 +223,7 @@ const UploadVrmPage = () => {
             fullName: normalizedName,
             tagline: formState.tagLine.trim() || undefined,
             description: formState.description.trim() || undefined,
-            personality: formState.personality.trim() || undefined,
-            scenario: formState.scenario.trim() || undefined,
             firstMessage: firstMessageForApi || undefined,
-            exampleDialogs: formState.exampleDialogue.trim() || undefined,
             vroidFileUrl: vroidUrl || undefined,
             previewImageUrl: previewUrl || undefined,
             visibility: 'PUBLIC',
@@ -261,10 +246,7 @@ const UploadVrmPage = () => {
             fullName: normalizedName,
             tagline: formState.tagLine.trim() || undefined,
             description: formState.description.trim() || undefined,
-            personality: formState.personality.trim() || undefined,
-            scenario: formState.scenario.trim() || undefined,
             firstMessage: firstMessageForApi || undefined,
-            exampleDialogs: formState.exampleDialogue.trim() || undefined,
             vroidFileUrl: vroidUrl || undefined,
             previewImageUrl: previewUrl || undefined,
             draft: true
@@ -285,10 +267,7 @@ const UploadVrmPage = () => {
             fullName: normalizedName,
             tagline: formState.tagLine.trim() || undefined,
             description: formState.description.trim() || undefined,
-            personality: formState.personality.trim() || undefined,
-            scenario: formState.scenario.trim() || undefined,
             firstMessage: firstMessageForApi || undefined,
-            exampleDialogs: formState.exampleDialogue.trim() || undefined,
             vroidFileUrl: vroidUrl || undefined,
             previewImageUrl: previewUrl || undefined,
             visibility
@@ -390,23 +369,8 @@ const UploadVrmPage = () => {
                 />
               </div>
 
-              <div className="mt-4 space-y-3">
-                <UploadField
-                  label="Personality"
-                  value={formState.personality}
-                  onChange={(value) => handleFieldChange('personality', value)}
-                  multiline
-                  tokenLimit={800}
-                />
-                <UploadField
-                  label="Scenario"
-                  value={formState.scenario}
-                  onChange={(value) => handleFieldChange('scenario', value)}
-                  multiline
-                  tokenLimit={800}
-                />
-
-                <div className="mt-1 rounded-md border border-white/10 bg-black/25 p-4 md:p-5">
+              <div className="mt-4">
+                <div className="rounded-md border border-white/10 bg-black/25 p-4 md:p-5">
                   <div className="mb-3">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-white/50">First message</p>
                     <p id="first-message-help" className="mt-1.5 text-[11px] leading-relaxed text-white/40">
@@ -434,14 +398,6 @@ const UploadVrmPage = () => {
                     </p>
                   </div>
                 </div>
-
-                <UploadField
-                  label="Example Dialogue"
-                  value={formState.exampleDialogue}
-                  onChange={(value) => handleFieldChange('exampleDialogue', value)}
-                  multiline
-                  tokenLimit={800}
-                />
               </div>
 
               {!isAdmin ? (
