@@ -133,8 +133,13 @@ const mapPatreonCallbackErrorMessage = (rawMessage: string | null) => {
   return rawMessage ?? 'Patreon connection failed. Please try again.'
 }
 
-const mapMembershipActionErrorMessage = (rawMessage: string | null) => {
-  const normalized = (rawMessage ?? '').trim().toLowerCase()
+const mapMembershipActionErrorMessage = (rawMessage: string | null): string | null => {
+  const text = rawMessage ?? ''
+  const normalized = text.trim().toLowerCase()
+
+  if (normalized.includes('maintenance') || text.includes('MAINTENANCE_MODE')) {
+    return null
+  }
 
   if (normalized.includes('authentication required')) {
     return 'Please sign in to SecretWaifu first, then click Connect Patreon.'
@@ -152,7 +157,7 @@ const mapMembershipActionErrorMessage = (rawMessage: string | null) => {
     return 'Patreon connection is temporarily unavailable due to server configuration. Please try again later or contact support.'
   }
 
-  return rawMessage ?? 'Unable to complete Patreon action.'
+  return text.trim() ? text : 'Unable to complete Patreon action.'
 }
 
 const MembershipPage = () => {

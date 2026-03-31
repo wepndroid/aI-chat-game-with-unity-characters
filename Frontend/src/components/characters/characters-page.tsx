@@ -1,6 +1,7 @@
 'use client'
 
 import { useAuth } from '@/components/providers/auth-provider'
+import { useMaintenance } from '@/components/providers/maintenance-provider'
 import CharacterGalleryCard from '@/components/ui-elements/character-gallery-card'
 import FilterTab from '@/components/ui-elements/filter-tab'
 import PaginationControls from '@/components/ui-elements/pagination-controls'
@@ -25,7 +26,18 @@ const defaultGradientVariants = [
   'from-[#332936] via-[#2a2030] to-[#150f18]'
 ]
 
-const toUserFriendlyCharactersError = (error: unknown, hasSearchQuery: boolean) => {
+const isMaintenanceApiError = (error: unknown) => {
+  const text = error instanceof Error ? error.message : ''
+  const lower = text.toLowerCase()
+  return lower.includes('maintenance') || text.includes('MAINTENANCE_MODE')
+}
+
+/** Returns null when the failure is server maintenance — the global header banner is enough. */
+const toUserFriendlyCharactersError = (error: unknown, hasSearchQuery: boolean): string | null => {
+  if (isMaintenanceApiError(error)) {
+    return null
+  }
+
   const rawMessage = error instanceof Error ? error.message.toLowerCase() : ''
   const looksLikeNetworkIssue =
     rawMessage.includes('failed to fetch') ||
@@ -80,6 +92,7 @@ const resolveCharacterGatedAccess = (
 
 const CharactersPage = () => {
   const { sessionUser, isAuthLoading } = useAuth()
+  const { isMaintenanceActive } = useMaintenance()
   const sessionUserId = sessionUser?.id ?? null
   const [activeCategory, setActiveCategory] = useState<CharacterCategory>('curated')
   const [searchValue, setSearchValue] = useState('')
@@ -271,7 +284,10 @@ const CharactersPage = () => {
                 {charactersErrorMessage}
               </p>
             ) : null}
-            {!isCharactersLoading && !charactersErrorMessage && paginatedCharacters.length === 0 ? (
+            {!isCharactersLoading &&
+            !charactersErrorMessage &&
+            paginatedCharacters.length === 0 &&
+            !isMaintenanceActive ? (
               <p className="col-span-full text-sm text-white/70">No characters match this filter.</p>
             ) : null}
             {!isCharactersLoading && !charactersErrorMessage
