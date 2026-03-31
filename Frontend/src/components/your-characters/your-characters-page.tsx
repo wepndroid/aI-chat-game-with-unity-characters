@@ -1,6 +1,7 @@
 'use client'
 
 import AccountSideMenu from '@/components/shared/account-side-menu'
+import MaintenanceWorkspaceGate from '@/components/shared/maintenance-workspace-gate'
 import { useAuth } from '@/components/providers/auth-provider'
 import DashboardStatCard from '@/components/ui-elements/dashboard-stat-card'
 import MyCharacterCard, { type CharacterModerationStatus, type MyCharacterCardRecord } from '@/components/ui-elements/my-character-card'
@@ -198,9 +199,10 @@ const YourCharactersPage = () => {
             Manage drafts, submit updates for approval, and track your live character performance with moderation-aware statuses.
           </p>
 
-          <div className="mt-10 grid gap-8 lg:grid-cols-[380px_1fr]">
+          <div className="mt-10 grid gap-8 lg:grid-cols-[380px_1fr] lg:items-start">
             <AccountSideMenu activeKey="your-characters" />
 
+            <MaintenanceWorkspaceGate>
             <div className="space-y-5">
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <DashboardStatCard value={dashboardStats.totalCount.toString()} label="Total Characters" helperText="All drafts and published entries" />
@@ -266,6 +268,7 @@ const YourCharactersPage = () => {
                 </div>
               </div>
             </div>
+            </MaintenanceWorkspaceGate>
           </div>
         </div>
       </section>

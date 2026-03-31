@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/components/providers/auth-provider'
 import AccountSideMenu from '@/components/shared/account-side-menu'
+import MaintenanceWorkspaceGate from '@/components/shared/maintenance-workspace-gate'
 import DashboardStatCard from '@/components/ui-elements/dashboard-stat-card'
 import MembershipEntitlementRow, { type MembershipEntitlementRecord } from '@/components/ui-elements/membership-entitlement-row'
 import MembershipStatusPill, { type MembershipConnectionStatus } from '@/components/ui-elements/membership-status-pill'
@@ -399,9 +400,10 @@ const MembershipPage = () => {
             </p>
           ) : null}
 
-          <div className="mt-10 grid gap-8 lg:grid-cols-[380px_1fr]">
+          <div className="mt-10 grid gap-8 lg:grid-cols-[380px_1fr] lg:items-start">
             <AccountSideMenu activeKey="membership" />
 
+            <MaintenanceWorkspaceGate>
             <div className="space-y-5">
               <article className="rounded-xl border border-white/10 bg-[#151214]/95 p-5">
                 <div className="flex flex-wrap items-start justify-between gap-4">
@@ -586,6 +588,7 @@ const MembershipPage = () => {
                 </div>
               </article>
             </div>
+            </MaintenanceWorkspaceGate>
           </div>
         </div>
       </section>

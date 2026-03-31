@@ -2,6 +2,7 @@
 
 import AuthInputField from '@/components/ui-elements/auth-input-field'
 import { useAuth } from '@/components/providers/auth-provider'
+import MaintenanceBanner from '@/components/shared/maintenance-banner'
 import { getGoogleOauthStartUrl, isGoogleOauthEnabled } from '@/lib/auth-api'
 import { AUTH_OPEN_SIGN_IN_MODAL_EVENT } from '@/lib/auth-events'
 import Image from 'next/image'
@@ -234,6 +235,7 @@ const Header = () => {
             ) : null}
           </nav>
         </div>
+        <MaintenanceBanner />
       </header>
 
       {pathname === '/' && isSignInModalOpen ? (
