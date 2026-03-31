@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import Image from 'next/image'
+import type { MouseEvent } from 'react'
 
 type CharacterGalleryCardProps = {
   routeId: string
@@ -12,6 +13,9 @@ type CharacterGalleryCardProps = {
   isPatreonGated?: boolean
   hasGatedAccess?: boolean
   requiredTierCents?: number | null
+  onActionClick?: (event: MouseEvent<HTMLAnchorElement>) => void
+  moderationStatus?: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'
+  showModerationBadge?: boolean
 }
 
 const formatTierLabel = (tierCents?: number | null) => {
@@ -70,12 +74,27 @@ const CharacterGalleryCard = ({
   previewImageUrl,
   isPatreonGated = false,
   hasGatedAccess = true,
-  requiredTierCents
+  requiredTierCents,
+  onActionClick,
+  moderationStatus,
+  showModerationBadge = false
 }: CharacterGalleryCardProps) => {
   const isLocked = isPatreonGated && !hasGatedAccess
   const actionHref = isLocked ? '/members' : `/characters/${routeId}`
   const actionLabel = isLocked ? 'Unlock on Patreon' : 'Chat Now'
   const tagChipLabel = toTagChipLabel(description)
+  const moderationBadge =
+    showModerationBadge && moderationStatus === 'PENDING'
+      ? {
+          label: 'Waiting Approval',
+          className: 'border-amber-200/45 bg-amber-300/20 text-amber-50'
+        }
+      : showModerationBadge && moderationStatus === 'REJECTED'
+        ? {
+            label: 'Rejected',
+            className: 'border-rose-200/45 bg-rose-400/20 text-rose-50'
+          }
+        : null
 
   return (
     <article className="overflow-hidden rounded-[26px] border border-[#8a4f2b]/80 bg-[#111111] shadow-[0_18px_34px_rgba(0,0,0,0.4)]">
@@ -116,6 +135,13 @@ const CharacterGalleryCard = ({
             {isLocked ? `Locked | ${formatTierLabel(requiredTierCents)}` : 'Patreon unlocked'}
           </div>
         ) : null}
+        {moderationBadge ? (
+          <div
+            className={`absolute left-3 ${isPatreonGated ? 'top-11' : 'top-3'} rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] ${moderationBadge.className}`}
+          >
+            {moderationBadge.label}
+          </div>
+        ) : null}
 
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#f28b45]/95 via-[#f28b45]/60 to-transparent px-5 pb-6 pt-20">
           <div className="flex justify-center">
@@ -129,6 +155,7 @@ const CharacterGalleryCard = ({
           <div className="mt-4 flex justify-center">
             <Link
               href={actionHref}
+              onClick={onActionClick}
               className="inline-flex h-[37px] min-w-[147px] items-center justify-center rounded-xl border border-black/20 bg-[#201410]/90 px-4 font-[family-name:var(--font-heading)] text-[12px] font-semibold italic uppercase leading-none tracking-[0.02em] text-white transition hover:bg-[#2a1a14]"
               aria-label={`${actionLabel} for ${name}`}
             >

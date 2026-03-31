@@ -102,6 +102,7 @@ const CharactersPage = () => {
   const [charactersErrorMessage, setCharactersErrorMessage] = useState<string | null>(null)
   const [characterList, setCharacterList] = useState<CharacterListRecord[]>([])
   const [patreonStatusSnapshot, setPatreonStatusSnapshot] = useState<PatreonStatusSnapshot | null>(null)
+  const [actionAlertMessage, setActionAlertMessage] = useState<string | null>(null)
 
   useEffect(() => {
     if (isAuthLoading) {
@@ -219,6 +220,20 @@ const CharactersPage = () => {
     })
   }, [sessionUserId])
 
+  useEffect(() => {
+    if (!actionAlertMessage) {
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      setActionAlertMessage(null)
+    }, 4200)
+
+    return () => {
+      window.clearTimeout(timeout)
+    }
+  }, [actionAlertMessage])
+
   const handleCategoryChange = (nextCategory: CharacterCategory) => {
     setActiveCategory(nextCategory)
     setCurrentPage(1)
@@ -307,6 +322,27 @@ const CharactersPage = () => {
                       isPatreonGated={characterItem.isPatreonGated}
                       hasGatedAccess={hasGatedAccess}
                       requiredTierCents={characterItem.minimumTierCents}
+                      moderationStatus={characterItem.status}
+                      showModerationBadge={activeCategory === 'your-characters'}
+                      onActionClick={(event) => {
+                        if (activeCategory !== 'your-characters') {
+                          return
+                        }
+
+                        if (characterItem.status === 'APPROVED') {
+                          return
+                        }
+
+                        event.preventDefault()
+                        event.stopPropagation()
+
+                        if (characterItem.status === 'REJECTED') {
+                          setActionAlertMessage('This character was rejected. Please update it and resubmit for approval before chatting.')
+                          return
+                        }
+
+                        setActionAlertMessage('This character must be approved before you can chat.')
+                      }}
                     />
                   )
                 })
@@ -321,6 +357,12 @@ const CharactersPage = () => {
             <PaginationControls currentPage={visiblePage} totalPages={totalPages} onPageChange={setCurrentPage} />
           </div>
         </div>
+
+        {actionAlertMessage ? (
+          <div className="fixed bottom-5 right-5 z-50 max-w-[420px] rounded-md border border-rose-300/35 bg-[#2a1212]/95 px-4 py-3 text-xs text-rose-100 shadow-[0_14px_35px_rgba(0,0,0,0.5)]">
+            {actionAlertMessage}
+          </div>
+        ) : null}
       </section>
     </main>
   )

@@ -3,6 +3,7 @@
 import { EditorContent, useEditor } from '@tiptap/react'
 import { useEffect, useMemo } from 'react'
 
+import StartChatIcon from '@/components/ui-elements/start-chat-icon'
 import { FIRST_MESSAGE_PARSE_OPTIONS, getFirstMessageTiptapExtensions } from '@/lib/first-message-tiptap-extensions'
 import { firstMessageToEditorHtml, isEmptyFirstMessageHtml } from '@/lib/first-message-preview'
 import { sanitizeFirstMessageHtml } from '@/lib/sanitize-first-message-html'
@@ -14,28 +15,8 @@ const PROSE_MIRROR_BODY_CLASS =
 /** Shown only when there is no stored message (not persisted). */
 const EMPTY_READ_ONLY_HTML = `<p><span style="color:rgba(255,255,255,0.45);font-style:italic">No first-message preview has been added yet.</span></p>`
 
-const FirstMessageChatIcon = ({ className = 'size-5 shrink-0' }: { className?: string }) => (
-  <svg
-    className={className}
-    viewBox="0 0 24 24"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    aria-hidden="true"
-  >
-    <path
-      d="M5.25 4.75h9.5a2 2 0 0 1 2 2v4.5a2 2 0 0 1-2 2h-2.2l-2.1 1.75a.55.55 0 0 1-.9-.42V13.2H5.25a2 2 0 0 1-2-2v-4.5a2 2 0 0 1 2-2Z"
-      stroke="currentColor"
-      strokeWidth="1.2"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M10.5 7.25h8.25a1.75 1.75 0 0 1 1.75 1.75v4a1.75 1.75 0 0 1-1.75 1.75h-1.9l-1.65 1.35a.5.5 0 0 1-.82-.38V14.5h-2.73a1.75 1.75 0 0 1-1.75-1.75v-4a1.75 1.75 0 0 1 1.75-1.75Z"
-      stroke="currentColor"
-      strokeWidth="1.2"
-      strokeLinejoin="round"
-      opacity="0.85"
-    />
-  </svg>
+const FirstMessageChatIcon = ({ className = 'size-7 shrink-0' }: { className?: string }) => (
+  <StartChatIcon className={className} />
 )
 
 type FirstMessageReadOnlyEditorProps = {
@@ -118,7 +99,7 @@ const FirstMessageReadOnlyEditor = ({
         <p className="font-[family-name:var(--font-heading)] text-[10px] font-bold uppercase tracking-[0.12em] text-[#f59e0b]">
           First message preview
         </p>
-        <FirstMessageChatIcon className="size-[22px] shrink-0 text-[#6b4423]/90" />
+        <FirstMessageChatIcon className="size-7 shrink-0 text-[#6b4423]/90" />
       </div>
       {editorChrome}
     </div>
