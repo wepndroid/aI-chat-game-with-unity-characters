@@ -324,8 +324,22 @@ const CharactersPage = () => {
                       requiredTierCents={characterItem.minimumTierCents}
                       moderationStatus={characterItem.status}
                       showModerationBadge={activeCategory === 'your-characters'}
+                      suppressPendingModerationBadge={
+                        activeCategory === 'your-characters' && sessionUser?.role === 'ADMIN'
+                      }
                       onActionClick={(event) => {
                         if (activeCategory !== 'your-characters') {
+                          return
+                        }
+
+                        if (sessionUser?.role === 'ADMIN') {
+                          if (characterItem.status === 'DRAFT') {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            setActionAlertMessage(
+                              'This character is still a draft. Publish it from admin tools before opening chat.'
+                            )
+                          }
                           return
                         }
 

@@ -16,6 +16,8 @@ type CharacterGalleryCardProps = {
   onActionClick?: (event: MouseEvent<HTMLAnchorElement>) => void
   moderationStatus?: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'
   showModerationBadge?: boolean
+  /** When true, pending characters do not show the "Waiting Approval" badge (admin Your Characters). */
+  suppressPendingModerationBadge?: boolean
 }
 
 const formatTierLabel = (tierCents?: number | null) => {
@@ -77,24 +79,40 @@ const CharacterGalleryCard = ({
   requiredTierCents,
   onActionClick,
   moderationStatus,
-  showModerationBadge = false
+  showModerationBadge = false,
+  suppressPendingModerationBadge = false
 }: CharacterGalleryCardProps) => {
   const isLocked = isPatreonGated && !hasGatedAccess
   const actionHref = isLocked ? '/members' : `/characters/${routeId}`
   const actionLabel = isLocked ? 'Unlock on Patreon' : 'Chat Now'
   const tagChipLabel = toTagChipLabel(description)
-  const moderationBadge =
-    showModerationBadge && moderationStatus === 'PENDING'
-      ? {
-          label: 'Waiting Approval',
-          className: 'border-amber-200/45 bg-amber-300/20 text-amber-50'
-        }
-      : showModerationBadge && moderationStatus === 'REJECTED'
-        ? {
-            label: 'Rejected',
-            className: 'border-rose-200/45 bg-rose-400/20 text-rose-50'
-          }
-        : null
+  const moderationBadge = (() => {
+    if (!showModerationBadge || !moderationStatus) {
+      return null
+    }
+    if (moderationStatus === 'PENDING') {
+      if (suppressPendingModerationBadge) {
+        return null
+      }
+      return {
+        label: 'Waiting Approval',
+        className: 'border-amber-200/45 bg-amber-300/20 text-amber-50'
+      }
+    }
+    if (moderationStatus === 'REJECTED') {
+      return {
+        label: 'Rejected',
+        className: 'border-rose-200/45 bg-rose-400/20 text-rose-50'
+      }
+    }
+    if (moderationStatus === 'DRAFT') {
+      return {
+        label: 'Draft',
+        className: 'border-slate-200/40 bg-slate-600/35 text-slate-50'
+      }
+    }
+    return null
+  })()
 
   return (
     <article className="overflow-hidden rounded-[26px] border border-[#8a4f2b]/80 bg-[#111111] shadow-[0_18px_34px_rgba(0,0,0,0.4)]">
