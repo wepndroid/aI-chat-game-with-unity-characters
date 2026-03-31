@@ -12,6 +12,7 @@ import {
   updateCharacterStatus,
   uploadCharacterAssets
 } from '@/lib/character-api'
+import { apiGet } from '@/lib/api-client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 
@@ -60,6 +61,9 @@ const UploadVrmPage = () => {
   const [isEditLoading, setIsEditLoading] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [maintenanceInfo, setMaintenanceInfo] = useState<{ active: boolean; message: string } | null>(null)
+
+  const showMaintenanceBanner = Boolean(maintenanceInfo?.active && !isAdmin)
 
   const handleFieldChange = <T extends keyof UploadVrmFormState>(key: T, value: UploadVrmFormState[T]) => {
     setFormState((previousState) => ({
@@ -69,6 +73,27 @@ const UploadVrmPage = () => {
   }
 
   const pageHeadingLabel = useMemo(() => (isEditing ? 'Edit VRM Character' : 'Upload VRM'), [isEditing])
+
+  useEffect(() => {
+    let isCancelled = false
+
+    Promise.resolve().then(async () => {
+      try {
+        const payload = await apiGet<{ data: { active: boolean; message: string } }>('/health/maintenance')
+        if (!isCancelled) {
+          setMaintenanceInfo(payload.data)
+        }
+      } catch {
+        if (!isCancelled) {
+          setMaintenanceInfo(null)
+        }
+      }
+    })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (!isEditing) {
@@ -136,6 +161,12 @@ const UploadVrmPage = () => {
     event?.preventDefault()
 
     if (isSubmitting) {
+      return
+    }
+
+    if (maintenanceInfo?.active && !isAdmin) {
+      setErrorMessage(maintenanceInfo.message)
+      setStatusMessage(null)
       return
     }
 
@@ -301,18 +332,30 @@ const UploadVrmPage = () => {
 
   return (
     <main className="relative overflow-hidden bg-[#030303] text-white">
-      <section className="relative min-h-[calc(100vh-150px)] border-b border-white/10 px-5 py-10 md:px-8">
+      <section
+        className={`relative border-b border-white/10 px-5 py-10 md:px-8 ${showMaintenanceBanner ? 'min-h-0' : 'min-h-[calc(100vh-150px)]'}`}
+      >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_44%_0%,rgba(244,99,19,0.12),transparent_38%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.09)_1px,transparent_1px)] [background-size:22px_22px] opacity-50" />
 
-        <div className="relative z-10 mx-auto w-full max-w-[1150px] pt-24">
+        <div className={`relative z-10 mx-auto w-full max-w-[1150px] pt-24 ${showMaintenanceBanner ? 'pb-24' : ''}`}>
           <h1 className="text-center font-[family-name:var(--font-heading)] text-4xl font-normal italic leading-none text-white md:text-5xl">
             {pageHeadingLabel}
           </h1>
 
-          <div className="mt-10 grid gap-8 lg:grid-cols-[380px_1fr]">
+          <div className="mt-10 grid gap-8 lg:grid-cols-[380px_1fr] lg:items-start">
             <AccountSideMenu activeKey="upload-vrm" />
 
+            {showMaintenanceBanner ? (
+              <div className="flex w-full justify-center self-start">
+                <div
+                  className="w-fit max-w-full rounded-md border border-amber-400/35 bg-[#1a1414]/95 px-2.5 py-1.5 text-center text-xs leading-snug text-amber-50 sm:px-3 sm:py-2 sm:text-sm"
+                  role="alert"
+                >
+                  {maintenanceInfo?.message ?? 'The platform is temporarily under maintenance. Please try again soon.'}
+                </div>
+              </div>
+            ) : (
             <form
               onSubmit={(event) => {
                 if (isAdmin) {
@@ -461,6 +504,7 @@ const UploadVrmPage = () => {
                 )}
               </div>
             </form>
+            )}
           </div>
         </div>
       </section>
