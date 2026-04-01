@@ -258,6 +258,7 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
 
     const [
       totalUsers,
+      nonAdminUserCount,
       newUsersToday,
       totalCharacters,
       approvedCharacters,
@@ -271,6 +272,13 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
       dau30dRecords
     ] = await prisma.$transaction([
       prisma.user.count(),
+      prisma.user.count({
+        where: {
+          role: {
+            not: 'ADMIN'
+          }
+        }
+      }),
       prisma.user.count({
         where: {
           createdAt: {
@@ -420,6 +428,11 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
       where: {
         tierCents: {
           not: null
+        },
+        user: {
+          role: {
+            not: 'ADMIN'
+          }
         }
       },
       select: {
@@ -449,6 +462,7 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
     response.json({
       data: {
         totalUsers,
+        nonAdminUserCount,
         newUsersToday,
         totalCharacters,
         approvedCharacters,

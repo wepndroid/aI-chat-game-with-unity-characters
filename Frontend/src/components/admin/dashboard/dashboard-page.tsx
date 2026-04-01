@@ -16,6 +16,8 @@ type ActivityTone = 'yellow' | 'red' | 'green' | 'blue'
 type DashboardOverviewPayload = {
   data: {
     totalUsers: number
+    /** Excludes admin accounts; used for “Users by Tier” so admins are not counted as Free or in Patreon tiers. */
+    nonAdminUserCount: number
     totalCharacters: number
     pendingCharacters: number
     activePatrons: number
@@ -260,7 +262,8 @@ const DashboardPage = () => {
   const activityPreview = overview?.recentActivity.slice(0, 6) ?? []
   const tierDistribution = overview?.pledgeTrends.tierDistribution ?? []
   const paidTierUsers = tierDistribution.reduce((sum, tierItem) => sum + tierItem.users, 0)
-  const freeUsersCount = Math.max(0, (overview?.totalUsers ?? 0) - paidTierUsers)
+  const tierBaseUserCount = overview?.nonAdminUserCount ?? overview?.totalUsers ?? 0
+  const freeUsersCount = Math.max(0, tierBaseUserCount - paidTierUsers)
   const totalTierUsers = paidTierUsers + freeUsersCount
 
   return (
