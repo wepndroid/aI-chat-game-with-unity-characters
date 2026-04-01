@@ -11,6 +11,8 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 const signInQueryFlagKey = 'openSignIn'
+const signUpQueryFlagKey = 'openSignUp'
+const signUpHashFlag = '#sign-up'
 const oauthQueryFlagKey = 'oauth'
 const oauthMessageQueryFlagKey = 'message'
 
@@ -39,14 +41,21 @@ const normalizeOAuthErrorMessage = (rawMessage: string | null) => {
 const Header = () => {
   const pathname = usePathname()
   const googleOauthEnabled = isGoogleOauthEnabled()
-  const { sessionUser, isAuthLoading, loginUser, logoutUser, clearAuthError } = useAuth()
+  const { sessionUser, isAuthLoading, registerUser, loginUser, logoutUser, clearAuthError } = useAuth()
   /** Closed on first paint so SSR and client match; open from URL in useEffect after hydrate. */
   const [isSignInModalOpen, setIsSignInModalOpen] = useState(false)
+  const [isSignUpModalOpen, setIsSignUpModalOpen] = useState(false)
   const [emailInputValue, setEmailInputValue] = useState('')
   const [passwordInputValue, setPasswordInputValue] = useState('')
+  const [signUpUsernameInputValue, setSignUpUsernameInputValue] = useState('')
+  const [signUpEmailInputValue, setSignUpEmailInputValue] = useState('')
+  const [signUpPasswordInputValue, setSignUpPasswordInputValue] = useState('')
+  const [signUpConfirmPasswordInputValue, setSignUpConfirmPasswordInputValue] = useState('')
   const [isSigningIn, setIsSigningIn] = useState(false)
+  const [isSigningUp, setIsSigningUp] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [signInErrorMessage, setSignInErrorMessage] = useState<string | null>(null)
+  const [signUpErrorMessage, setSignUpErrorMessage] = useState<string | null>(null)
 
   const handleOpenSignInModal = () => {
     const redirectUrl = new URL(window.location.origin)
@@ -54,9 +63,22 @@ const Header = () => {
     window.location.assign(redirectUrl.toString())
   }
 
+  const handleOpenSignUpModal = () => {
+    clearAuthError()
+    setIsSignInModalOpen(false)
+    setSignInErrorMessage(null)
+    setSignUpErrorMessage(null)
+    setIsSignUpModalOpen(true)
+  }
+
   const handleCloseSignInModal = () => {
     setIsSignInModalOpen(false)
     setSignInErrorMessage(null)
+  }
+
+  const handleCloseSignUpModal = () => {
+    setIsSignUpModalOpen(false)
+    setSignUpErrorMessage(null)
   }
 
   const handleModalContainerClick = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -109,6 +131,41 @@ const Header = () => {
     window.location.assign(getGoogleOauthStartUrl('/profile', 'signup'))
   }
 
+  const handleSignUpSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (isSigningUp) {
+      return
+    }
+
+    if (signUpPasswordInputValue.trim() !== signUpConfirmPasswordInputValue.trim()) {
+      setSignUpErrorMessage('Passwords do not match.')
+      return
+    }
+
+    setIsSigningUp(true)
+    setSignUpErrorMessage(null)
+
+    const registrationResult = await registerUser({
+      username: signUpUsernameInputValue,
+      email: signUpEmailInputValue,
+      password: signUpPasswordInputValue
+    })
+
+    if (!registrationResult.success) {
+      setSignUpErrorMessage(registrationResult.message ?? 'Unable to create account.')
+      setIsSigningUp(false)
+      return
+    }
+
+    setSignUpUsernameInputValue('')
+    setSignUpEmailInputValue('')
+    setSignUpPasswordInputValue('')
+    setSignUpConfirmPasswordInputValue('')
+    setIsSigningUp(false)
+    handleCloseSignUpModal()
+  }
+
   useEffect(() => {
     const handleOpenSignInModalEvent = () => {
       clearAuthError()
@@ -130,24 +187,37 @@ const Header = () => {
 
     const url = new URL(window.location.href)
     const shouldOpenSignIn = url.searchParams.get(signInQueryFlagKey) === '1'
+    const shouldOpenSignUp = url.searchParams.get(signUpQueryFlagKey) === '1'
+    const normalizedHash = url.hash.trim().toLowerCase()
+    const shouldOpenSignUpByHash = normalizedHash === signUpHashFlag || normalizedHash === '#signup'
     const oauthStatus = url.searchParams.get(oauthQueryFlagKey)
     const oauthMessage = url.searchParams.get(oauthMessageQueryFlagKey)
     const shouldHandleOAuthError = oauthStatus === 'error'
 
-    if (!shouldOpenSignIn && !shouldHandleOAuthError) {
+    if (!shouldOpenSignIn && !shouldOpenSignUp && !shouldOpenSignUpByHash && !shouldHandleOAuthError) {
       return
     }
 
-    setIsSignInModalOpen(true)
-    if (shouldHandleOAuthError) {
+    if (shouldOpenSignUp || shouldOpenSignUpByHash) {
+      setIsSignUpModalOpen(true)
+      setIsSignInModalOpen(false)
+    } else {
+      setIsSignInModalOpen(true)
+      setIsSignUpModalOpen(false)
+    }
+    if (shouldHandleOAuthError && !shouldOpenSignUp) {
       setSignInErrorMessage(normalizeOAuthErrorMessage(oauthMessage))
     }
 
     clearAuthError()
     url.searchParams.delete(signInQueryFlagKey)
+    url.searchParams.delete(signUpQueryFlagKey)
     url.searchParams.delete(oauthQueryFlagKey)
     url.searchParams.delete(oauthMessageQueryFlagKey)
     url.searchParams.delete('provider')
+    if (shouldOpenSignUpByHash) {
+      url.hash = ''
+    }
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
   }, [pathname, clearAuthError])
 
@@ -290,14 +360,14 @@ const Header = () => {
               </div>
 
               <div className="text-right">
-                <Link
-                  href="/sign-up"
+                <button
+                  type="button"
                   className="text-xs font-semibold uppercase tracking-[0.08em] text-ember-300 transition hover:text-ember-200"
-                  aria-label="Go to sign up page"
-                  onClick={handleCloseSignInModal}
+                  aria-label="Open sign up modal"
+                  onClick={handleOpenSignUpModal}
                 >
                   Create Account
-                </Link>
+                </button>
               </div>
 
               <button
@@ -317,6 +387,102 @@ const Header = () => {
               >
                 Sign In with Google
               </button>
+            </form>
+          </div>
+        </div>
+      ) : null}
+      {pathname === '/' && isSignUpModalOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-5"
+          onClick={(event) => {
+            if (event.currentTarget !== event.target) {
+              return
+            }
+            handleCloseSignUpModal()
+          }}
+          aria-label="Sign up modal backdrop"
+          role="presentation"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-ember-300/20 bg-[#171411]/95 p-6 shadow-ember backdrop-blur md:p-8">
+            <h2 className="font-[family-name:var(--font-heading)] text-4xl font-extrabold uppercase tracking-wider text-white">
+              Create Account
+            </h2>
+            <p className="mt-3 text-sm text-white/70">Register a new account to access your profile and character management.</p>
+
+            <form className="mt-5 space-y-4" aria-label="Sign up form" onSubmit={handleSignUpSubmit}>
+              <AuthInputField
+                label="Username"
+                name="username"
+                type="text"
+                ariaLabel="Username"
+                value={signUpUsernameInputValue}
+                onChange={setSignUpUsernameInputValue}
+                autoComplete="username"
+              />
+              <AuthInputField
+                label="Email Address"
+                name="email"
+                type="email"
+                ariaLabel="Email address"
+                value={signUpEmailInputValue}
+                onChange={setSignUpEmailInputValue}
+                autoComplete="email"
+              />
+              <AuthInputField
+                label="Password"
+                name="password"
+                type="password"
+                ariaLabel="Password"
+                value={signUpPasswordInputValue}
+                onChange={setSignUpPasswordInputValue}
+                autoComplete="new-password"
+              />
+              <AuthInputField
+                label="Confirm Password"
+                name="confirm-password"
+                type="password"
+                ariaLabel="Confirm password"
+                value={signUpConfirmPasswordInputValue}
+                onChange={setSignUpConfirmPasswordInputValue}
+                autoComplete="new-password"
+              />
+
+              {signUpErrorMessage ? (
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-rose-300">{signUpErrorMessage}</p>
+              ) : null}
+
+              <button
+                type="submit"
+                className="w-full rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 py-2.5 text-sm font-bold uppercase tracking-[0.12em] text-black transition hover:brightness-110"
+                aria-label="Create account"
+                disabled={isSigningUp}
+              >
+                {isSigningUp ? 'Creating Account...' : 'Sign Up'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSignInWithGoogle}
+                className="w-full rounded-md border border-white/20 bg-white/5 px-4 py-2.5 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:border-ember-300 hover:text-ember-200"
+                aria-label="Sign up with Google"
+              >
+                Sign Up with Google
+              </button>
+
+              <p className="text-xs text-white/70">
+                Already have an account?{' '}
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleCloseSignUpModal()
+                    setIsSignInModalOpen(true)
+                  }}
+                  className="font-semibold text-ember-300 transition hover:text-ember-200"
+                  aria-label="Open sign in modal"
+                >
+                  Sign In
+                </button>
+              </p>
             </form>
           </div>
         </div>

@@ -13,12 +13,19 @@ import { useEffect, useMemo, useState } from 'react'
 
 type CharacterStatusFilter = 'all' | CharacterModerationStatus
 
-const statusFilterOptions: Array<{ value: CharacterStatusFilter; label: string }> = [
+const nonAdminStatusFilterOptions: Array<{ value: CharacterStatusFilter; label: string }> = [
   { value: 'all', label: 'All Statuses' },
   { value: 'draft', label: 'Draft' },
   { value: 'pending', label: 'Pending Review' },
   { value: 'approved', label: 'Approved' },
   { value: 'rejected', label: 'Rejected' }
+]
+
+/** Admin Your Characters: only draft vs published (approved) plus all. */
+const adminStatusFilterOptions: Array<{ value: CharacterStatusFilter; label: string }> = [
+  { value: 'all', label: 'All statuses' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'approved', label: 'Published' }
 ]
 
 const statusPriorityMap: Record<CharacterModerationStatus, number> = {
@@ -119,6 +126,22 @@ const YourCharactersPage = () => {
     }
   }, [])
 
+  const statusFilterOptions = useMemo(
+    () => (isAdmin ? adminStatusFilterOptions : nonAdminStatusFilterOptions),
+    [isAdmin]
+  )
+
+  useEffect(() => {
+    if (!isAdmin) {
+      return
+    }
+
+    const allowedValues = new Set(adminStatusFilterOptions.map((optionItem) => optionItem.value))
+    if (!allowedValues.has(statusFilter)) {
+      setStatusFilter('all')
+    }
+  }, [isAdmin, statusFilter])
+
   const handleSearchChange = (value: string) => {
     setSearchValue(value)
   }
@@ -186,7 +209,7 @@ const YourCharactersPage = () => {
   }, [characterRecords])
 
   return (
-    <main className="relative overflow-hidden bg-[#030303] text-white">
+    <main className="relative overflow-x-hidden bg-[#030303] text-white">
       <section className="relative min-h-[calc(100vh-150px)] border-b border-white/10 px-5 py-10 md:px-8">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_45%_0%,rgba(244,99,19,0.12),transparent_38%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.09)_1px,transparent_1px)] [background-size:22px_22px] opacity-50" />
@@ -199,7 +222,7 @@ const YourCharactersPage = () => {
             Manage drafts, submit updates for approval, and track your live character performance with moderation-aware statuses.
           </p>
 
-          <div className="mt-10 grid gap-8 lg:grid-cols-[380px_1fr] lg:items-start">
+          <div className="mt-10 grid min-w-0 gap-8 lg:grid-cols-[380px_1fr] lg:items-start">
             <AccountSideMenu activeKey="your-characters" />
 
             <MaintenanceWorkspaceGate>

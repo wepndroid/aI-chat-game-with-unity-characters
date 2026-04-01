@@ -14,8 +14,8 @@ const Footer = () => {
   return (
     <footer className="border-t border-white/5 bg-[radial-gradient(circle_at_18%_115%,rgba(237,90,20,0.62),rgba(237,90,20,0.08)_36%,transparent_60%),radial-gradient(circle_at_70%_122%,rgba(237,90,20,0.4),rgba(237,90,20,0.04)_30%,transparent_56%),linear-gradient(to_right,#130804,#070707_42%,#050505)]">
       <div className="mx-auto flex h-auto w-full max-w-[1240px] flex-col justify-between px-8 py-10 !pb-[50px] md:px-12">
-        <div className="flex items-start justify-between">
-          <div className="max-w-[360px]">
+        <div className="flex flex-col gap-10 md:flex-row md:items-start md:justify-between md:gap-8">
+          <div className="w-full max-w-[360px]">
             <div className="inline-flex items-center">
               <Image src="/images/Logo.png" alt="SecretWaifu logo" width={164} height={44} className="h-8 w-auto opacity-95" />
             </div>
@@ -24,8 +24,8 @@ const Footer = () => {
             </p>
           </div>
 
-          <div className="flex flex-col items-end">
-            <nav className="mt-1 flex flex-col items-end gap-[2px] text-[13px] font-semibold uppercase tracking-[0.12em] text-white/35">
+          <div className="flex w-full flex-col items-start md:w-auto md:items-end">
+            <nav className="mt-1 flex flex-col items-start gap-[2px] text-[13px] font-semibold uppercase tracking-[0.12em] text-white/35 md:items-end">
               <Link href="/" className="transition hover:text-white/60" aria-label="Home link in footer">
                 Home
               </Link>

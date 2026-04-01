@@ -21,6 +21,12 @@ type DashboardOverviewPayload = {
     activePatrons: number
     newUsersToday: number
     serverLoad1m: number
+    pledgeTrends: {
+      tierDistribution: Array<{
+        tierCents: number
+        users: number
+      }>
+    }
     recentActivity: Array<{
       id: string
       message: string
@@ -50,6 +56,14 @@ const formatCompactNumber = (value: number) =>
 
 const formatTodayUserDelta = (value: number) =>
   new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value)
+
+const formatTierLabel = (tierCents: number) => {
+  if (tierCents <= 0) {
+    return 'Free'
+  }
+
+  return `EUR ${(tierCents / 100).toFixed(2)}`
+}
 
 /** Green pulse sparkline + “+N today” — single beat: flat → spike up → dip below → level (reference UI). */
 const UsersTodayGrowthIndicator = ({ count }: { count: number }) => {
@@ -244,17 +258,25 @@ const DashboardPage = () => {
 
   const priorityQueuePreview = reviewQueue.slice(0, 3)
   const activityPreview = overview?.recentActivity.slice(0, 6) ?? []
+  const tierDistribution = overview?.pledgeTrends.tierDistribution ?? []
+  const paidTierUsers = tierDistribution.reduce((sum, tierItem) => sum + tierItem.users, 0)
+  const freeUsersCount = Math.max(0, (overview?.totalUsers ?? 0) - paidTierUsers)
+  const totalTierUsers = paidTierUsers + freeUsersCount
 
   return (
     <AdminPageShell activeKey="dashboard">
-      <h1 className="font-[family-name:var(--font-heading)] text-[29px] font-normal leading-none text-white">Overview</h1>
-      <p className="mt-2 text-sm text-[#95a6c1]">Last updated: {overview ? new Date(overview.updatedAt).toLocaleString() : '-'}</p>
+      <h1 className="font-[family-name:var(--font-heading)] text-[22px] font-normal leading-tight text-white sm:text-[26px] md:text-[29px] md:leading-none">
+        Overview
+      </h1>
+      <p className="mt-2 break-words text-sm text-[#95a6c1]">
+        Last updated: {overview ? new Date(overview.updatedAt).toLocaleString() : '-'}
+      </p>
 
       {errorMessage ? (
         <p className="mt-4 rounded-md border border-rose-300/30 bg-rose-300/10 px-3 py-2 text-sm text-rose-100">{errorMessage}</p>
       ) : null}
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2 2xl:grid-cols-4">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-2 2xl:grid-cols-4">
         {isLoading && kpiRecordList.length === 0 ? (
           <p className="col-span-full text-sm text-white/70">Loading analytics...</p>
         ) : null}
@@ -272,10 +294,36 @@ const DashboardPage = () => {
         ))}
       </div>
 
+      <section className="mt-5 rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-4 py-5 sm:px-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="font-[family-name:var(--font-heading)] text-[18px] font-normal leading-tight text-white sm:text-[21px] sm:leading-none">
+            Users by Tier
+          </h2>
+          <p className="shrink-0 text-xs text-white/60">Total counted: {formatCompactNumber(totalTierUsers)}</p>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {totalTierUsers === 0 ? (
+            <p className="text-sm text-white/70">No tier data available yet.</p>
+          ) : (
+            [{ tierCents: 0, users: freeUsersCount }, ...tierDistribution].map((tierItem) => {
+              return (
+                <div key={tierItem.tierCents} className="rounded-xl border border-white/10 bg-[#121721]/80 px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.08em] text-white/60">{formatTierLabel(tierItem.tierCents)}</p>
+                  <p className="mt-1 text-2xl font-semibold text-white">{formatCompactNumber(tierItem.users)}</p>
+                </div>
+              )
+            })
+          )}
+        </div>
+      </section>
+
       <div className="mt-5 grid gap-4 2xl:grid-cols-2">
-        <section className="rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-5 py-5 sm:px-6">
-          <div className="flex items-center justify-between">
-            <h2 className="font-[family-name:var(--font-heading)] text-[21px] font-normal leading-none text-white">System Activity</h2>
+        <section className="rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-4 py-5 sm:px-6">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="font-[family-name:var(--font-heading)] text-[18px] font-normal leading-tight text-white sm:text-[21px] sm:leading-none">
+              System Activity
+            </h2>
             <Link href="/admin/activity" className="text-xs font-normal text-ember-300 transition hover:text-ember-200" aria-label="View all system activity">
               View All
             </Link>
@@ -289,9 +337,11 @@ const DashboardPage = () => {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-5 py-5 sm:px-6">
-          <div className="flex items-center justify-between">
-            <h2 className="font-[family-name:var(--font-heading)] text-[21px] font-normal leading-none text-white">Priority Review Queue</h2>
+        <section className="rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-4 py-5 sm:px-6">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="font-[family-name:var(--font-heading)] text-[18px] font-normal leading-tight text-white sm:text-[21px] sm:leading-none">
+              Priority Review Queue
+            </h2>
             <Link href="/admin/review-queue" className="text-xs font-normal text-ember-300 transition hover:text-ember-200" aria-label="Go to review queue">
               Go to Reviews
             </Link>

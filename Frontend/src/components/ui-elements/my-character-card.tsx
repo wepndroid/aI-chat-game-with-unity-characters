@@ -39,10 +39,10 @@ const MyCharacterCard = ({ characterRecord, onSubmitForReview, adminMode = false
   const showRejectReason = characterRecord.moderationStatus === 'rejected' && Boolean(characterRecord.moderationRejectReason?.trim())
 
   return (
-    <article className="rounded-xl border border-white/10 bg-[#131112]/95 p-4 shadow-[0_8px_22px_rgba(0,0,0,0.35)]">
+    <article className="mx-auto w-3/4 rounded-xl border border-white/10 bg-[#131112]/95 p-4 shadow-[0_8px_22px_rgba(0,0,0,0.35)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="font-[family-name:var(--font-heading)] text-[22px] font-normal italic leading-[0.9] text-white">
+          <h3 className="font-[family-name:var(--font-heading)] text-[14.67px] font-normal italic leading-[0.9] text-white">
             {characterRecord.title}
           </h3>
           <p className="mt-1 text-xs text-white/55">Updated {characterRecord.updatedAtLabel}</p>

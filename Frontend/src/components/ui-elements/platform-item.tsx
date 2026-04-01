@@ -16,48 +16,57 @@ type PlatformIconProps = {
 const PlatformIcon = ({ iconType }: PlatformIconProps) => {
   if (iconType === 'browser') {
     return (
-      <svg viewBox="0 0 24 24" className="h-7 w-7 text-white/85" aria-hidden="true">
-        <circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" strokeWidth="1.8" />
-        <circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" strokeWidth="1.8" />
-        <path d="M12 12L18.7 8.1" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        <path d="M12 12L7.5 19.1" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <svg viewBox="0 0 24 24" className="h-7 w-7 text-white/85" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <circle cx="12" cy="12" r="3.5" />
+        <path d="M19.6 8.5H12" strokeLinecap="round" />
+        <path d="m5.2 7.1 4.1 7.1" strokeLinecap="round" />
+        <path d="m10.6 19.9 4.2-7.3" strokeLinecap="round" />
       </svg>
     )
   }
 
   if (iconType === 'windows') {
+    /** Windows 2x2 panes matching provided reference shape. */
     return (
-      <svg viewBox="0 0 24 24" className="h-7 w-7 text-white/90" aria-hidden="true">
-        <rect x="3.4" y="3.4" width="17.2" height="17.2" rx="2.5" fill="#d88b6a" opacity="0.75" />
-        <rect x="6.3" y="6.4" width="4.8" height="4.3" fill="currentColor" />
-        <rect x="12.8" y="6.4" width="4.8" height="4.3" fill="currentColor" />
-        <rect x="6.3" y="12.2" width="4.8" height="4.3" fill="currentColor" />
-        <rect x="12.8" y="12.2" width="4.8" height="4.3" fill="currentColor" />
+      <svg viewBox="0 0 24 24" className="h-7 w-7 text-white/90" fill="currentColor" aria-hidden="true">
+        <rect x="4.2" y="4.4" width="6.9" height="6.4" />
+        <rect x="12.9" y="4.4" width="6.9" height="6.4" />
+        <rect x="4.2" y="12.8" width="6.9" height="6.4" />
+        <rect x="12.9" y="12.8" width="6.9" height="6.4" />
       </svg>
     )
   }
 
   if (iconType === 'pcvr') {
     return (
-      <svg viewBox="0 0 24 24" className="h-7 w-7 text-white/88" aria-hidden="true">
-        <rect x="3.7" y="8.6" width="16.6" height="7.1" rx="3.1" fill="none" stroke="currentColor" strokeWidth="1.8" />
-        <path d="M7.5 8.6L8.9 6.9H15.1L16.5 8.6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        <circle cx="9.3" cy="12.15" r="1.05" fill="currentColor" />
-        <circle cx="14.7" cy="12.15" r="1.05" fill="currentColor" />
+      <svg viewBox="0 0 24 24" className="h-7 w-7 text-white/88" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+        <path
+          d="M6.2 6.6h11.6c1.2 0 2.1.9 2.2 2.1l.2 2.6M4 11.3l.2-2.6c.1-1.2 1-2.1 2.2-2.1"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M4 12.1c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2v4c0 1.1-.9 2-2 2h-3.1l-1.6-2.3h-2.6L9.1 18H6c-1.1 0-2-.9-2-2v-3.9Z"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path d="M8.1 13.8h2.2M13.7 13.8h2.2" strokeLinecap="round" />
       </svg>
     )
   }
 
   if (iconType === 'exe') {
+    /**
+     * Meta-style infinity (two loops, center crossover). Uses arc segments so it reads
+     * as a continuous ∞ — not a single wavy stroke.
+     */
     return (
-      <svg viewBox="0 0 24 24" className="h-7 w-7 text-white/88" aria-hidden="true">
-        <rect x="4.5" y="5.5" width="15" height="13" rx="2" fill="none" stroke="currentColor" strokeWidth="1.7" />
+      <svg viewBox="0 0 24 24" className="h-7 w-7 text-white/88" fill="none" stroke="currentColor" strokeWidth="1.85" aria-hidden="true">
         <path
-          d="M8.2 9.2h7.6M8.2 12h5.2M8.2 14.8h6.4"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.4"
+          d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 1 0 0-8c-2 0-4 1.33-6 4Z"
           strokeLinecap="round"
+          strokeLinejoin="round"
         />
       </svg>
     )

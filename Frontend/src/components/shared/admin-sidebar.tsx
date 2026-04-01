@@ -27,6 +27,7 @@ type AdminSidebarGroup = {
 
 type AdminSidebarProps = {
   activeKey: AdminSidebarKey
+  className?: string
 }
 
 const DashboardGridIcon = () => {
@@ -94,7 +95,7 @@ const ShieldIcon = () => {
   )
 }
 
-const AdminSidebar = ({ activeKey }: AdminSidebarProps) => {
+const AdminSidebar = ({ activeKey, className }: AdminSidebarProps) => {
   const router = useRouter()
   const pathname = usePathname()
   const { sessionUser, logoutUser } = useAuth()
@@ -228,7 +229,7 @@ const AdminSidebar = ({ activeKey }: AdminSidebarProps) => {
   const initials = displayName.trim().slice(0, 1).toUpperCase() || 'A'
 
   return (
-    <aside className="flex h-full flex-col border-r border-white/10 bg-[#070a10]/90">
+    <aside className={`flex h-full min-h-0 flex-col overflow-y-auto overscroll-contain border-r border-white/10 bg-[#070a10]/90 ${className ?? ''}`}>
       <div className="border-b border-white/10 p-6">
         <div className="inline-flex items-center gap-3">
           <span className="inline-flex size-10 items-center justify-center rounded-full border border-ember-500 text-ember-400" aria-hidden="true">

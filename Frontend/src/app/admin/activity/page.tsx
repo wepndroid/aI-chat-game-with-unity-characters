@@ -53,7 +53,9 @@ const AdminActivityPage = () => {
 
   return (
     <AdminPageShell activeKey="activity">
-      <h1 className="font-[family-name:var(--font-heading)] text-[29px] font-normal leading-none text-white">System Activity</h1>
+      <h1 className="font-[family-name:var(--font-heading)] text-[22px] font-normal leading-tight text-white sm:text-[26px] md:text-[29px] md:leading-none">
+        System Activity
+      </h1>
       <p className="mt-2 text-sm text-[#95a6c1]">
         Recent sign-ups, character updates, reviews, and moderation events (for example bans) from the app database.
       </p>
@@ -62,7 +64,7 @@ const AdminActivityPage = () => {
         <p className="mt-4 rounded-md border border-rose-300/30 bg-rose-300/10 px-3 py-2 text-sm text-rose-100">{errorMessage}</p>
       ) : null}
 
-      <section className="mt-6 rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-5 py-5 sm:px-6">
+      <section className="mt-6 rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-4 py-5 sm:px-6">
         {isLoading ? <p className="py-4 text-sm text-white/70">Loading activity...</p> : null}
         {!isLoading && activityRecordList.length === 0 ? <p className="py-4 text-sm text-white/70">No recent activity yet.</p> : null}
         {activityRecordList.map((activityItem) => (

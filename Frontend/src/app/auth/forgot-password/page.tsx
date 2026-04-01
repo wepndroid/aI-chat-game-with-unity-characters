@@ -30,7 +30,7 @@ const ForgotPasswordPage = () => {
   }
 
   return (
-    <main className="relative overflow-hidden bg-[#030303] text-white">
+    <main className="relative overflow-x-hidden bg-[#030303] text-white">
       <section className="relative min-h-[calc(100vh-140px)] border-b border-white/10 px-5 py-10 md:px-8">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(244,99,19,0.15),transparent_34%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:22px_22px] opacity-45" />

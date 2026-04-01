@@ -3,6 +3,7 @@
 import { useAuth } from '@/components/providers/auth-provider'
 import AccountSideMenu from '@/components/shared/account-side-menu'
 import { resendVerificationCode, verifyEmailCode } from '@/lib/auth-api'
+import Link from 'next/link'
 import { useState } from 'react'
 
 const ProfilePage = () => {
@@ -92,7 +93,7 @@ const ProfilePage = () => {
   }
 
   return (
-    <main className="relative overflow-hidden bg-[#030303] text-white">
+    <main className="relative overflow-x-hidden bg-[#030303] text-white">
       <section className="relative min-h-[calc(100vh-150px)] border-b border-white/10 px-5 py-10 md:px-8">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_42%_0%,rgba(244,99,19,0.12),transparent_36%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.09)_1px,transparent_1px)] [background-size:22px_22px] opacity-50" />
@@ -102,7 +103,7 @@ const ProfilePage = () => {
             Profile
           </h1>
 
-          <div className="mt-10 grid gap-8 lg:grid-cols-[380px_1fr]">
+          <div className="mt-10 grid min-w-0 gap-8 lg:grid-cols-[380px_1fr]">
             <AccountSideMenu activeKey="profile" />
 
             <div className="rounded-md border border-white/10 bg-[#1a1414]/95 p-6 md:p-10">
@@ -152,6 +153,20 @@ const ProfilePage = () => {
                     </button>
                   </div>
                   {verificationMessage ? <p className="mt-2 text-xs text-amber-100">{verificationMessage}</p> : null}
+                </div>
+              ) : null}
+
+              {sessionUser ? (
+                <div className="mt-5 rounded-md border border-white/10 bg-black/20 p-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-white/70">Password reset</p>
+                  <p className="mt-2 text-xs text-white/65">Forgot your password? Request a reset link by e-mail.</p>
+                  <Link
+                    href="/auth/forgot-password"
+                    className="mt-3 inline-flex h-10 min-w-[180px] items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-white transition hover:brightness-110"
+                    aria-label="Open forgot password page"
+                  >
+                    Password Reset
+                  </Link>
                 </div>
               ) : null}
 

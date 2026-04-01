@@ -9,6 +9,13 @@ import { useEffect, useMemo, useState } from 'react'
 
 type UserRoleApi = 'USER' | 'CREATOR' | 'ADMIN'
 type UserFilterRole = 'ALL' | AdminUserRole
+type TierOptionValue = '0' | '900' | '1650'
+type UserAccountUpdatePayload = {
+  email?: string
+  username?: string
+  password?: string
+  tierCents?: number | null
+}
 
 type UsersListResponse = {
   data: {
@@ -21,6 +28,7 @@ type UsersListResponse = {
       isBanned: boolean
       createdAt: string
       uploadsCount: number
+      tierCents: number | null
     }>
     pagination: {
       page: number
@@ -47,6 +55,18 @@ const formatDate = (isoDate: string) => {
   return new Date(isoDate).toISOString().slice(0, 10)
 }
 
+const mapTierCentsToOptionValue = (tierCents: number | null): TierOptionValue => {
+  if (tierCents !== null && tierCents >= 1650) {
+    return '1650'
+  }
+
+  if (tierCents !== null && tierCents >= 900) {
+    return '900'
+  }
+
+  return '0'
+}
+
 const mapRecordToTable = (record: UsersListResponse['data']['records'][number]): AdminUserTableRecord => {
   const status: AdminUserTableRecord['status'] = record.isBanned
     ? 'banned'
@@ -62,7 +82,8 @@ const mapRecordToTable = (record: UsersListResponse['data']['records'][number]):
     status,
     isEmailVerified: record.isEmailVerified,
     uploads: record.uploadsCount,
-    joined: formatDate(record.createdAt)
+    joined: formatDate(record.createdAt),
+    tierCents: record.tierCents
   }
 }
 
@@ -87,6 +108,12 @@ const UsersPage = () => {
   const [totalPages, setTotalPages] = useState(1)
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
   const [updatingBanUserId, setUpdatingBanUserId] = useState<string | null>(null)
+  const [editingUserId, setEditingUserId] = useState<string | null>(null)
+  const [editUsername, setEditUsername] = useState('')
+  const [editEmail, setEditEmail] = useState('')
+  const [editPassword, setEditPassword] = useState('')
+  const [editTierOption, setEditTierOption] = useState<TierOptionValue>('0')
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
 
   const itemsPerPage = 10
   const safeCurrentPage = Math.max(1, Math.min(currentPage, totalPages))
@@ -232,6 +259,69 @@ const UsersPage = () => {
     }
   }
 
+  const handleOpenEdit = (userId: string) => {
+    const selectedUser = userRecords.find((record) => record.id === userId)
+    if (!selectedUser) {
+      return
+    }
+
+    setEditingUserId(userId)
+    setEditUsername(selectedUser.username)
+    setEditEmail(selectedUser.email)
+    setEditPassword('')
+    setEditTierOption(mapTierCentsToOptionValue(selectedUser.tierCents))
+    setErrorMessage(null)
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingUserId) {
+      return
+    }
+
+    const payload: UserAccountUpdatePayload = {}
+    const username = editUsername.trim()
+    const email = editEmail.trim().toLowerCase()
+    const password = editPassword.trim()
+
+    if (username.length >= 3) {
+      payload.username = username
+    }
+    if (email.length > 0) {
+      payload.email = email
+    }
+    if (password.length > 0) {
+      payload.password = password
+    }
+    payload.tierCents = Number.parseInt(editTierOption, 10)
+
+    setIsSavingEdit(true)
+    setErrorMessage(null)
+    try {
+      const result = await apiPatch<{ data: { id: string; username: string; email: string; tierCents: number | null } }>(
+        `/users/${encodeURIComponent(editingUserId)}/account`,
+        payload
+      )
+
+      setUserRecords((previousRecords) =>
+        previousRecords.map((record) =>
+          record.id === result.data.id
+            ? {
+                ...record,
+                username: result.data.username,
+                email: result.data.email,
+                tierCents: result.data.tierCents
+              }
+            : record
+        )
+      )
+      setEditingUserId(null)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to update user details.')
+    } finally {
+      setIsSavingEdit(false)
+    }
+  }
+
   const visibleStart = userRecords.length === 0 ? 0 : (safeCurrentPage - 1) * itemsPerPage + 1
   const visibleEnd = Math.min(safeCurrentPage * itemsPerPage, totalEntriesCount)
 
@@ -249,7 +339,9 @@ const UsersPage = () => {
   return (
     <AdminPageShell activeKey="users">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="font-[family-name:var(--font-heading)] text-[29px] font-normal leading-none text-white">User Management</h1>
+        <h1 className="font-[family-name:var(--font-heading)] text-[22px] font-normal leading-tight text-white sm:text-[26px] md:text-[29px] md:leading-none">
+          User Management
+        </h1>
 
         <div className="flex w-full max-w-[520px] flex-col gap-3 sm:w-auto sm:flex-row">
           <label className="group inline-flex h-11 w-full items-center gap-2 rounded-lg border border-white/15 bg-[#0f1218]/95 px-3 text-[#6e809d] transition focus-within:border-ember-300 sm:w-[330px]">
@@ -285,29 +377,30 @@ const UsersPage = () => {
       ) : null}
 
       <section className="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-[#0b0f14]/95">
-        <div className="overflow-x-auto">
-          <table className="min-w-full">
+        <div className="-mx-px overflow-x-auto sm:mx-0">
+          <table className="min-w-[720px] w-full">
             <thead>
               <tr className="border-b border-white/10 bg-[#181b21]/85">
-                <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">User</th>
-                <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Role</th>
-                <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Status</th>
-                <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Uploads</th>
-                <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Joined</th>
-                <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Actions</th>
+                <th className="px-3 py-3 text-left text-[13px] font-normal text-[#8ea0bf] sm:px-4 sm:py-4 sm:text-[14px]">User</th>
+                <th className="px-3 py-3 text-left text-[13px] font-normal text-[#8ea0bf] sm:px-4 sm:py-4 sm:text-[14px]">Role</th>
+                <th className="px-3 py-3 text-left text-[13px] font-normal text-[#8ea0bf] sm:px-4 sm:py-4 sm:text-[14px]">Status</th>
+                <th className="px-3 py-3 text-left text-[13px] font-normal text-[#8ea0bf] sm:px-4 sm:py-4 sm:text-[14px]">Tier</th>
+                <th className="px-3 py-3 text-left text-[13px] font-normal text-[#8ea0bf] sm:px-4 sm:py-4 sm:text-[14px]">Uploads</th>
+                <th className="px-3 py-3 text-left text-[13px] font-normal text-[#8ea0bf] sm:px-4 sm:py-4 sm:text-[14px]">Joined</th>
+                <th className="px-3 py-3 text-left text-[13px] font-normal text-[#8ea0bf] sm:px-4 sm:py-4 sm:text-[14px]">Actions</th>
               </tr>
             </thead>
 
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-[#7c8aa3]">
+                  <td colSpan={7} className="px-3 py-10 text-center text-sm text-[#7c8aa3] sm:px-4">
                     Loading users...
                   </td>
                 </tr>
               ) : userRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-[#7c8aa3]">
+                  <td colSpan={7} className="px-3 py-10 text-center text-sm text-[#7c8aa3] sm:px-4">
                     No users found for your search.
                   </td>
                 </tr>
@@ -321,6 +414,7 @@ const UsersPage = () => {
                     currentAdminUserId={sessionUser?.id ?? null}
                     onUpdateRole={handleUpdateRole}
                     onToggleBan={handleToggleBan}
+                    onEditDetails={handleOpenEdit}
                   />
                 ))
               )}
@@ -355,6 +449,66 @@ const UsersPage = () => {
           </div>
         </div>
       </section>
+      {editingUserId ? (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 px-4 py-6" role="presentation">
+          <div className="mx-auto flex min-h-full w-full max-w-xl items-center justify-center">
+            <div className="w-full max-h-[calc(100dvh-3rem)] overflow-y-auto rounded-xl border border-white/15 bg-[#12161c] p-5">
+            <h2 className="font-[family-name:var(--font-heading)] text-[24px] font-normal text-white">Edit User Details</h2>
+            <p className="mt-1 text-sm text-[#8ea0bf]">Update account fields and assign membership tier.</p>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <input
+                value={editUsername}
+                onChange={(event) => setEditUsername(event.target.value)}
+                placeholder="Username"
+                className="h-11 rounded-md border border-white/20 bg-[#0b0f14] px-3 text-sm text-white outline-none focus:border-ember-300"
+              />
+              <input
+                value={editEmail}
+                onChange={(event) => setEditEmail(event.target.value)}
+                placeholder="Email"
+                className="h-11 rounded-md border border-white/20 bg-[#0b0f14] px-3 text-sm text-white outline-none focus:border-ember-300"
+              />
+              <input
+                value={editPassword}
+                onChange={(event) => setEditPassword(event.target.value)}
+                placeholder="New password (optional)"
+                type="password"
+                className="h-11 rounded-md border border-white/20 bg-[#0b0f14] px-3 text-sm text-white outline-none focus:border-ember-300"
+              />
+              <select
+                value={editTierOption}
+                onChange={(event) => setEditTierOption(event.target.value as TierOptionValue)}
+                className="h-11 rounded-md border border-white/20 bg-[#0b0f14] px-3 text-sm text-white outline-none focus:border-ember-300"
+                aria-label="Membership tier"
+              >
+                <option value="0">Free</option>
+                <option value="900">Basic</option>
+                <option value="1650">Premium</option>
+              </select>
+            </div>
+
+            <div className="mt-4 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleSaveEdit}
+                disabled={isSavingEdit}
+                className="inline-flex h-10 items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-black disabled:opacity-60"
+              >
+                {isSavingEdit ? 'Saving...' : 'Save'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingUserId(null)}
+                className="inline-flex h-10 items-center justify-center rounded-md border border-white/20 px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-white"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+          </div>
+        </div>
+      ) : null}
     </AdminPageShell>
   )
 }

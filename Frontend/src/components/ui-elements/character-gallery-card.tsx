@@ -84,38 +84,20 @@ const CharacterGalleryCard = ({
 }: CharacterGalleryCardProps) => {
   const isLocked = isPatreonGated && !hasGatedAccess
   const actionHref = isLocked ? '/members' : `/characters/${routeId}`
-  const actionLabel = isLocked ? 'Unlock on Patreon' : 'Chat Now'
+  const moderationActionLabel =
+    showModerationBadge && moderationStatus === 'PENDING'
+      ? 'Waiting Approval'
+      : showModerationBadge && moderationStatus === 'REJECTED'
+        ? 'Rejected'
+        : showModerationBadge && moderationStatus === 'DRAFT'
+          ? 'Draft'
+          : null
+  const actionLabel = moderationActionLabel ?? (isLocked ? 'Unlock on Patreon' : 'Chat Now')
+  const isStatusOnlyAction = moderationActionLabel !== null
   const tagChipLabel = toTagChipLabel(description)
-  const moderationBadge = (() => {
-    if (!showModerationBadge || !moderationStatus) {
-      return null
-    }
-    if (moderationStatus === 'PENDING') {
-      if (suppressPendingModerationBadge) {
-        return null
-      }
-      return {
-        label: 'Waiting Approval',
-        className: 'border-amber-200/45 bg-amber-300/20 text-amber-50'
-      }
-    }
-    if (moderationStatus === 'REJECTED') {
-      return {
-        label: 'Rejected',
-        className: 'border-rose-200/45 bg-rose-400/20 text-rose-50'
-      }
-    }
-    if (moderationStatus === 'DRAFT') {
-      return {
-        label: 'Draft',
-        className: 'border-slate-200/40 bg-slate-600/35 text-slate-50'
-      }
-    }
-    return null
-  })()
 
   return (
-    <article className="overflow-hidden rounded-[26px] border border-[#8a4f2b]/80 bg-[#111111] shadow-[0_18px_34px_rgba(0,0,0,0.4)]">
+    <article className="mx-auto w-3/4 overflow-hidden rounded-[26px] border border-[#8a4f2b]/80 bg-[#111111] shadow-[0_18px_34px_rgba(0,0,0,0.4)]">
       <div className={`relative aspect-[5/8.7] w-full ${previewImageUrl ? 'bg-black' : `bg-gradient-to-b ${gradientClassName}`}`}>
         {previewImageUrl ? (
           <>
@@ -153,32 +135,30 @@ const CharacterGalleryCard = ({
             {isLocked ? `Locked | ${formatTierLabel(requiredTierCents)}` : 'Patreon unlocked'}
           </div>
         ) : null}
-        {moderationBadge ? (
-          <div
-            className={`absolute left-3 ${isPatreonGated ? 'top-11' : 'top-3'} rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] ${moderationBadge.className}`}
-          >
-            {moderationBadge.label}
-          </div>
-        ) : null}
-
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#f28b45]/95 via-[#f28b45]/60 to-transparent px-5 pb-6 pt-20">
           <div className="flex justify-center">
             <span className="inline-flex h-6 items-center rounded-md border border-white/30 bg-white/15 px-2 text-[10px] font-bold uppercase tracking-[0.1em] text-white/95">
               {tagChipLabel}
             </span>
           </div>
-          <p className="mt-2 text-center font-[family-name:var(--font-heading)] text-[24px] font-semibold italic leading-none tracking-[-0.01em] text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.5)]">
+          <p className="mt-2 text-center font-[family-name:var(--font-heading)] text-[16px] font-normal italic leading-none tracking-[-0.01em] text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.5)]">
             {name}
           </p>
           <div className="mt-4 flex justify-center">
-            <Link
-              href={actionHref}
-              onClick={onActionClick}
-              className="inline-flex h-[37px] min-w-[147px] items-center justify-center rounded-xl border border-black/20 bg-[#201410]/90 px-4 font-[family-name:var(--font-heading)] text-[12px] font-semibold italic uppercase leading-none tracking-[0.02em] text-white transition hover:bg-[#2a1a14]"
-              aria-label={`${actionLabel} for ${name}`}
-            >
-              {actionLabel}
-            </Link>
+            {isStatusOnlyAction ? (
+              <span className="inline-flex h-[37px] min-w-[147px] items-center justify-center rounded-xl border border-black/20 bg-[#201410]/90 px-4 font-[family-name:var(--font-heading)] text-[12px] font-semibold italic uppercase leading-none tracking-[0.02em] text-white/90">
+                {actionLabel}
+              </span>
+            ) : (
+              <Link
+                href={actionHref}
+                onClick={onActionClick}
+                className="inline-flex h-[37px] min-w-[147px] items-center justify-center rounded-xl border border-black/20 bg-[#201410]/90 px-4 font-[family-name:var(--font-heading)] text-[12px] font-semibold italic uppercase leading-none tracking-[0.02em] text-white transition hover:bg-[#2a1a14]"
+                aria-label={`${actionLabel} for ${name}`}
+              >
+                {actionLabel}
+              </Link>
+            )}
           </div>
         </div>
       </div>

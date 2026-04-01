@@ -18,8 +18,8 @@ const AdminActivityItem = ({ message, timeLabel, tone }: AdminActivityItemProps)
     <article className="border-b border-white/10 py-5 last:border-b-0">
       <div className="flex items-start gap-4">
         <span className={`mt-2 inline-flex size-2 rounded-full ${bulletClassNameMap[tone]}`} aria-hidden="true" />
-        <div>
-          <p className="text-sm leading-6 text-white/88">{message}</p>
+        <div className="min-w-0 flex-1">
+          <p className="break-words text-sm leading-6 text-white/88">{message}</p>
           <p className="mt-1 text-xs text-[#6f7e99]">{timeLabel}</p>
         </div>
       </div>

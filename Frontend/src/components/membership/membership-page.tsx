@@ -13,8 +13,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 const PatreonIcon = ({ className = 'size-4' }: { className?: string }) => (
   <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-    <circle cx="15.2" cy="8.9" r="5.3" fill="currentColor" />
-    <rect x="4.6" y="3.6" width="3.9" height="16.8" rx="1.5" fill="currentColor" />
+    <path
+      d="M13.2 2.2C17.9 2.2 21.2 5 21.2 9.2C21.2 13.9 18.1 16.4 13.9 17.1C11.7 17.5 10.2 18.7 9.3 20.8C8.4 22.9 7.2 23.9 5.4 23.9C2.8 23.9 1.1 21.6 1.1 18.1V9.2C1.1 4.7 3.3 2.2 7.2 2.2C8.2 2.2 9.1 2.2 10.1 2.2C11.2 2.2 12.2 2.2 13.2 2.2Z"
+      fill="currentColor"
+    />
   </svg>
 )
 
@@ -383,11 +385,27 @@ const MembershipPage = () => {
     just_models_900: 'Tier 1 active: models pack and polls',
     secretwaifu_1650: 'Tier 2 active: full SecretWaifu access'
   }
+  const tierRankMap: Record<MembershipTier, number> = {
+    free: 0,
+    just_models_900: 1,
+    secretwaifu_1650: 2
+  }
+  const currentTierRank = tierRankMap[currentTier]
+  const getTierFooterLabel = (tier: MembershipTier) => {
+    const tierRank = tierRankMap[tier]
+    if (tierRank === currentTierRank) {
+      return 'Current tier'
+    }
+    if (tierRank > currentTierRank) {
+      return 'Upgrade available'
+    }
+    return 'Included in your tier'
+  }
   const supportActionHref = membershipAccessState === 'connected-inactive' ? secretwaifuTierUrl : patreonExternalUrl
   const isSupportActionExternal = supportActionHref.startsWith('http')
 
   return (
-    <main className="relative overflow-hidden bg-[#030303] text-white">
+    <main className="relative overflow-x-hidden bg-[#030303] text-white">
       <section className="relative min-h-[calc(100vh-150px)] border-b border-white/10 px-5 py-10 md:px-8">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_44%_0%,rgba(244,99,19,0.12),transparent_38%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.09)_1px,transparent_1px)] [background-size:22px_22px] opacity-50" />
@@ -405,7 +423,7 @@ const MembershipPage = () => {
             </p>
           ) : null}
 
-          <div className="mt-10 grid gap-8 lg:grid-cols-[380px_1fr] lg:items-start">
+          <div className="mt-10 grid min-w-0 gap-8 lg:grid-cols-[380px_1fr] lg:items-start">
             <AccountSideMenu activeKey="membership" />
 
             <MaintenanceWorkspaceGate>
@@ -523,9 +541,8 @@ const MembershipPage = () => {
                     'Submit public reviews and hearts',
                     'Use account profile and favorites'
                   ]}
-                  ctaLabel="Use Free"
-                  ctaHref="/characters"
                   isCurrentTier={currentTier === 'free'}
+                  footerLabel={getTierFooterLabel('free')}
                 />
                 <MembershipTierCard
                   tierName="Just Our Models"
@@ -542,6 +559,7 @@ const MembershipPage = () => {
                   ctaLabel="Select"
                   ctaHref={modelsTierUrl}
                   isCurrentTier={currentTier === 'just_models_900'}
+                  footerLabel={getTierFooterLabel('just_models_900')}
                 />
                 <MembershipTierCard
                   tierName="SecretWaifu Access"
@@ -559,6 +577,7 @@ const MembershipPage = () => {
                   ctaHref={secretwaifuTierUrl}
                   isMostPopular
                   isCurrentTier={currentTier === 'secretwaifu_1650'}
+                  footerLabel={getTierFooterLabel('secretwaifu_1650')}
                 />
               </div>
 

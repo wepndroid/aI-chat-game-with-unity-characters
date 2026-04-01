@@ -17,7 +17,7 @@ const RouteAccessGuard = ({ children, requiredRole, requireVerifiedEmail = false
 
   if (isAuthLoading) {
     return (
-      <main className="relative overflow-hidden bg-[#030303] text-white">
+      <main className="relative overflow-x-hidden bg-[#030303] text-white">
         <section className="relative min-h-[calc(100vh-140px)] border-b border-white/10 px-5 py-10 md:px-8">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(244,99,19,0.12),transparent_35%)]" />
           <div className="relative z-10 mx-auto flex w-full max-w-[900px] items-center justify-center pt-28">
@@ -32,7 +32,7 @@ const RouteAccessGuard = ({ children, requiredRole, requireVerifiedEmail = false
 
   if (!sessionUser) {
     return (
-      <main className="relative overflow-hidden bg-[#030303] text-white">
+      <main className="relative overflow-x-hidden bg-[#030303] text-white">
         <section className="relative min-h-[calc(100vh-140px)] border-b border-white/10 px-5 py-10 md:px-8">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(244,99,19,0.12),transparent_35%)]" />
           <div className="relative z-10 mx-auto w-full max-w-[900px] pt-24">
@@ -69,7 +69,7 @@ const RouteAccessGuard = ({ children, requiredRole, requireVerifiedEmail = false
 
   if (requiredRole && sessionUser.role !== requiredRole) {
     return (
-      <main className="relative overflow-hidden bg-[#030303] text-white">
+      <main className="relative overflow-x-hidden bg-[#030303] text-white">
         <section className="relative min-h-[calc(100vh-140px)] border-b border-white/10 px-5 py-10 md:px-8">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(244,99,19,0.12),transparent_35%)]" />
           <div className="relative z-10 mx-auto w-full max-w-[900px] pt-24">
@@ -115,7 +115,7 @@ const RouteAccessGuard = ({ children, requiredRole, requireVerifiedEmail = false
 
   if (requireVerifiedEmail && !sessionUser.isEmailVerified) {
     return (
-      <main className="relative overflow-hidden bg-[#030303] text-white">
+      <main className="relative overflow-x-hidden bg-[#030303] text-white">
         <section className="relative min-h-[calc(100vh-140px)] border-b border-white/10 px-5 py-10 md:px-8">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(244,99,19,0.12),transparent_35%)]" />
           <div className="relative z-10 mx-auto w-full max-w-[900px] pt-24">

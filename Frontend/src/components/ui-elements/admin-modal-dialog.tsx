@@ -68,7 +68,7 @@ const AdminModalDialog = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto overscroll-contain p-4 py-8 sm:items-center sm:py-10"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
@@ -82,7 +82,7 @@ const AdminModalDialog = ({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
-        className="relative z-10 w-full max-w-md rounded-2xl border border-ember-800/55 bg-[#0f141c] p-6 shadow-[0_24px_64px_rgba(0,0,0,0.55)]"
+        className="relative z-10 my-auto w-full max-w-md max-h-[min(90dvh,720px)] overflow-y-auto rounded-2xl border border-ember-800/55 bg-[#0f141c] p-5 shadow-[0_24px_64px_rgba(0,0,0,0.55)] sm:p-6"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <h2 id={titleId} className="font-[family-name:var(--font-heading)] text-xl font-normal leading-tight text-white">
@@ -91,22 +91,24 @@ const AdminModalDialog = ({
         <p id={descriptionId} className="mt-3 text-sm leading-6 text-[#a8b6d0]">
           {message}
         </p>
-        <div className={`mt-6 flex justify-end gap-2 ${isConfirm ? '' : ''}`}>
+        <div
+          className={`mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end ${isConfirm ? '' : ''}`}
+        >
           {isConfirm ? (
             <>
               <button
                 type="button"
-                className="rounded-lg border border-white/15 bg-transparent px-4 py-2 text-sm font-normal text-[#c5d0e4] transition hover:bg-white/5 hover:text-white"
+                className="w-full rounded-lg border border-white/15 bg-transparent px-4 py-2.5 text-sm font-normal text-[#c5d0e4] transition hover:bg-white/5 hover:text-white sm:w-auto"
                 onClick={onClose}
               >
                 {cancelLabel}
               </button>
-              <button type="button" className={confirmClassName} onClick={handlePrimaryClick}>
+              <button type="button" className={`${confirmClassName} w-full sm:w-auto`} onClick={handlePrimaryClick}>
                 {confirmLabel}
               </button>
             </>
           ) : (
-            <button type="button" className={confirmClassName} onClick={onClose}>
+            <button type="button" className={`${confirmClassName} w-full sm:w-auto`} onClick={onClose}>
               {confirmLabel}
             </button>
           )}

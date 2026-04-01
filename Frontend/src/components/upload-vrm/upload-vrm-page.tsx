@@ -28,6 +28,9 @@ type UploadVrmFormState = {
   vroidFileUrl: string
   previewImageUrl: string
   description: string
+  personality: string
+  scenario: string
+  exampleDialogs: string
   firstMessageText: string
   isPublic: boolean
 }
@@ -38,6 +41,9 @@ const initialFormState: UploadVrmFormState = {
   vroidFileUrl: '',
   previewImageUrl: '',
   description: '',
+  personality: '',
+  scenario: '',
+  exampleDialogs: '',
   firstMessageText: '',
   isPublic: false
 }
@@ -68,6 +74,69 @@ const UploadVrmPage = () => {
   }
 
   const pageHeadingLabel = useMemo(() => (isEditing ? 'Edit VRM Character' : 'Upload VRM'), [isEditing])
+
+  const personalityFilled = formState.personality.trim().length > 0
+  const scenarioFilled = formState.scenario.trim().length > 0
+  const exampleDialogsFilled = formState.exampleDialogs.trim().length > 0
+
+  const canSubmitForm = useMemo(() => {
+    if (isEditLoading) {
+      return false
+    }
+
+    const normalizedName = formState.fullName.trim()
+    if (normalizedName.length < 2) {
+      return false
+    }
+
+    const existingVroidUrl = formState.vroidFileUrl.trim()
+    if (!isEditing && !vrmFile) {
+      return false
+    }
+    if (isEditing && !vrmFile && !existingVroidUrl) {
+      return false
+    }
+
+    const hasPreview = Boolean(previewImageFile) || formState.previewImageUrl.trim().length > 0
+    if (!hasPreview) {
+      return false
+    }
+
+    if (!formState.tagLine.trim()) {
+      return false
+    }
+    if (!formState.description.trim()) {
+      return false
+    }
+
+    if (!personalityFilled || !scenarioFilled || !exampleDialogsFilled) {
+      return false
+    }
+
+    const sanitizedFirstMessage = sanitizeFirstMessageHtml(formState.firstMessageText.trim())
+    if (sanitizedFirstMessage.length > FIRST_MESSAGE_MAX_LENGTH) {
+      return false
+    }
+    if (isEmptyFirstMessageHtml(sanitizedFirstMessage)) {
+      return false
+    }
+
+    return true
+  }, [
+    isEditLoading,
+    isEditing,
+    vrmFile,
+    previewImageFile,
+    formState.fullName,
+    formState.vroidFileUrl,
+    formState.previewImageUrl,
+    formState.tagLine,
+    formState.description,
+    formState.firstMessageText,
+    personalityFilled,
+    scenarioFilled,
+    exampleDialogsFilled
+  ])
 
 
   useEffect(() => {
@@ -109,6 +178,9 @@ const UploadVrmPage = () => {
           vroidFileUrl: payload.data.vroidFileUrl ?? '',
           previewImageUrl: loadedPreviewUrl,
           description: payload.data.description ?? '',
+          personality: payload.data.personality ?? '',
+          scenario: payload.data.scenario ?? '',
+          exampleDialogs: payload.data.exampleDialogs ?? '',
           firstMessageText: firstMessageToEditorHtml(payload.data.firstMessage ?? ''),
           isPublic: payload.data.visibility === 'PUBLIC'
         })
@@ -158,6 +230,40 @@ const UploadVrmPage = () => {
       return
     }
 
+    if (!previewImageFile && !formState.previewImageUrl.trim()) {
+      setErrorMessage('Please add a preview image.')
+      setStatusMessage(null)
+      return
+    }
+
+    if (!formState.tagLine.trim()) {
+      setErrorMessage('Please enter a tag line.')
+      setStatusMessage(null)
+      return
+    }
+
+    if (!formState.description.trim()) {
+      setErrorMessage('Please enter a description.')
+      setStatusMessage(null)
+      return
+    }
+
+    if (!personalityFilled || !scenarioFilled || !exampleDialogsFilled) {
+      const missing: string[] = []
+      if (!personalityFilled) {
+        missing.push('personality')
+      }
+      if (!scenarioFilled) {
+        missing.push('scenario')
+      }
+      if (!exampleDialogsFilled) {
+        missing.push('example dialogs')
+      }
+      setErrorMessage(`Please fill in: ${missing.join(', ')}.`)
+      setStatusMessage(null)
+      return
+    }
+
     const sanitizedFirstMessage = sanitizeFirstMessageHtml(formState.firstMessageText.trim())
 
     if (sanitizedFirstMessage.length > FIRST_MESSAGE_MAX_LENGTH) {
@@ -168,7 +274,13 @@ const UploadVrmPage = () => {
       return
     }
 
-    const firstMessageForApi: string | null = isEmptyFirstMessageHtml(sanitizedFirstMessage) ? null : sanitizedFirstMessage
+    if (isEmptyFirstMessageHtml(sanitizedFirstMessage)) {
+      setErrorMessage('Please enter a first message.')
+      setStatusMessage(null)
+      return
+    }
+
+    const firstMessageForApi: string = sanitizedFirstMessage
 
     setIsSubmitting(true)
     setErrorMessage(null)
@@ -200,11 +312,18 @@ const UploadVrmPage = () => {
         }
       }
 
+      const personalityText = formState.personality.trim()
+      const scenarioText = formState.scenario.trim()
+      const exampleDialogsText = formState.exampleDialogs.trim()
+
       const basePayload = {
         name: normalizedName,
         fullName: normalizedName,
         tagline: formState.tagLine.trim() || null,
         description: formState.description.trim() || null,
+        personality: personalityText,
+        scenario: scenarioText,
+        exampleDialogs: exampleDialogsText,
         firstMessage: firstMessageForApi,
         vroidFileUrl: vroidUrl || null,
         previewImageUrl: previewUrl || null
@@ -223,7 +342,10 @@ const UploadVrmPage = () => {
             fullName: normalizedName,
             tagline: formState.tagLine.trim() || undefined,
             description: formState.description.trim() || undefined,
-            firstMessage: firstMessageForApi || undefined,
+            personality: personalityText,
+            scenario: scenarioText,
+            exampleDialogs: exampleDialogsText,
+            firstMessage: firstMessageForApi,
             vroidFileUrl: vroidUrl || undefined,
             previewImageUrl: previewUrl || undefined,
             visibility: 'PUBLIC',
@@ -246,7 +368,10 @@ const UploadVrmPage = () => {
             fullName: normalizedName,
             tagline: formState.tagLine.trim() || undefined,
             description: formState.description.trim() || undefined,
-            firstMessage: firstMessageForApi || undefined,
+            personality: personalityText,
+            scenario: scenarioText,
+            exampleDialogs: exampleDialogsText,
+            firstMessage: firstMessageForApi,
             vroidFileUrl: vroidUrl || undefined,
             previewImageUrl: previewUrl || undefined,
             draft: true
@@ -267,7 +392,10 @@ const UploadVrmPage = () => {
             fullName: normalizedName,
             tagline: formState.tagLine.trim() || undefined,
             description: formState.description.trim() || undefined,
-            firstMessage: firstMessageForApi || undefined,
+            personality: personalityText,
+            scenario: scenarioText,
+            exampleDialogs: exampleDialogsText,
+            firstMessage: firstMessageForApi,
             vroidFileUrl: vroidUrl || undefined,
             previewImageUrl: previewUrl || undefined,
             visibility
@@ -297,7 +425,7 @@ const UploadVrmPage = () => {
   }
 
   return (
-    <main className="relative overflow-hidden bg-[#030303] text-white">
+    <main className="relative overflow-x-hidden bg-[#030303] text-white">
       <section className="relative min-h-[calc(100vh-150px)] border-b border-white/10 px-5 py-10 md:px-8">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_44%_0%,rgba(244,99,19,0.12),transparent_38%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.09)_1px,transparent_1px)] [background-size:22px_22px] opacity-50" />
@@ -307,7 +435,7 @@ const UploadVrmPage = () => {
             {pageHeadingLabel}
           </h1>
 
-          <div className="mt-10 grid gap-8 lg:grid-cols-[380px_1fr] lg:items-start">
+          <div className="mt-10 grid min-w-0 gap-8 lg:grid-cols-[380px_1fr] lg:items-start">
             <AccountSideMenu activeKey="upload-vrm" />
 
             <MaintenanceWorkspaceGate>
@@ -355,33 +483,89 @@ const UploadVrmPage = () => {
               </div>
 
 
-              <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                <UploadField label="Full Name" value={formState.fullName} onChange={(value) => handleFieldChange('fullName', value)} />
-                <UploadField label="Tag line" value={formState.tagLine} onChange={(value) => handleFieldChange('tagLine', value)} />
+              <div className="mt-5 grid gap-6 sm:grid-cols-2">
+                <UploadField
+                  label="Full Name"
+                  value={formState.fullName}
+                  onChange={(value) => handleFieldChange('fullName', value)}
+                  tokenLimit={120}
+                  maxLength={120}
+                  disabled={isEditLoading}
+                />
+                <UploadField
+                  label="Tag line"
+                  value={formState.tagLine}
+                  onChange={(value) => handleFieldChange('tagLine', value)}
+                  tokenLimit={160}
+                  maxLength={160}
+                  disabled={isEditLoading}
+                />
               </div>
 
-              <div className="mt-4">
+              <div className="mt-6">
                 <UploadField
                   label="Description"
                   value={formState.description}
                   onChange={(value) => handleFieldChange('description', value)}
-                  accentBorder
+                  multiline
+                  rows={4}
+                  tokenLimit={5000}
+                  maxLength={5000}
+                  disabled={isEditLoading}
+                />
+              </div>
+
+              <div className="mt-6 space-y-6">
+                <UploadField
+                  label="Personality"
+                  value={formState.personality}
+                  onChange={(value) => handleFieldChange('personality', value)}
+                  multiline
+                  rows={4}
+                  tokenLimit={8000}
+                  maxLength={8000}
+                  placeholder="How the character thinks, speaks, and reacts…"
+                  disabled={isEditLoading}
+                />
+                <UploadField
+                  label="Scenario"
+                  value={formState.scenario}
+                  onChange={(value) => handleFieldChange('scenario', value)}
+                  multiline
+                  rows={4}
+                  tokenLimit={8000}
+                  maxLength={8000}
+                  placeholder="Setting, situation, or roleplay context…"
+                  disabled={isEditLoading}
+                />
+                <UploadField
+                  label="Example dialogs"
+                  value={formState.exampleDialogs}
+                  onChange={(value) => handleFieldChange('exampleDialogs', value)}
+                  multiline
+                  rows={5}
+                  tokenLimit={12000}
+                  maxLength={12000}
+                  placeholder="Sample exchanges (e.g. User: … / Character: …)"
+                  disabled={isEditLoading}
                 />
               </div>
 
               <div className="mt-4">
                 <div className="rounded-md border border-white/10 bg-black/25 p-4 md:p-5">
                   <div className="mb-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-white/50">First message</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-white/50">
+                      First message <span className="font-normal normal-case text-white/35">(required)</span>
+                    </p>
                     <p id="first-message-help" className="mt-1.5 text-[11px] leading-relaxed text-white/40">
-                      Rich text: select text and set <span className="text-white/55">font</span>, <span className="text-white/55">color</span>, bold,
-                      italic, and more. The preview shows the same HTML as the character page. Older characters stored as plain text still work; they
-                      are converted when you open edit. Leave the editor empty for no opening message.
+                      Required. Rich text: select text and set <span className="text-white/55">font</span>, <span className="text-white/55">color</span>,
+                      bold, italic, and more. The preview shows the same HTML as the character page. Older characters stored as plain text still work;
+                      they are converted when you open edit.
                     </p>
                   </div>
 
                   <label className="sr-only" htmlFor="upload-vrm-first-message">
-                    First message text
+                    First message text (required)
                   </label>
                   <FirstMessageRichEditor
                     id="upload-vrm-first-message"
@@ -401,15 +585,14 @@ const UploadVrmPage = () => {
               </div>
 
               {!isAdmin ? (
-                <label className="mt-5 inline-flex cursor-pointer items-center gap-2">
+                <label className="mt-5 inline-flex cursor-pointer items-center gap-3">
                   <input
                     type="checkbox"
                     checked={formState.isPublic}
                     onChange={(event) => handleFieldChange('isPublic', event.target.checked)}
-                    className="size-4 rounded border border-white/30 bg-transparent text-ember-400 focus:ring-ember-300"
                     aria-label="Make character public"
                   />
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/55">Make Character Public</span>
+                  <span className="text-sm font-medium text-white/70">Make Character Public</span>
                 </label>
               ) : null}
 
@@ -430,18 +613,18 @@ const UploadVrmPage = () => {
                   <>
                     <button
                       type="button"
-                      className="inline-flex h-11 min-w-[180px] items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-6 text-[12px] font-bold uppercase tracking-[0.08em] text-white transition hover:brightness-110"
+                      className="inline-flex h-11 min-w-[180px] items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-6 text-[12px] font-bold uppercase tracking-[0.08em] text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:from-neutral-600 disabled:to-neutral-700 disabled:text-white/55 disabled:hover:brightness-100"
                       aria-label="Submit and publish to gallery"
-                      disabled={isSubmitting || isEditLoading}
+                      disabled={isSubmitting || !canSubmitForm}
                       onClick={() => void handleSave(null, 'admin-publish')}
                     >
                       {isSubmitting ? 'Saving...' : 'Submit'}
                     </button>
                     <button
                       type="button"
-                      className="inline-flex h-11 min-w-[180px] items-center justify-center rounded-md border border-white/25 bg-transparent px-6 text-[12px] font-bold uppercase tracking-[0.08em] text-white/90 transition hover:border-white/40 hover:bg-white/5"
+                      className="inline-flex h-11 min-w-[180px] items-center justify-center rounded-md border border-white/25 bg-transparent px-6 text-[12px] font-bold uppercase tracking-[0.08em] text-white/90 transition hover:border-white/40 hover:bg-white/5 disabled:cursor-not-allowed disabled:border-white/12 disabled:text-white/35 disabled:hover:border-white/12 disabled:hover:bg-transparent"
                       aria-label="Save as draft"
-                      disabled={isSubmitting || isEditLoading}
+                      disabled={isSubmitting || !canSubmitForm}
                       onClick={() => void handleSave(null, 'admin-draft')}
                     >
                       {isSubmitting ? 'Saving...' : 'Draft'}
@@ -450,9 +633,9 @@ const UploadVrmPage = () => {
                 ) : (
                   <button
                     type="submit"
-                    className="inline-flex h-11 min-w-[220px] items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-6 text-[12px] font-bold uppercase tracking-[0.08em] text-white transition hover:brightness-110"
+                    className="inline-flex h-11 min-w-[220px] items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-6 text-[12px] font-bold uppercase tracking-[0.08em] text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:from-neutral-600 disabled:to-neutral-700 disabled:text-white/55 disabled:hover:brightness-100"
                     aria-label="Submit VRM upload"
-                    disabled={isSubmitting || isEditLoading}
+                    disabled={isSubmitting || !canSubmitForm}
                   >
                     {isSubmitting ? 'Submitting...' : isEditing ? 'Save Changes' : 'Submit'}
                   </button>

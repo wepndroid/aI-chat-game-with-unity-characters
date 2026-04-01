@@ -3,10 +3,12 @@ type UploadFieldProps = {
   value: string
   onChange: (value: string) => void
   multiline?: boolean
+  rows?: number
+  /** When set, shows "current / max tokens" on the right of the label row. */
   tokenLimit?: number
   maxLength?: number
-  accentBorder?: boolean
   placeholder?: string
+  disabled?: boolean
 }
 
 const UploadField = ({
@@ -14,26 +16,36 @@ const UploadField = ({
   value,
   onChange,
   multiline = false,
+  rows = 2,
   tokenLimit,
   maxLength,
-  accentBorder = false,
-  placeholder = ''
+  placeholder = '',
+  disabled = false
 }: UploadFieldProps) => {
-  const tokenCounter = tokenLimit ? `${Math.min(value.length, tokenLimit)} / ${tokenLimit} tokens` : null
-  const borderClassName = accentBorder ? 'border-ember-400/60' : 'border-white/20'
+  const counterText =
+    tokenLimit !== undefined ? `${value.length} / ${tokenLimit} tokens` : null
+
+  const inputClassName =
+    'w-full rounded-[10px] border border-white/15 bg-[#0b0b0b] px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-white/35 ' +
+    'group-hover:border-ember-400/75 hover:border-ember-400/75 focus-visible:border-ember-400/90 focus-visible:ring-1 focus-visible:ring-ember-400/25 ' +
+    'disabled:cursor-not-allowed disabled:opacity-50 disabled:group-hover:border-white/15 disabled:hover:border-white/15'
 
   return (
-    <label className="block">
-      <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-white/45">{label}</span>
+    <label className="group block">
+      <div className="mb-1.5 flex items-baseline justify-between gap-3">
+        <span className="text-sm font-normal text-white/70">{label}</span>
+        {counterText ? <span className="shrink-0 text-[10px] font-normal text-white/40">{counterText}</span> : null}
+      </div>
       <div className="relative">
         {multiline ? (
           <textarea
             value={value}
             onChange={(event) => onChange(event.target.value)}
-            rows={2}
+            rows={rows}
             placeholder={placeholder}
             maxLength={maxLength}
-            className={`w-full resize-none rounded-md border bg-black/20 px-3 py-2 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-ember-300 focus:ring-1 focus:ring-ember-300/30 ${borderClassName}`}
+            disabled={disabled}
+            className={`${inputClassName} min-h-[120px] resize-y`}
           />
         ) : (
           <input
@@ -42,10 +54,10 @@ const UploadField = ({
             onChange={(event) => onChange(event.target.value)}
             placeholder={placeholder}
             maxLength={maxLength}
-            className={`w-full rounded-md border bg-black/20 px-3 py-2 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-ember-300 focus:ring-1 focus:ring-ember-300/30 ${borderClassName}`}
+            disabled={disabled}
+            className={`${inputClassName} h-11`}
           />
         )}
-        {tokenCounter ? <span className="absolute right-2 top-1 text-[10px] font-semibold text-white/35">{tokenCounter}</span> : null}
       </div>
     </label>
   )

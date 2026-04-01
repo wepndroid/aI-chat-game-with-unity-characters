@@ -1,7 +1,7 @@
- 'use client'
- 
+'use client'
+
 import { useEffect, useId, useMemo, useState } from 'react'
- import { createPortal } from 'react-dom'
+import { createPortal } from 'react-dom'
  
  type ScanOverall = 'passed' | 'flagged'
 
@@ -158,7 +158,7 @@ const parseIssuesFromReportJson = (reportJson: unknown): ParsedIssue[] => {
 
    return createPortal(
      <div
-       className="fixed inset-0 z-[210] flex items-center justify-center p-4"
+       className="fixed inset-0 z-[210] flex items-start justify-center overflow-y-auto overscroll-contain p-4 py-8 sm:items-center sm:py-10"
        role="presentation"
        onMouseDown={(event) => {
          if (event.target === event.currentTarget) {
@@ -172,7 +172,7 @@ const parseIssuesFromReportJson = (reportJson: unknown): ParsedIssue[] => {
          aria-modal="true"
          aria-labelledby={titleId}
          aria-describedby={descriptionId}
-         className="relative z-10 w-full max-w-2xl rounded-2xl border border-ember-800/55 bg-[#0f141c] p-6 shadow-[0_24px_64px_rgba(0,0,0,0.55)]"
+         className="relative z-10 my-auto w-full max-w-2xl max-h-[min(92dvh,900px)] overflow-y-auto rounded-2xl border border-ember-800/55 bg-[#0f141c] p-5 shadow-[0_24px_64px_rgba(0,0,0,0.55)] sm:p-6"
          onMouseDown={(event) => event.stopPropagation()}
        >
          <div className="flex flex-wrap items-start justify-between gap-3">
@@ -256,8 +256,8 @@ const parseIssuesFromReportJson = (reportJson: unknown): ParsedIssue[] => {
            ) : null}
          </div>
  
-         <div className="mt-6 flex justify-end">
-           <button type="button" className={closeButtonClassName} onClick={onClose}>
+         <div className="mt-6 flex justify-stretch sm:justify-end">
+           <button type="button" className={`${closeButtonClassName} w-full sm:w-auto`} onClick={onClose}>
              Close
            </button>
          </div>

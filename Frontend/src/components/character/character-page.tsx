@@ -171,6 +171,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
   const [reviewActionMessage, setReviewActionMessage] = useState<string | null>(null)
   const threePreviewContainerReference = useRef<HTMLDivElement | null>(null)
   const [threePreviewContainerRevision, setThreePreviewContainerRevision] = useState(0)
+  const orbitControlsReference = useRef<import('three/examples/jsm/controls/OrbitControls.js').OrbitControls | null>(null)
 
   const previewContainerRef = useCallback((node: HTMLDivElement | null) => {
     threePreviewContainerReference.current = node
@@ -494,7 +495,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
       }
 
       try {
-        const [{ Color, Scene, PerspectiveCamera, WebGLRenderer, DirectionalLight, AmbientLight, Clock }, vrmRuntime, { OrbitControls }] = await Promise.all([
+        const [{ Color, Scene, PerspectiveCamera, WebGLRenderer, DirectionalLight, AmbientLight, Clock, Box3, Vector3, MathUtils }, vrmRuntime, { OrbitControls }] = await Promise.all([
           import('three'),
           loadVrmRuntime(),
           import('three/examples/jsm/controls/OrbitControls.js')
@@ -524,12 +525,23 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
         containerElement.appendChild(canvasElement)
 
         orbitControls = new OrbitControls(camera, canvasElement)
+        orbitControlsReference.current = orbitControls
         orbitControls.target.set(0, 1, 0)
         orbitControls.enableDamping = true
         orbitControls.dampingFactor = 0.08
-        orbitControls.minDistance = 0.6
-        orbitControls.maxDistance = 6
+        orbitControls.autoRotate = true
+        orbitControls.autoRotateSpeed = 2
+        orbitControls.minDistance = 0.4
+        orbitControls.maxDistance = 8
         orbitControls.maxPolarAngle = Math.PI * 0.92
+        const stopAutoRotateOnUserInteraction = () => {
+          if (!orbitControls) {
+            return
+          }
+          orbitControls.autoRotate = false
+          orbitControls.removeEventListener('start', stopAutoRotateOnUserInteraction)
+        }
+        orbitControls.addEventListener('start', stopAutoRotateOnUserInteraction)
 
         const keyLight = new DirectionalLight('#ffffff', 1.2)
         keyLight.position.set(1, 1.5, 2)
@@ -602,8 +614,27 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
           throw new Error('No VRM model could be parsed from this file.')
         }
 
-        vrmInstance.scene.rotation.y = Math.PI
+        vrmInstance.scene.rotation.y = 0
         scene.add(vrmInstance.scene)
+
+        // Auto-fit camera/controls to model bounds so the avatar fills the preview area.
+        const bounds = new Box3().setFromObject(vrmInstance.scene)
+        const size = bounds.getSize(new Vector3())
+        const center = bounds.getCenter(new Vector3())
+        const maxDimension = Math.max(size.x, size.y, size.z, 0.01)
+        const verticalFitDistance = (size.y * 0.5) / Math.tan(MathUtils.degToRad(camera.fov * 0.5))
+        const fitDistance = Math.max(verticalFitDistance, maxDimension * 0.65)
+
+        camera.near = Math.max(maxDimension / 500, 0.01)
+        camera.far = Math.max(maxDimension * 30, 20)
+        camera.position.set(center.x, center.y + size.y * 0.1, center.z + fitDistance * 1.15)
+        camera.lookAt(center)
+        camera.updateProjectionMatrix()
+
+        orbitControls.target.copy(center)
+        orbitControls.minDistance = Math.max(fitDistance * 0.55, 0.15)
+        orbitControls.maxDistance = Math.max(fitDistance * 3.2, orbitControls.minDistance + 0.5)
+        orbitControls.update()
 
         const clock = new Clock()
 
@@ -644,6 +675,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
       window.cancelAnimationFrame(frameRequestId)
       resizeObserver?.disconnect()
       orbitControls?.dispose()
+      orbitControlsReference.current = null
       orbitControls = null
       renderer?.dispose()
       containerElement.innerHTML = ''
@@ -665,14 +697,14 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
   }, [isThreePreviewExpanded])
 
   return (
-    <main className="relative overflow-hidden bg-[#030303] text-white">
+    <main className="relative overflow-x-hidden bg-[#030303] text-white">
       <section className="relative border-b border-white/10 px-5 py-10 md:px-8">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(244,99,19,0.12),transparent_35%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:22px_22px] opacity-45" />
 
         <div className="relative z-10 mx-auto w-full max-w-[1150px] pt-24">
-          <h1 className="text-center font-[family-name:var(--font-heading)] text-5xl font-semibold italic text-white md:text-[62px]">
-            AI Girlfriend
+          <h1 className="text-center font-[family-name:var(--font-heading)] text-4xl font-semibold italic text-white md:text-[46px]">
+            {characterRecord ? `AI Girlfriend : ${characterRecord.name}` : 'AI Girlfriend'}
           </h1>
           {isLoading ? <p className="mt-4 text-center text-sm text-white/72">Loading character...</p> : null}
           {!isLoading && errorMessage ? (
@@ -687,7 +719,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
           {!isLoading && !errorMessage && characterRecord ? (
             <div className="mt-10 grid gap-5 lg:grid-cols-[1.3fr_1fr]">
               <div>
-                <div className="relative overflow-hidden rounded-md border border-white/10 bg-[linear-gradient(90deg,#5d3b24_0%,#201817_38%,#0b1430_100%)] px-5 py-5 md:px-7">
+                <div className="relative min-h-[430px] overflow-hidden rounded-md border border-white/10 bg-[linear-gradient(90deg,#5d3b24_0%,#201817_38%,#0b1430_100%)] px-5 py-5 md:px-7">
                   <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(255,243,200,0.5),transparent_34%),radial-gradient(circle_at_26%_58%,rgba(255,255,255,0.16),transparent_26%),radial-gradient(circle_at_74%_58%,rgba(255,255,255,0.1),transparent_24%),linear-gradient(180deg,rgba(0,0,0,0)_58%,rgba(0,0,0,0.86)_100%)]" />
                   {canUseCharacterActions ? (
                     <button
@@ -701,7 +733,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                           return !previousState
                         })
                       }}
-                      className="absolute right-4 top-4 z-[2] inline-flex h-9 items-center justify-center rounded-md border border-white/40 bg-white px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#1d1d1d]"
+                      className="absolute right-4 top-4 z-[2] inline-flex h-9 items-center justify-center rounded-md border border-white/40 bg-white px-4 text-[8px] font-semibold uppercase tracking-[0.08em] text-[#1d1d1d]"
                       aria-label="Open 3D preview"
                       disabled={!canOpenThreePreview}
                     >
@@ -710,7 +742,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                   ) : (
                     <Link
                       href="/members"
-                      className="absolute right-4 top-4 z-[2] inline-flex h-9 items-center justify-center rounded-md border border-ember-300/40 bg-ember-300/15 px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-ember-100"
+                      className="absolute right-4 top-4 z-[2] inline-flex h-9 items-center justify-center rounded-md border border-ember-300/40 bg-ember-300/15 px-4 text-[8px] font-semibold uppercase tracking-[0.08em] text-ember-100"
                       aria-label="Upgrade to unlock 3D preview"
                     >
                       Unlock Preview
@@ -722,14 +754,14 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                       className={
                         isThreePreviewExpanded
                           ? 'fixed inset-0 z-[100] flex flex-col items-center justify-center gap-3 bg-black/95 p-4'
-                          : 'relative mx-auto h-[430px] w-[225px] overflow-hidden rounded-sm border border-white/10 bg-[#0f1117]'
+                          : 'absolute inset-0 z-[1] h-full w-full overflow-hidden bg-[#0f1117]'
                       }
                     >
                       {!isThreePreviewLoading && !threePreviewErrorMessage ? (
                         <button
                           type="button"
                           onClick={() => setIsThreePreviewExpanded((previousExpanded) => !previousExpanded)}
-                          className={`absolute left-1/2 z-[190] -translate-x-1/2 rounded-md border border-white/25 bg-black/55 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-white/90 backdrop-blur-sm hover:bg-black/70 ${
+                          className={`absolute left-3 z-[190] rounded-md border border-white/25 bg-black/55 px-3 py-1.5 text-[8px] font-semibold uppercase tracking-[0.08em] text-white/90 backdrop-blur-sm hover:bg-black/70 ${
                             isThreePreviewExpanded ? 'top-[5.25rem]' : 'top-3'
                           }`}
                           aria-label={isThreePreviewExpanded ? 'Smaller preview' : 'Full screen 3D preview'}
@@ -741,18 +773,18 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                         ref={previewContainerRef}
                         className={
                           isThreePreviewExpanded
-                            ? 'relative z-0 min-h-[280px] h-[min(85vh,900px)] w-full max-w-5xl'
+                            ? 'relative z-0 h-screen w-screen'
                             : 'relative z-0 min-h-0 h-full w-full'
                         }
                       />
                       {isThreePreviewLoading ? (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/45 px-3 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-white/85">
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/45 px-3 text-center text-[8px] font-semibold uppercase tracking-[0.08em] text-white/85">
                           Loading 3D preview
                           {threePreviewLoadProgress !== null ? `… ${threePreviewLoadProgress}%` : '…'}
                         </div>
                       ) : null}
                       {threePreviewErrorMessage ? (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/70 px-3 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-rose-200">
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/70 px-3 text-center text-[8px] font-semibold uppercase tracking-[0.08em] text-rose-200">
                           {threePreviewErrorMessage}
                         </div>
                       ) : null}
@@ -797,14 +829,19 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                   ) : null}
                 </div>
 
-                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  {characterStats.map((statItem) => (
-                    <CharacterStatTile key={statItem.id} icon={statItem.icon} value={statItem.value} label={statItem.label} />
+                <div className="mt-4 flex gap-3 sm:grid sm:grid-cols-3">
+                  {characterStats.map((statItem, statIndex) => (
+                    <div
+                      key={statItem.id}
+                      className={statIndex === 2 ? 'w-full max-w-[130px] sm:max-w-none' : 'flex-1 sm:flex-none'}
+                    >
+                      <CharacterStatTile icon={statItem.icon} value={statItem.value} label={statItem.label} />
+                    </div>
                   ))}
                 </div>
 
                 <section className="mt-4 rounded-md border border-white/10 bg-[#121010] p-5">
-                  <h3 className="font-[family-name:var(--font-heading)] text-[26px] font-semibold italic uppercase text-white">Comments</h3>
+                  <h3 className="font-[family-name:var(--font-heading)] text-[20px] font-semibold italic uppercase text-white">Comments</h3>
                   {isReviewsLoading ? <p className="mt-3 text-xs text-white/70">Loading reviews...</p> : null}
                   {reviewsErrorMessage ? (
                     <p className="mt-3 rounded-md border border-white/10 bg-[#0e0b0b] px-3 py-2 text-xs text-white/60">
@@ -819,7 +856,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                   <div className="mt-3 space-y-2">
                     {reviewList.map((review) => (
                       <div key={review.id} className="rounded-sm border border-white/10 bg-[#0d0d0d] p-3">
-                        <p className="text-[11px] font-semibold text-white/85">
+                        <p className="text-[8px] font-semibold text-white/85">
                           {review.user.username}
                           <span className="ml-2 text-white/45">{formatReviewRelativeLabel(review.createdAt)}</span>
                         </p>
@@ -829,7 +866,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                   </div>
 
                   <div className="mt-4 rounded-md border border-white/15 bg-black/20 p-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.09em] text-white/65">
+                    <p className="text-[8px] font-semibold uppercase tracking-[0.09em] text-white/65">
                       {ownReview ? 'Update your comment' : 'Write a comment'}
                     </p>
                     {!sessionUser ? (
@@ -862,7 +899,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                         type="button"
                         onClick={handleSubmitReview}
                         disabled={isReviewSubmitting || !canPostReview}
-                        className="rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-black disabled:opacity-70"
+                        className="rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-black disabled:opacity-70"
                         aria-label={ownReview ? 'Update comment' : 'Post comment'}
                       >
                         {isReviewSubmitting ? 'Saving...' : ownReview ? 'Update Comment' : 'Post Comment'}
@@ -872,7 +909,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                           type="button"
                           onClick={handleDeleteOwnReview}
                           disabled={isReviewSubmitting || !canPostReview}
-                          className="rounded-md border border-rose-300/35 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-rose-200 disabled:opacity-70"
+                          className="rounded-md border border-rose-300/35 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-rose-200 disabled:opacity-70"
                           aria-label="Delete your review"
                         >
                           Delete
@@ -889,10 +926,10 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
               <div className="rounded-md border border-white/10 bg-[#1a1213] p-5 md:p-6">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h2 className="font-[family-name:var(--font-heading)] text-[48px] font-semibold italic uppercase leading-none text-white">
+                    <h2 className="font-[family-name:var(--font-heading)] text-[36px] font-semibold italic uppercase leading-none text-white">
                       {characterRecord.name}
                     </h2>
-                    <p className="mt-2 text-[12px] font-semibold uppercase tracking-[0.09em] text-white/45">
+                    <p className="mt-2 text-[9px] font-semibold uppercase tracking-[0.09em] text-white/45">
                       {(characterRecord.tagline ?? 'VRoid Character').toUpperCase()}
                     </p>
                   </div>
@@ -900,11 +937,11 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                     type="button"
                     onClick={handleToggleHeart}
                     disabled={isHeartSubmitting || isViewerCharacterOwner}
-                    className={`inline-flex size-8 items-center justify-center rounded-full border text-xs transition disabled:cursor-not-allowed ${
+                    className={`inline-flex size-[30px] items-center justify-center rounded-full border text-xs transition disabled:cursor-not-allowed ${
                       isViewerCharacterOwner
                         ? 'border-[#5c4a42]/45 bg-[#1f1815] text-white/30'
                         : characterRecord.hasHearted
-                          ? 'border-[#8f6447] bg-[#2e221c] text-white shadow-[0_0_0_1px_rgba(255,255,255,0.04)_inset]'
+                          ? 'border-[#ff74d8] bg-[#3a102c] text-[#ffd8f4] shadow-[0_0_0_1px_rgba(255,255,255,0.12)_inset,0_0_18px_rgba(247,93,232,0.45)] scale-110'
                           : 'border-[#775844] bg-[#261c17] text-white/95 hover:border-[#8f6447] hover:bg-[#2c201a]'
                     }`}
                     aria-label={
@@ -915,17 +952,17 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                           : 'Add to favorites'
                     }
                   >
-                    <DescriptionHeartIcon className="size-[13px]" />
+                    <DescriptionHeartIcon className={`size-[16px] ${characterRecord.hasHearted ? 'drop-shadow-[0_0_6px_rgba(247,93,232,0.8)]' : ''}`} />
                   </button>
                 </div>
                 {isPatreonGated ? (
-                  <p className="mt-4 rounded-md border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-amber-100">
+                  <p className="mt-4 rounded-md border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-[8px] font-semibold uppercase tracking-[0.08em] text-amber-100">
                     {canAccessGatedContent ? 'Patreon content unlocked' : `Locked | ${formatTierLabel(characterRecord.gatedAccess.requiredTierCents)}`}
                   </p>
                 ) : null}
 
                 <div className="mt-6">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.11em] text-[#f59e0b]">Description</p>
+                  <p className="text-[8px] font-bold uppercase tracking-[0.11em] text-[#f59e0b]">Description</p>
                   <p className="mt-3 whitespace-pre-line text-[11px] leading-[1.75] text-white/75">{descriptionText}</p>
                 </div>
 
@@ -936,7 +973,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                 {isPatreonGated && !canAccessGatedContent ? (
                   <Link
                     href="/members"
-                    className="mt-8 inline-flex h-14 w-full items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 font-[family-name:var(--font-heading)] text-[40px] font-semibold italic leading-none text-white transition hover:brightness-110"
+                    className="mt-8 inline-flex h-14 w-full items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 font-[family-name:var(--font-heading)] text-[30px] font-semibold italic leading-none text-white transition hover:brightness-110"
                     aria-label="Connect Patreon and upgrade tier"
                   >
                     Unlock with Patreon
@@ -957,7 +994,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                         })
                         .catch(() => {})
                     }}
-                    className="mt-8 inline-flex h-14 w-full items-center justify-center gap-3 rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 font-[family-name:var(--font-heading)] text-[calc(40px*2/3)] font-semibold italic uppercase leading-none text-white transition hover:brightness-110"
+                    className="mt-8 inline-flex h-14 w-full items-center justify-center gap-3 rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 font-[family-name:var(--font-heading)] text-[20px] font-semibold italic uppercase leading-none text-white transition hover:brightness-110"
                     aria-label="Start chat in the WebGL demo with this character"
                   >
                     Start Chat

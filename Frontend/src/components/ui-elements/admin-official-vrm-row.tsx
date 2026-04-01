@@ -33,7 +33,7 @@ const StarIcon = () => {
 
 const EditIcon = () => {
   return (
-    <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="1.9">
+    <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.9">
       <path d="M4.8 15.6 15.9 4.5a2 2 0 0 1 2.8 0l.8.8a2 2 0 0 1 0 2.8L8.4 19.2l-4 .5.4-4.1Z" />
     </svg>
   )
@@ -41,7 +41,7 @@ const EditIcon = () => {
 
 const EyeIcon = () => {
   return (
-    <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="1.9">
+    <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.9">
       <path d="M2.7 12s3.5-6 9.3-6 9.3 6 9.3 6-3.5 6-9.3 6-9.3-6-9.3-6Z" />
       <circle cx="12" cy="12" r="2.2" />
     </svg>
@@ -50,7 +50,7 @@ const EyeIcon = () => {
 
 const TrashIcon = () => {
   return (
-    <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="1.9">
+    <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.9">
       <path d="M4.8 6.8h14.4M9.3 6.8V5.4h5.4v1.4M8.4 9.3v8.4M12 9.3v8.4M15.6 9.3v8.4M6.8 6.8l.6 12a1.7 1.7 0 0 0 1.7 1.6h5.8a1.7 1.7 0 0 0 1.7-1.6l.6-12" />
     </svg>
   )
@@ -79,8 +79,8 @@ const AdminOfficialVrmRow = ({ vrmRecord, isBusy = false, onDeleteRequest }: Adm
         </div>
       </td>
 
-      <td className="px-4 py-4 align-middle">
-        <span className="inline-flex items-center rounded-full border border-ember-400/55 bg-ember-500/10 px-3 py-1 text-[10px] font-normal uppercase tracking-[0.05em] text-ember-300">
+      <td className="max-w-[min(100vw,280px)] px-3 py-4 align-middle sm:max-w-none sm:px-4">
+        <span className="inline-flex max-w-full items-center break-words rounded-full border border-ember-400/55 bg-ember-500/10 px-2.5 py-1 text-[10px] font-normal uppercase tracking-[0.05em] text-ember-300 sm:px-3">
           {vrmRecord.tagline}
         </span>
       </td>
@@ -108,14 +108,14 @@ const AdminOfficialVrmRow = ({ vrmRecord, isBusy = false, onDeleteRequest }: Adm
         <div className="inline-flex items-center gap-2">
           <Link
             href={`/upload-vrm?edit=${encodeURIComponent(vrmRecord.id)}`}
-            className="inline-flex size-12 items-center justify-center rounded-md text-[#8c99b0] transition hover:bg-white/5 hover:text-white"
+            className="inline-flex size-9 items-center justify-center rounded-lg text-[#8c99b0] transition hover:bg-white/5 hover:text-white"
             aria-label={`Edit ${vrmRecord.name}`}
           >
             <EditIcon />
           </Link>
           <Link
             href={`/characters/${encodeURIComponent(vrmRecord.slug)}`}
-            className="inline-flex size-12 items-center justify-center rounded-md text-[#8c99b0] transition hover:bg-white/5 hover:text-white"
+            className="inline-flex size-9 items-center justify-center rounded-lg text-[#8c99b0] transition hover:bg-white/5 hover:text-white"
             aria-label={`Open gallery page for ${vrmRecord.name}`}
           >
             <EyeIcon />
@@ -125,7 +125,7 @@ const AdminOfficialVrmRow = ({ vrmRecord, isBusy = false, onDeleteRequest }: Adm
               type="button"
               onClick={() => onDeleteRequest(vrmRecord.id, vrmRecord.name)}
               disabled={isBusy}
-              className="inline-flex size-12 items-center justify-center rounded-md text-[#8c99b0] transition hover:bg-rose-500/10 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-[#8c99b0]"
+              className="inline-flex size-9 items-center justify-center rounded-lg text-[#8c99b0] transition hover:bg-rose-500/10 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-[#8c99b0]"
               aria-haspopup="dialog"
               aria-label={`Remove ${vrmRecord.name} — opens confirmation`}
             >

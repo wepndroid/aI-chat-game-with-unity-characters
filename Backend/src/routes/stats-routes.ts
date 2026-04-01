@@ -366,7 +366,8 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
 
     /** Matches admin Community VRMs list: non-admin-owned rows not stuck in pending review.
      *  Use createdAt OR updatedAt vs last-seen: approvals only bump updatedAt, so the badge must rise
-     *  when a pending row is approved even if createdAt predates the last list visit. */
+     *  when a pending row is approved even if createdAt predates the last list visit.
+     *  Rejections bump updatedAt but must not increase the badge (same for archived rows). */
     const newCommunityVrmsCount = await prisma.character.count({
       where: {
         owner: {
@@ -375,7 +376,7 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
           }
         },
         status: {
-          not: 'PENDING'
+          notIn: ['PENDING', 'REJECTED', 'ARCHIVED']
         },
         ...(adminSeenRecord?.communityVrmsListSeenAt
           ? {

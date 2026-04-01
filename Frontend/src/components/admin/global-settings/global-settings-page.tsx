@@ -50,7 +50,7 @@ type RuntimeAdminSettingsResponse = {
 
 type RuntimeAdminSettingsPatchPayload = RuntimeAdminSettingsResponse['data']
 
-const sectionClassName = 'mt-6 rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-5 py-5 sm:px-6'
+const sectionClassName = 'mt-6 rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-4 py-5 sm:px-6'
 const labelClassName = 'text-xs font-semibold uppercase tracking-[0.08em] text-white/65'
 const inputClassName =
   'mt-1 w-full rounded-md border border-white/20 bg-[#0f1116]/90 px-3 py-2 text-sm text-white outline-none transition placeholder:text-white/45 focus:border-ember-300 focus:ring-2 focus:ring-ember-400/35'
@@ -347,7 +347,9 @@ const GlobalSettingsPage = () => {
 
   return (
     <AdminPageShell activeKey="global-settings">
-      <h1 className="font-[family-name:var(--font-heading)] text-[29px] font-normal leading-none text-white">Global Settings</h1>
+      <h1 className="font-[family-name:var(--font-heading)] text-[22px] font-normal leading-tight text-white sm:text-[26px] md:text-[29px] md:leading-none">
+        Global Settings
+      </h1>
       <p className="mt-2 text-sm text-[#95a6c1]">Manage upload policy, request/session limits, feature switches, maintenance mode, and API keys.</p>
       {isLoading ? <p className="mt-4 text-sm text-white/70">Loading settings...</p> : null}
       {errorMessage ? <p className="mt-4 rounded-md border border-rose-300/30 bg-rose-300/10 px-3 py-2 text-sm text-rose-100">{errorMessage}</p> : null}
@@ -384,8 +386,14 @@ const GlobalSettingsPage = () => {
       <section className={sectionClassName}>
         <h2 className="font-[family-name:var(--font-heading)] text-[21px] font-normal leading-none text-white">Feature switches</h2>
         <div className="mt-4 space-y-3">
-          <label className="flex items-center gap-3 text-sm text-white"><input type="checkbox" checked={publicUploadsEnabled} onChange={(event) => setPublicUploadsEnabled(event.target.checked)} />Public uploads enabled</label>
-          <label className="flex items-center gap-3 text-sm text-white"><input type="checkbox" checked={communityPageEnabled} onChange={(event) => setCommunityPageEnabled(event.target.checked)} />Community page enabled</label>
+          <label className="flex cursor-pointer items-center gap-3 text-sm font-medium text-white/70">
+            <input type="checkbox" checked={publicUploadsEnabled} onChange={(event) => setPublicUploadsEnabled(event.target.checked)} />
+            Public uploads enabled
+          </label>
+          <label className="flex cursor-pointer items-center gap-3 text-sm font-medium text-white/70">
+            <input type="checkbox" checked={communityPageEnabled} onChange={(event) => setCommunityPageEnabled(event.target.checked)} />
+            Community page enabled
+          </label>
         </div>
       </section>
 
@@ -395,8 +403,14 @@ const GlobalSettingsPage = () => {
           Administrator accounts always have full API access (including while this page loads). Visitors who are not admins see the maintenance message when maintenance is on.
         </p>
         <div className="mt-4 space-y-3">
-          <label className="flex items-center gap-3 text-sm text-white"><input type="checkbox" checked={maintenanceEnabled} onChange={(event) => setMaintenanceEnabled(event.target.checked)} />Maintenance ON/OFF</label>
-          <label className="flex items-center gap-3 text-sm text-white"><input type="checkbox" checked={maintenanceReadOnlyMode} onChange={(event) => setMaintenanceReadOnlyMode(event.target.checked)} />Read-only mode</label>
+          <label className="flex cursor-pointer items-center gap-3 text-sm font-medium text-white/70">
+            <input type="checkbox" checked={maintenanceEnabled} onChange={(event) => setMaintenanceEnabled(event.target.checked)} />
+            Maintenance ON/OFF
+          </label>
+          <label className="flex cursor-pointer items-center gap-3 text-sm font-medium text-white/70">
+            <input type="checkbox" checked={maintenanceReadOnlyMode} onChange={(event) => setMaintenanceReadOnlyMode(event.target.checked)} />
+            Read-only mode
+          </label>
         </div>
         <label className="mt-4 block"><span className={labelClassName}>Maintenance message</span><textarea className={inputClassName} rows={4} value={maintenanceMessage} onChange={(event) => setMaintenanceMessage(event.target.value)} /></label>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -452,7 +466,7 @@ const GlobalSettingsPage = () => {
       <div className="mt-6">
         <button
           type="button"
-          className="inline-flex h-11 items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 text-[11px] font-bold uppercase tracking-[0.1em] text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+          className="inline-flex h-11 w-full items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 text-[11px] font-bold uppercase tracking-[0.1em] text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
           disabled={isLoading || isSaving}
           onClick={() => {
             if (!isEditing) {

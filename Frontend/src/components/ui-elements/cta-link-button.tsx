@@ -5,6 +5,7 @@ type CtaLinkButtonProps = {
   label: string
   variant: 'light' | 'accent'
   ariaLabel: string
+  iconType?: 'download' | 'chrome'
 }
 
 const DownloadTrayIcon = ({ className }: { className?: string }) => {
@@ -19,7 +20,19 @@ const DownloadTrayIcon = ({ className }: { className?: string }) => {
   )
 }
 
-const CtaLinkButton = ({ href, label, variant, ariaLabel }: CtaLinkButtonProps) => {
+const ChromeMonochromeIcon = ({ className }: { className?: string }) => {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="3.5" />
+      <path d="M19.6 8.5H12" strokeLinecap="round" />
+      <path d="m5.2 7.1 4.1 7.1" strokeLinecap="round" />
+      <path d="m10.6 19.9 4.2-7.3" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+const CtaLinkButton = ({ href, label, variant, ariaLabel, iconType = 'download' }: CtaLinkButtonProps) => {
   const baseClassName =
     'inline-flex h-12 w-full items-center justify-center gap-2 rounded-md px-5 text-sm font-bold uppercase tracking-[0.07em] transition sm:w-1/2'
 
@@ -36,7 +49,7 @@ const CtaLinkButton = ({ href, label, variant, ariaLabel }: CtaLinkButtonProps) 
     <>
       {label}
       <span className={`inline-flex size-5 items-center justify-center ${iconColorClassName}`}>
-        <DownloadTrayIcon className="size-[18px]" />
+        {iconType === 'chrome' ? <ChromeMonochromeIcon className="size-[18px]" /> : <DownloadTrayIcon className="size-[18px]" />}
       </span>
     </>
   )

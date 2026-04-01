@@ -50,8 +50,8 @@ const AccountSideMenu = ({ activeKey }: AccountSideMenuProps) => {
     : accountMenuEntries
 
   return (
-    <aside className="self-start pt-2">
-      <nav className="flex min-w-[340px] max-w-[380px] flex-col gap-9">
+    <aside className="min-w-0 self-start pt-2">
+      <nav className="flex w-full min-w-0 max-w-[380px] flex-col gap-9">
         {visibleEntries.map((entryItem) => {
           const isActive = entryItem.key === activeKey
           const textColorClassName = isActive ? 'text-ember-300' : 'text-[#747f96] hover:text-white/90'

@@ -41,7 +41,9 @@ const AdminSidebarItem = ({
         <span className={`size-5 ${iconClassName}`} aria-hidden="true">
           {icon}
         </span>
-        <span className="text-[20px] font-[family-name:var(--font-heading)] font-normal leading-none">{label}</span>
+        <span className="text-[17px] font-[family-name:var(--font-heading)] font-normal leading-snug sm:text-[20px] sm:leading-none">
+          {label}
+        </span>
       </span>
 
       {badgeText ? (

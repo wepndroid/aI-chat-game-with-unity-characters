@@ -62,17 +62,21 @@ const ScanWarningIcon = () => (
 const ScanBadge = ({ queueRecord }: { queueRecord: AdminReviewQueueCardRecord }) => {
   if (queueRecord.scanState === 'clean') {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/35 bg-emerald-500/15 px-2.5 py-1 text-xs font-normal text-emerald-300">
-        <ScanOkIcon />
-        {queueRecord.scanMessage}
+      <span className="inline-flex max-w-full items-start gap-1.5 break-words rounded-md border border-emerald-500/35 bg-emerald-500/15 px-2.5 py-1 text-xs font-normal text-emerald-300">
+        <span className="mt-0.5 shrink-0">
+          <ScanOkIcon />
+        </span>
+        <span className="min-w-0">{queueRecord.scanMessage}</span>
       </span>
     )
   }
 
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-md border border-rose-500/35 bg-rose-500/15 px-2.5 py-1 text-xs font-normal text-rose-300">
-      <ScanWarningIcon />
-      {queueRecord.scanMessage}
+    <span className="inline-flex max-w-full items-start gap-1.5 break-words rounded-md border border-rose-500/35 bg-rose-500/15 px-2.5 py-1 text-xs font-normal text-rose-300">
+      <span className="mt-0.5 shrink-0">
+        <ScanWarningIcon />
+      </span>
+      <span className="min-w-0">{queueRecord.scanMessage}</span>
     </span>
   )
 }
@@ -99,8 +103,8 @@ const AdminReviewQueueCard = ({
 
   return (
     <article className="rounded-2xl border border-white/10 bg-[#0d1219]/95 shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
-      <div className="grid min-h-[176px] border-l-4 border-l-yellow-400 px-5 py-5 sm:grid-cols-[130px_1fr_170px] sm:items-center sm:gap-4">
-        <div className="relative h-[130px] w-[130px] shrink-0 overflow-hidden rounded-lg border border-white/10 bg-[#1a1f28]">
+      <div className="grid min-h-0 border-l-4 border-l-yellow-400 px-4 py-4 sm:min-h-[176px] sm:grid-cols-[130px_1fr_170px] sm:items-center sm:gap-4 sm:px-5 sm:py-5">
+        <div className="relative mx-auto h-[130px] w-full max-w-[130px] shrink-0 overflow-hidden rounded-lg border border-white/10 bg-[#1a1f28] sm:mx-0">
           {previewImageUrl ? (
             <img
               src={previewImageUrl}
@@ -114,9 +118,9 @@ const AdminReviewQueueCard = ({
           )}
         </div>
 
-        <div className="mt-4 sm:mt-0">
-          <div className="inline-flex items-center gap-3">
-            <h3 className="font-[family-name:var(--font-heading)] text-[22px] font-normal leading-none text-white">
+        <div className="mt-4 min-w-0 sm:mt-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="min-w-0 break-words font-[family-name:var(--font-heading)] text-[19px] font-normal leading-tight text-white sm:text-[22px] sm:leading-none">
               {queueRecord.title}
             </h3>
             <span className="inline-flex shrink-0 items-center rounded-full border border-yellow-400/35 bg-yellow-400/10 px-2.5 py-1 text-xs font-normal text-yellow-300">
@@ -124,7 +128,7 @@ const AdminReviewQueueCard = ({
             </span>
           </div>
 
-          <p className="mt-2 text-[15px] font-[family-name:var(--font-heading)] font-normal leading-none text-[#96a5be]">
+          <p className="mt-2 text-[14px] font-[family-name:var(--font-heading)] font-normal leading-snug text-[#96a5be] sm:text-[15px] sm:leading-none">
             Uploaded by <span className="text-ember-300">{queueRecord.uploader}</span> - {queueRecord.uploadedAgoLabel}
           </p>
 
@@ -133,11 +137,11 @@ const AdminReviewQueueCard = ({
           </div>
         </div>
 
-        <div className="mt-4 flex flex-col gap-2 sm:mt-0">
+        <div className="mt-4 flex w-full min-w-0 flex-col gap-2 sm:mt-0 sm:w-[170px] sm:shrink-0">
           <button
             type="button"
             onClick={handleApproveClick}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/15 text-sm font-normal text-emerald-300 transition hover:brightness-110"
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/15 text-sm font-normal text-emerald-300 transition hover:brightness-110"
             aria-label={`Approve ${queueRecord.title}`}
             disabled={isBusy}
           >
@@ -148,7 +152,7 @@ const AdminReviewQueueCard = ({
           <button
             type="button"
             onClick={handleRejectClick}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-rose-500/40 bg-rose-500/15 text-sm font-normal text-rose-300 transition hover:brightness-110"
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-rose-500/40 bg-rose-500/15 text-sm font-normal text-rose-300 transition hover:brightness-110"
             aria-label={`Reject ${queueRecord.title}`}
             disabled={isBusy}
           >
@@ -159,7 +163,7 @@ const AdminReviewQueueCard = ({
           <button
             type="button"
             onClick={handleDetailClick}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-white/20 bg-white/5 text-sm font-normal text-white/80 transition hover:border-white/30 hover:bg-white/10 hover:text-white"
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-white/20 bg-white/5 text-sm font-normal text-white/80 transition hover:border-white/30 hover:bg-white/10 hover:text-white"
             aria-label={`View system scan details for ${queueRecord.title}`}
             disabled={isBusy || !onDetail}
           >

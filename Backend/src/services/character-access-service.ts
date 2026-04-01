@@ -293,6 +293,17 @@ const buildCharacterListWhereClause = (
   }
 
   if (actor) {
+    // Keep "Official" and "Community" tabs catalog-pure for signed-in users.
+    // Personal rows belong to the dedicated "Your Characters" tab.
+    if (galleryScope === 'curated' || galleryScope === 'community') {
+      return {
+        ...buildPublicGalleryBranch(galleryScope),
+        ...searchClause,
+        ...statusClause,
+        ...visibilityClause
+      } satisfies Prisma.CharacterWhereInput
+    }
+
     const publicBranch = buildPublicGalleryBranch(galleryScope)
 
     return {

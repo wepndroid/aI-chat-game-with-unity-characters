@@ -3,6 +3,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAdmin } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
+import { hashPassword } from '../lib/password-hash'
 
 const userRoutes = Router()
 
@@ -24,6 +25,17 @@ const updateUserRoleSchema = z.object({
 const updateUserBannedSchema = z.object({
   banned: z.boolean()
 })
+
+const updateUserAccountSchema = z
+  .object({
+    email: z.string().email().optional(),
+    username: z.string().trim().min(3).max(30).regex(/^[a-zA-Z0-9_]+$/).optional(),
+    password: z.string().min(8).max(128).optional(),
+    tierCents: z.number().int().min(0).max(100000).nullable().optional()
+  })
+  .refine((payload) => Object.keys(payload).length > 0, {
+    message: 'At least one field must be provided.'
+  })
 
 userRoutes.get('/users', requireAdmin, async (request, response, next) => {
   try {
@@ -73,7 +85,8 @@ userRoutes.get('/users', requireAdmin, async (request, response, next) => {
           updatedAt: true,
           patreonAccount: {
             select: {
-              id: true
+              id: true,
+              tierCents: true
             }
           },
           sessions: {
@@ -112,6 +125,7 @@ userRoutes.get('/users', requireAdmin, async (request, response, next) => {
           updatedAt: user.updatedAt,
           uploadsCount: user._count.characters,
           patreonLinked: Boolean(user.patreonAccount?.id),
+          tierCents: user.patreonAccount?.tierCents ?? null,
           lastSeenAt: user.sessions[0]?.lastSeenAt ?? null
         })),
         pagination: {
@@ -254,6 +268,137 @@ userRoutes.patch('/users/:userId/banned', requireAdmin, async (request, response
           ? `User ${existingUser.username} was banned by ${adminLabel}.`
           : `User ${existingUser.username} was unbanned by ${adminLabel}.`,
         tone: payload.banned ? 'red' : 'green'
+      }
+    })
+
+    response.json({
+      data: updatedUser
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+userRoutes.patch('/users/:userId/account', requireAdmin, async (request, response, next) => {
+  try {
+    const { userId } = userParamsSchema.parse(request.params)
+    const payload = updateUserAccountSchema.parse(request.body)
+
+    const existingUser = await prisma.user.findUnique({
+      where: {
+        id: userId
+      },
+      select: {
+        id: true
+      }
+    })
+
+    if (!existingUser) {
+      response.status(404).json({
+        message: 'User not found.'
+      })
+      return
+    }
+
+    const nextEmail = payload.email?.trim().toLowerCase()
+    const nextUsername = payload.username?.trim()
+    const nextPasswordHash = payload.password ? await hashPassword(payload.password) : undefined
+
+    if (nextEmail) {
+      const conflictUser = await prisma.user.findUnique({
+        where: {
+          email: nextEmail
+        },
+        select: {
+          id: true
+        }
+      })
+
+      if (conflictUser && conflictUser.id !== userId) {
+        response.status(409).json({
+          message: 'An account with this e-mail already exists.'
+        })
+        return
+      }
+    }
+
+    if (nextUsername) {
+      const conflictUser = await prisma.user.findUnique({
+        where: {
+          username: nextUsername
+        },
+        select: {
+          id: true
+        }
+      })
+
+      if (conflictUser && conflictUser.id !== userId) {
+        response.status(409).json({
+          message: 'This username is already taken.'
+        })
+        return
+      }
+    }
+
+    const updatedUser = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: {
+          id: userId
+        },
+        data: {
+          ...(nextEmail ? { email: nextEmail } : {}),
+          ...(nextUsername ? { username: nextUsername } : {}),
+          ...(nextPasswordHash ? { passwordHash: nextPasswordHash } : {})
+        },
+        select: {
+          id: true,
+          email: true,
+          username: true
+        }
+      })
+
+      if (payload.tierCents !== undefined) {
+        if (payload.tierCents === null) {
+          await tx.patreonAccount.deleteMany({
+            where: {
+              userId
+            }
+          })
+        } else {
+          await tx.patreonAccount.upsert({
+            where: {
+              userId
+            },
+            create: {
+              userId,
+              patreonUserId: `admin-override-${userId}`,
+              membershipStatus: payload.tierCents > 0 ? 'active_patron' : 'former_patron',
+              tierCents: payload.tierCents,
+              nextChargeDate: null,
+              lastCheckedAt: new Date()
+            },
+            update: {
+              membershipStatus: payload.tierCents > 0 ? 'active_patron' : 'former_patron',
+              tierCents: payload.tierCents,
+              nextChargeDate: null,
+              lastCheckedAt: new Date()
+            }
+          })
+        }
+      }
+
+      const patreonAccount = await tx.patreonAccount.findUnique({
+        where: {
+          userId
+        },
+        select: {
+          tierCents: true
+        }
+      })
+
+      return {
+        ...user,
+        tierCents: patreonAccount?.tierCents ?? null
       }
     })
 

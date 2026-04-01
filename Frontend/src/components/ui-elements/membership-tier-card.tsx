@@ -10,6 +10,7 @@ type MembershipTierCardProps = {
   ctaHref?: string
   isMostPopular?: boolean
   noteList?: string[]
+  footerLabel?: string
 }
 
 const MembershipTierCard = ({
@@ -21,7 +22,8 @@ const MembershipTierCard = ({
   ctaLabel,
   ctaHref,
   isMostPopular = false,
-  noteList
+  noteList,
+  footerLabel
 }: MembershipTierCardProps) => {
   const containerClassName = isCurrentTier
     ? 'border-ember-300/45 bg-ember-500/10'
@@ -33,7 +35,7 @@ const MembershipTierCard = ({
 
   return (
     <article className={`relative rounded-xl border p-4 ${containerClassName}`}>
-      {isMostPopular ? (
+      {isMostPopular && !isCurrentTier ? (
         <span className="absolute inset-x-0 top-0 inline-flex h-8 items-center justify-center rounded-t-xl bg-[#f46313] text-[11px] font-semibold uppercase tracking-[0.08em] text-black">
           Most Popular
         </span>
@@ -74,7 +76,7 @@ const MembershipTierCard = ({
         </ul>
 
         <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.1em] text-white/60">
-          {isCurrentTier ? 'Current tier' : 'Upgrade available'}
+          {footerLabel ?? (isCurrentTier ? 'Current tier' : 'Upgrade available')}
         </p>
       </div>
     </article>

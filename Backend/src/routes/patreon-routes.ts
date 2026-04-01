@@ -188,6 +188,30 @@ patreonRoutes.get('/patreon/status', requireAuth, async (request, response, next
       return
     }
 
+    // Admins always have premium-level access regardless of Patreon linkage.
+    if (authUser.role === 'ADMIN') {
+      response.json({
+        data: {
+          linked: true,
+          membershipStatus: 'active_patron',
+          tierCents: 1650,
+          patreonUserId: 'admin-override',
+          lastCheckedAt: new Date().toISOString(),
+          nextChargeDate: null,
+          entitlements: [
+            {
+              id: 'admin-override-entitlement',
+              tierCode: 'secretwaifu_access',
+              status: 'ACTIVE',
+              validFrom: null,
+              validUntil: null
+            }
+          ]
+        }
+      })
+      return
+    }
+
     const user = await prisma.user.findUnique({
       where: {
         id: authUser.userId

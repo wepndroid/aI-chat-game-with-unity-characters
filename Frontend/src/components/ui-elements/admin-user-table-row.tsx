@@ -15,6 +15,7 @@ type AdminUserTableRecord = {
   isEmailVerified: boolean
   uploads: number
   joined: string
+  tierCents: number | null
 }
 
 type AdminUserTableRowProps = {
@@ -24,6 +25,7 @@ type AdminUserTableRowProps = {
   currentAdminUserId?: string | null
   onUpdateRole?: (userId: string, role: AdminUserRole) => void
   onToggleBan?: (userId: string, banned: boolean) => void
+  onEditDetails?: (userId: string) => void
 }
 
 const roleOptionList: AdminUserRole[] = ['user', 'creator', 'admin']
@@ -90,13 +92,32 @@ const SettingsGearIcon = ({ className = 'size-4' }: { className?: string }) => {
   )
 }
 
+const EditPencilIcon = ({ className = 'size-4' }: { className?: string }) => {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M12 20h9" />
+      <path d="m16.5 3.5 4 4L8 20H4v-4L16.5 3.5Z" />
+    </svg>
+  )
+}
+
 const AdminUserTableRow = ({
   userRecord,
   isUpdatingRole = false,
   isUpdatingBan = false,
   currentAdminUserId = null,
   onUpdateRole,
-  onToggleBan
+  onToggleBan,
+  onEditDetails
 }: AdminUserTableRowProps) => {
   const [roleMenuOpen, setRoleMenuOpen] = useState(false)
   const [roleMenuPosition, setRoleMenuPosition] = useState<{ top: number; left: number } | null>(null)
@@ -197,21 +218,28 @@ const AdminUserTableRow = ({
 
   return (
     <tr className="border-t border-white/10">
-      <td className="px-4 py-4 align-middle">
+      <td className="px-3 py-3 align-middle sm:px-4 sm:py-4">
         <p className="font-[family-name:var(--font-heading)] text-[17px] font-normal leading-none text-white">{userRecord.username}</p>
-        <p className="mt-1 text-sm text-[#6f809d]">{userRecord.email}</p>
+        <p className="mt-1 break-words text-sm text-[#6f809d]">{userRecord.email}</p>
       </td>
-      <td className="px-4 py-4 align-middle">
+      <td className="px-3 py-3 align-middle sm:px-4 sm:py-4">
         <AdminUserRolePill role={userRecord.role} />
       </td>
-      <td className="px-4 py-4 align-middle">
+      <td className="px-3 py-3 align-middle sm:px-4 sm:py-4">
         <AdminUserStatusPill status={userRecord.status} />
       </td>
-      <td className="px-4 py-4 align-middle text-base font-normal text-white/85">{userRecord.uploads}</td>
-      <td className="px-4 py-4 align-middle">
+      <td className="px-3 py-3 align-middle sm:px-4 sm:py-4 text-base font-normal text-white/85">
+        {userRecord.role === 'admin'
+          ? 'Premium (Admin)'
+          : userRecord.tierCents && userRecord.tierCents > 0
+            ? `EUR ${(userRecord.tierCents / 100).toFixed(2)}`
+            : 'Free'}
+      </td>
+      <td className="px-3 py-3 align-middle sm:px-4 sm:py-4 text-base font-normal text-white/85">{userRecord.uploads}</td>
+      <td className="px-3 py-3 align-middle sm:px-4 sm:py-4">
         <p className="text-base text-[#7c8aa3]">{userRecord.joined}</p>
       </td>
-      <td className="px-4 py-4 align-middle">
+      <td className="px-3 py-3 align-middle sm:px-4 sm:py-4">
         <div className="inline-flex items-center gap-2">
           <div className="inline-flex" ref={roleMenuAnchorRef}>
             <button
@@ -291,6 +319,16 @@ const AdminUserTableRow = ({
             ) : (
               <ShieldOffIcon />
             )}
+          </button>
+          <button
+            type="button"
+            onClick={() => onEditDetails?.(userRecord.id)}
+            className="inline-flex size-9 items-center justify-center rounded-lg text-white/85 transition hover:bg-white/5 hover:text-ember-200 disabled:cursor-not-allowed disabled:opacity-45"
+            aria-label={`Edit account details for ${userRecord.username}`}
+            title={`Edit ${userRecord.username}`}
+            disabled={rowBusy || !onEditDetails}
+          >
+            <EditPencilIcon className="size-[16px]" />
           </button>
         </div>
       </td>

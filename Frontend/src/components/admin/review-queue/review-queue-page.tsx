@@ -186,16 +186,20 @@ const ReviewQueuePage = () => {
   return (
     <AdminPageShell activeKey="review-queue">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="font-[family-name:var(--font-heading)] text-[29px] font-normal leading-none text-white">Review Queue</h1>
-          <p className="mt-1 text-[15px] font-[family-name:var(--font-heading)] font-normal text-[#9ab0cd]">
+        <div className="min-w-0">
+          <h1 className="font-[family-name:var(--font-heading)] text-[22px] font-normal leading-tight text-white sm:text-[26px] md:text-[29px] md:leading-none">
+            Review Queue
+          </h1>
+          <p className="mt-1 text-[14px] font-[family-name:var(--font-heading)] font-normal leading-snug text-[#9ab0cd] sm:text-[15px]">
             Review community uploads to ensure they meet the platform&apos;s guidelines.
           </p>
         </div>
 
-        <div className="inline-flex items-center gap-[18px] rounded-xl border border-ember-500/35 bg-ember-500/10 px-5 py-3.5 text-ember-300">
-          <span className="font-[family-name:var(--font-heading)] text-[36px] font-normal leading-none">{pendingReviewCount}</span>
-          <span className="text-[18px] font-normal uppercase tracking-[0.08em] text-ember-200">Pending Reviews</span>
+        <div className="inline-flex w-full min-w-0 flex-wrap items-center justify-center gap-3 rounded-xl border border-ember-500/35 bg-ember-500/10 px-4 py-3.5 text-ember-300 sm:w-auto sm:justify-start sm:gap-[18px] sm:px-5">
+          <span className="font-[family-name:var(--font-heading)] text-[32px] font-normal leading-none sm:text-[36px]">{pendingReviewCount}</span>
+          <span className="text-center text-[15px] font-normal uppercase tracking-[0.08em] text-ember-200 sm:text-left sm:text-[18px]">
+            Pending Reviews
+          </span>
         </div>
       </div>
 

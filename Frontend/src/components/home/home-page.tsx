@@ -1,6 +1,6 @@
 'use client'
 
-import CharacterCard from '@/components/ui-elements/character-card'
+import CharacterGalleryCard from '@/components/ui-elements/character-gallery-card'
 import CtaLinkButton from '@/components/ui-elements/cta-link-button'
 import FaqItem from '@/components/ui-elements/faq-item'
 import PlatformItem from '@/components/ui-elements/platform-item'
@@ -12,9 +12,15 @@ import { useEffect, useState } from 'react'
 
 type CharacterCardData = {
   id: string
+  slug: string
   name: string
   likes: string
+  chats: string
   gradientClassName: string
+  description?: string
+  previewImageUrl?: string | null
+  isPatreonGated: boolean
+  minimumTierCents: number | null
 }
 
 type FaqItemData = {
@@ -46,10 +52,16 @@ const toTopRatedCharacterCardData = (characterList: CharacterListRecord[]): Char
     .filter((character) => character.status === 'APPROVED' && character.visibility === 'PUBLIC')
     .slice(0, 4)
     .map((character, index) => ({
-      id: character.slug,
+      id: character.id,
+      slug: character.slug,
       name: character.name,
       likes: formatHeartsCount(character.heartsCount),
-      gradientClassName: topRatedGradientClasses[index % topRatedGradientClasses.length]
+      chats: formatHeartsCount(character.viewsCount),
+      gradientClassName: topRatedGradientClasses[index % topRatedGradientClasses.length],
+      description: character.tagline ?? undefined,
+      previewImageUrl: character.previewImageUrl,
+      isPatreonGated: character.isPatreonGated,
+      minimumTierCents: character.minimumTierCents
     }))
 }
 
@@ -138,7 +150,7 @@ const HomePage = () => {
   }, [])
 
   return (
-    <main className="relative overflow-hidden bg-[#030303] text-white">
+    <main className="relative overflow-x-hidden bg-[#030303] text-white">
       <section className="relative isolate h-screen min-h-[100vh] border-b border-white/10">
         <div className="absolute inset-0 h-screen bg-[url('/images/BannerBackground.png')] bg-cover bg-center bg-no-repeat" />
         <div className="absolute inset-0 h-screen bg-[#070605]/52" />
@@ -167,7 +179,7 @@ const HomePage = () => {
             </div>
 
             <div className="mx-auto mt-5 flex max-w-[470px] flex-col gap-3 sm:flex-row sm:justify-center">
-              <CtaLinkButton href="/play-demo" label="Play In Browser" variant="light" ariaLabel="Play demo in browser" />
+              <CtaLinkButton href="/play-demo" label="Play In Browser" variant="light" ariaLabel="Play demo in browser" iconType="chrome" />
               <CtaLinkButton href={windowsExeHref} label="Download EXE" variant="accent" ariaLabel="Download executable" />
             </div>
           </div>
@@ -182,12 +194,18 @@ const HomePage = () => {
         ) : topRatedCharacters.length > 0 ? (
           <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {topRatedCharacters.map((character) => (
-              <CharacterCard
+              <CharacterGalleryCard
                 key={character.id}
-                id={character.id}
+                routeId={character.slug}
                 name={character.name}
                 likes={character.likes}
+                chats={character.chats}
                 gradientClassName={character.gradientClassName}
+                description={character.description}
+                previewImageUrl={character.previewImageUrl}
+                isPatreonGated={character.isPatreonGated}
+                hasGatedAccess={!character.isPatreonGated}
+                requiredTierCents={character.minimumTierCents}
               />
             ))}
           </div>

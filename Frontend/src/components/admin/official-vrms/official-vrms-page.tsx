@@ -164,16 +164,18 @@ const OfficialVrmsPage = () => {
   return (
     <AdminPageShell activeKey="official-vrms">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="font-[family-name:var(--font-heading)] text-[29px] font-normal leading-none text-white">Official Characters</h1>
-          <p className="mt-1 text-[15px] font-[family-name:var(--font-heading)] font-normal text-[#9ab0cd]">
+        <div className="min-w-0">
+          <h1 className="font-[family-name:var(--font-heading)] text-[22px] font-normal leading-tight text-white sm:text-[26px] md:text-[29px] md:leading-none">
+            Official Characters
+          </h1>
+          <p className="mt-1 text-[14px] font-[family-name:var(--font-heading)] font-normal leading-snug text-[#9ab0cd] sm:text-[15px]">
             Manage and publish official, curated VRMs produced by the platform.
           </p>
         </div>
 
         <Link
           href="/upload-vrm"
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-gradient-to-r from-ember-300 to-ember-400 px-6 text-[12px] font-normal uppercase tracking-[0.05em] text-[#1b130f] transition hover:brightness-105"
+          className="inline-flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-md bg-gradient-to-r from-ember-300 to-ember-400 px-6 text-[12px] font-normal uppercase tracking-[0.05em] text-[#1b130f] transition hover:brightness-105 sm:w-auto"
           aria-label="Add official VRM"
         >
           <PlusIcon />
@@ -201,8 +203,8 @@ const OfficialVrmsPage = () => {
       />
 
       <section className="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-[#0b0f14]/95">
-        <div className="overflow-x-auto">
-          <table className="min-w-full">
+        <div className="-mx-px overflow-x-auto sm:mx-0">
+          <table className="min-w-[880px] w-full">
             <thead>
               <tr className="border-b border-white/10 bg-[#181b21]/85">
                 <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Character</th>

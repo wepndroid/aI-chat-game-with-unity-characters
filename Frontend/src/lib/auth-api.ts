@@ -38,6 +38,7 @@ type ResetPasswordPayload = {
   password: string
 }
 
+
 type GoogleOAuthIntent = 'signin' | 'signup'
 
 const registerWithPassword = async (payload: RegisterAuthPayload) => {
@@ -77,6 +78,7 @@ const resetPasswordWithToken = async (payload: ResetPasswordPayload) => {
   return apiPost<{ data: { reset: boolean } }>('/auth/reset-password', payload)
 }
 
+
 const getGoogleOauthStartUrl = (redirectAfter = '/profile', intent: GoogleOAuthIntent = 'signin') => {
   const query = new URLSearchParams({
     redirectAfter,
@@ -110,3 +112,4 @@ export type {
   ResetPasswordPayload,
   VerifyEmailCodePayload
 }
+

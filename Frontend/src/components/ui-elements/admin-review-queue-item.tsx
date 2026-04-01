@@ -9,7 +9,7 @@ type AdminReviewQueueItemProps = {
 const AdminReviewQueueItem = ({ characterName, creatorName, previewImageUrl, flagCount }: AdminReviewQueueItemProps) => {
   return (
     <article className="rounded-md border border-white/12 bg-gradient-to-r from-[#181a20]/95 to-[#111214]/95 px-4 py-3.5">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           {previewImageUrl ? (
             <img
@@ -23,12 +23,14 @@ const AdminReviewQueueItem = ({ characterName, creatorName, previewImageUrl, fla
             </div>
           )}
           <div className="min-w-0">
-            <p className="font-[family-name:var(--font-heading)] text-[19px] font-normal leading-none text-white">{characterName}</p>
+            <p className="font-[family-name:var(--font-heading)] text-[17px] font-normal leading-tight text-white sm:text-[19px] sm:leading-none">
+              {characterName}
+            </p>
             <p className="mt-1 text-xs text-[#7585a4]">by {creatorName}</p>
           </div>
         </div>
 
-        <div className="inline-flex shrink-0 items-center gap-3">
+        <div className="inline-flex shrink-0 flex-wrap items-center gap-2 sm:gap-3">
           {flagCount ? (
             <span className="inline-flex items-center rounded-md border border-rose-500/35 bg-rose-500/10 px-2 py-1 text-[11px] font-normal text-rose-300">
               {flagCount} Flags

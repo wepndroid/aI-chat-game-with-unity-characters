@@ -493,9 +493,11 @@ const CommunityVrmsPage = () => {
   return (
     <AdminPageShell activeKey="community-vrms">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="font-[family-name:var(--font-heading)] text-[29px] font-normal leading-none text-white">VRM Database</h1>
-          <p className="mt-1 max-w-xl text-[14px] font-normal text-[#8ea0bf]">
+        <div className="min-w-0">
+          <h1 className="font-[family-name:var(--font-heading)] text-[22px] font-normal leading-tight text-white sm:text-[26px] md:text-[29px] md:leading-none">
+            VRM Database
+          </h1>
+          <p className="mt-1 max-w-xl text-[13px] font-normal leading-snug text-[#8ea0bf] sm:text-[14px]">
             Submissions awaiting approval are managed on the{' '}
             <Link href="/admin/review-queue" className="text-ember-300 transition hover:text-ember-200">
               Review Queue
@@ -505,12 +507,12 @@ const CommunityVrmsPage = () => {
         </div>
 
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-          <label className="inline-flex h-11 items-center rounded-lg border border-ember-500/55 bg-[#12151b] px-3">
+          <label className="relative inline-flex h-11 w-full items-center rounded-lg border border-ember-500/55 bg-[#12151b] px-3 sm:w-[180px]">
             <select
               value={communityFilter}
               onChange={(event) => setCommunityFilter(event.target.value as CommunityVrmFilterValue)}
               aria-label="Filter community VRMs"
-              className="h-full bg-transparent text-base text-[#9cb0cc] outline-none"
+              className="h-full w-full appearance-none truncate bg-transparent pr-8 text-base text-[#9cb0cc] outline-none"
             >
               {communityVrmFilterOptions.map((filterOption) => (
                 <option key={filterOption.value} value={filterOption.value} className="bg-[#10151d] text-[#9cb0cc]">
@@ -518,6 +520,11 @@ const CommunityVrmsPage = () => {
                 </option>
               ))}
             </select>
+            <span className="pointer-events-none absolute right-3 inline-flex size-4 items-center justify-center text-[#9cb0cc]" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path d="m5 7 5 6 5-6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
           </label>
 
           <label className="group inline-flex h-11 w-full max-w-[300px] items-center gap-2 rounded-lg border border-white/15 bg-[#0f1218]/95 px-3 text-[#6e809d] transition focus-within:border-ember-300 sm:w-[300px]">
@@ -556,8 +563,8 @@ const CommunityVrmsPage = () => {
       />
 
       <section className="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-[#0b0f14]/95">
-        <div className="overflow-x-auto">
-          <table className="min-w-full">
+        <div className="-mx-px overflow-x-auto sm:mx-0">
+          <table className="min-w-[880px] w-full">
             <thead>
               <tr className="border-b border-white/10 bg-[#181b21]/85">
                 <th className="px-4 py-4 text-left text-[14px] font-normal text-[#8ea0bf]">Preview</th>

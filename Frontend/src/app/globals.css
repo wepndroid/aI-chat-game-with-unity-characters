@@ -59,3 +59,44 @@ body {
   cursor: default;
   user-select: text;
 }
+
+/* All native checkboxes: thin outline, no fill (checked or unchecked); check is stroke-only. */
+@layer components {
+  input[type='checkbox'] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 1.125rem;
+    height: 1.125rem;
+    flex-shrink: 0;
+    border-radius: 2px;
+    border: 1px solid rgba(255, 255, 255, 0.38);
+    background-color: transparent !important;
+    background-image: none;
+    accent-color: transparent;
+    vertical-align: middle;
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+  }
+
+  input[type='checkbox']:hover:not(:disabled) {
+    border-color: rgba(255, 255, 255, 0.55);
+  }
+
+  input[type='checkbox']:checked {
+    background-color: transparent !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'%3E%3Cpath stroke='%23e5e7eb' stroke-width='2.75' stroke-linecap='round' stroke-linejoin='round' d='M5 13l4 4L19 7'/%3E%3C/svg%3E");
+    background-size: 0.95rem 0.95rem;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  input[type='checkbox']:focus-visible {
+    outline: 2px solid rgba(244, 99, 19, 0.45);
+    outline-offset: 2px;
+  }
+
+  input[type='checkbox']:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
