@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { EntitlementStatus } from '@prisma/client'
+import { EntitlementStatus, Prisma } from '@prisma/client'
 import { Router } from 'express'
 import { z } from 'zod'
 import { exchangeAuthorizationCode, probePatreonAuthorizeConfiguration } from '../lib/patreon-client'
@@ -60,6 +60,32 @@ const buildPatreonAuthorizationUrl = (stateToken: string) => {
   url.searchParams.set('state', stateToken)
 
   return url.toString()
+}
+
+const normalizeCallbackErrorMessage = (error: unknown) => {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+    return 'This Patreon account is already linked to another SecretWaifu account.'
+  }
+
+  if (error instanceof Error) {
+    const message = error.message ?? ''
+
+    if (message.includes('PATREON_TOKEN_ENCRYPTION_KEY')) {
+      return 'Patreon connection is temporarily unavailable due to server configuration. Please contact support.'
+    }
+
+    if (message.includes('Patreon OAuth is not configured')) {
+      return 'Patreon connection is temporarily unavailable due to server configuration. Please contact support.'
+    }
+
+    if (message.startsWith('Patreon API request failed')) {
+      return 'Patreon connection failed. Please try again in a moment.'
+    }
+
+    return 'Patreon connection failed. Please try again.'
+  }
+
+  return 'Patreon connection failed. Please try again.'
 }
 
 patreonRoutes.get('/patreon/connect', requireVerifiedEmail, async (request, response, next) => {
@@ -173,7 +199,13 @@ patreonRoutes.get('/patreon/oauth/callback', async (request, response, next) => 
 
     response.redirect(302, buildCallbackRedirectUrl(successPath))
   } catch (error) {
-    next(error)
+    console.error(error)
+    const message = encodeURIComponent(normalizeCallbackErrorMessage(error))
+    try {
+      response.redirect(302, buildCallbackRedirectUrl(`/members?patreon=error&message=${message}`))
+    } catch (redirectError) {
+      next(redirectError)
+    }
   }
 })
 
