@@ -1,8 +1,15 @@
 'use client'
 
-import { useSearchParams } from 'next/navigation'
+import { useAuth } from '@/components/providers/auth-provider'
+import { useRouter, useSearchParams } from 'next/navigation'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+
+const PlayDemoAuthGateFallback = () => (
+  <main className="relative min-h-[calc(100vh-140px)] bg-[#030303] text-white">
+    <div className="mx-auto max-w-6xl px-5 pt-24 text-center text-sm text-white/70">Loading…</div>
+  </main>
+)
 
 const resolveLoadingMessage = (progressValue: number, iframeLoaded: boolean, hasUnityProgressFeed: boolean) => {
   if (!hasUnityProgressFeed) {
@@ -92,9 +99,20 @@ const buildWebglEmbedUrlWithCharacterContext = (baseUrl: string, characterId: st
 }
 
 const PlayDemoClient = () => {
+  const router = useRouter()
+  const { sessionUser, isAuthLoading } = useAuth()
   const searchParams = useSearchParams()
   const characterId = searchParams.get('characterId')
   const characterSlug = searchParams.get('character')
+
+  useEffect(() => {
+    if (isAuthLoading) {
+      return
+    }
+    if (!sessionUser) {
+      router.replace('/?openSignIn=1')
+    }
+  }, [isAuthLoading, sessionUser, router])
 
   const webglEmbedUrl = process.env.NEXT_PUBLIC_WEBGL_EMBED_URL
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
@@ -190,6 +208,10 @@ const PlayDemoClient = () => {
   )
 
   const hasCharacterContext = Boolean(characterId || characterSlug)
+
+  if (isAuthLoading || !sessionUser) {
+    return <PlayDemoAuthGateFallback />
+  }
 
   return (
     <main className="relative overflow-x-hidden bg-[#030303] text-white">
