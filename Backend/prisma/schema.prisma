@@ -282,3 +282,17 @@ model Session {
   @@index([revokedAt])
   @@index([expiresAt, revokedAt])
 }
+
+/// Persistent failed-login throttling by client IP to survive process restarts.
+model FailedLoginAttempt {
+  /// Normalized IP key (Express `request.ip` or remote address fallback).
+  ipAddress     String   @id
+  attempts      Int      @default(0)
+  windowStartAt DateTime
+  lockUntil     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([lockUntil])
+  @@index([windowStartAt])
+}

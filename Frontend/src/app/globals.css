@@ -100,3 +100,29 @@ body {
     cursor: not-allowed;
   }
 }
+
+/* Minimum readable copy: Tailwind `text-xs` (12px) and smaller arbitrary sizes → 14px */
+.text-\[8px\],
+.text-\[9px\],
+.text-\[10px\],
+.text-\[11px\],
+.text-\[12px\],
+.text-\[13px\],
+.text-xs {
+  font-size: 14px !important;
+}
+
+/* Large-screen readability: widen common page containers */
+@media (min-width: 1280px) {
+  .max-w-\[900px\] {
+    max-width: 1200px !important;
+  }
+
+  .max-w-\[1150px\] {
+    max-width: 1440px !important;
+  }
+
+  .max-w-6xl {
+    max-width: 1440px !important;
+  }
+}

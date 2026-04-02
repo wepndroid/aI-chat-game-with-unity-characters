@@ -3,6 +3,7 @@
 import CharacterGalleryCard from '@/components/ui-elements/character-gallery-card'
 import CtaLinkButton from '@/components/ui-elements/cta-link-button'
 import FaqItem from '@/components/ui-elements/faq-item'
+import { useAuth } from '@/components/providers/auth-provider'
 import PlatformItem from '@/components/ui-elements/platform-item'
 import type { PlatformIconType } from '@/components/ui-elements/platform-item'
 import SectionHeading from '@/components/ui-elements/section-heading'
@@ -81,7 +82,9 @@ const frequentlyAskedQuestions: FaqItemData[] = [
 ]
 
 const HomePage = () => {
+  const { sessionUser } = useAuth()
   const windowsExeHref = process.env.NEXT_PUBLIC_WINDOWS_BUILD_URL?.trim() || '/download'
+  const playBrowserHref = sessionUser ? '/play-demo' : '/?openSignIn=1'
   const [topRatedCharacters, setTopRatedCharacters] = useState<CharacterCardData[]>([])
   const [isTopRatedLoading, setIsTopRatedLoading] = useState(true)
 
@@ -91,8 +94,8 @@ const HomePage = () => {
       id: 'browser',
       label: 'Browser',
       iconType: 'browser',
-      href: '/play-demo',
-      ariaLabel: 'Play the game in your browser (WebGL demo)'
+      href: playBrowserHref,
+      ariaLabel: sessionUser ? 'Play the game in your browser (WebGL demo)' : 'Open sign in modal to play in browser'
     },
     {
       id: 'windows',
@@ -179,7 +182,13 @@ const HomePage = () => {
             </div>
 
             <div className="mx-auto mt-5 flex max-w-[470px] flex-col gap-3 sm:flex-row sm:justify-center">
-              <CtaLinkButton href="/play-demo" label="Play In Browser" variant="light" ariaLabel="Play demo in browser" iconType="chrome" />
+              <CtaLinkButton
+                href={playBrowserHref}
+                label="Play In Browser"
+                variant="light"
+                ariaLabel={sessionUser ? 'Play demo in browser' : 'Open sign in modal to play demo in browser'}
+                iconType="chrome"
+              />
               <CtaLinkButton href={windowsExeHref} label="Download EXE" variant="accent" ariaLabel="Download executable" />
             </div>
           </div>

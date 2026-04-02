@@ -369,10 +369,10 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
       setCharacterRecord((previousCharacter) =>
         previousCharacter
           ? {
-              ...previousCharacter,
-              hasHearted: payload.data.hasHearted,
-              heartsCount: payload.data.heartsCount
-            }
+            ...previousCharacter,
+            hasHearted: payload.data.hasHearted,
+            heartsCount: payload.data.heartsCount
+          }
           : previousCharacter
       )
       showHeartToast(
@@ -457,6 +457,13 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
 
     return `/play-demo?characterId=${encodeURIComponent(characterRecord.id)}&character=${encodeURIComponent(characterRecord.slug)}`
   }, [characterRecord])
+
+  const startChatHref = useMemo(() => {
+    if (!sessionUser) {
+      return '/?openSignIn=1'
+    }
+    return playDemoHref
+  }, [playDemoHref, sessionUser])
 
   useLayoutEffect(() => {
     if (!isThreePreviewOpen || !canOpenThreePreview || !characterRecord?.vroidFileUrl) {
@@ -719,7 +726,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
           {!isLoading && !errorMessage && characterRecord ? (
             <div className="mt-10 grid gap-5 lg:grid-cols-[1.3fr_1fr]">
               <div>
-                <div className="relative min-h-[430px] overflow-hidden rounded-md border border-white/10 bg-[linear-gradient(90deg,#5d3b24_0%,#201817_38%,#0b1430_100%)] px-5 py-5 md:px-7">
+                <div className="relative min-h-[430px] overflow-hidden rounded-md border border-white/10 bg-[linear-gradient(90deg,#5d3b24_0%,#201817_38%,#0b1430_100%)]">
                   <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(255,243,200,0.5),transparent_34%),radial-gradient(circle_at_26%_58%,rgba(255,255,255,0.16),transparent_26%),radial-gradient(circle_at_74%_58%,rgba(255,255,255,0.1),transparent_24%),linear-gradient(180deg,rgba(0,0,0,0)_58%,rgba(0,0,0,0.86)_100%)]" />
                   {canUseCharacterActions ? (
                     <button
@@ -761,9 +768,8 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                         <button
                           type="button"
                           onClick={() => setIsThreePreviewExpanded((previousExpanded) => !previousExpanded)}
-                          className={`absolute left-3 z-[190] rounded-md border border-white/25 bg-black/55 px-3 py-1.5 text-[8px] font-semibold uppercase tracking-[0.08em] text-white/90 backdrop-blur-sm hover:bg-black/70 ${
-                            isThreePreviewExpanded ? 'top-[5.25rem]' : 'top-3'
-                          }`}
+                          className={`absolute left-3 z-[190] rounded-md border border-white/25 bg-black/55 px-3 py-1.5 text-[8px] font-semibold uppercase tracking-[0.08em] text-white/90 backdrop-blur-sm hover:bg-black/70 ${isThreePreviewExpanded ? 'top-[5.25rem]' : 'top-3'
+                            }`}
                           aria-label={isThreePreviewExpanded ? 'Smaller preview' : 'Full screen 3D preview'}
                         >
                           {isThreePreviewExpanded ? 'Smaller' : 'Full view'}
@@ -937,13 +943,12 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                     type="button"
                     onClick={handleToggleHeart}
                     disabled={isHeartSubmitting || isViewerCharacterOwner}
-                    className={`inline-flex size-[30px] items-center justify-center rounded-full border text-xs transition disabled:cursor-not-allowed ${
-                      isViewerCharacterOwner
+                    className={`inline-flex size-[30px] items-center justify-center rounded-full border text-xs transition disabled:cursor-not-allowed ${isViewerCharacterOwner
                         ? 'border-[#5c4a42]/45 bg-[#1f1815] text-white/30'
                         : characterRecord.hasHearted
                           ? 'border-[#ff74d8] bg-[#3a102c] text-[#ffd8f4] shadow-[0_0_0_1px_rgba(255,255,255,0.12)_inset,0_0_18px_rgba(247,93,232,0.45)] scale-110'
                           : 'border-[#775844] bg-[#261c17] text-white/95 hover:border-[#8f6447] hover:bg-[#2c201a]'
-                    }`}
+                      }`}
                     aria-label={
                       isViewerCharacterOwner
                         ? 'Favorites are not available for your own character'
@@ -980,8 +985,12 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                   </Link>
                 ) : (
                   <Link
-                    href={playDemoHref}
+                    href={startChatHref}
                     onClick={() => {
+                      if (!sessionUser) {
+                        return
+                      }
+
                       if (!characterRecord) {
                         return
                       }
@@ -992,10 +1001,10 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                             previous ? { ...previous, viewsCount: payload.data.viewsCount } : previous
                           )
                         })
-                        .catch(() => {})
+                        .catch(() => { })
                     }}
                     className="mt-8 inline-flex h-14 w-full items-center justify-center gap-3 rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 font-[family-name:var(--font-heading)] text-[20px] font-semibold italic uppercase leading-none text-white transition hover:brightness-110"
-                    aria-label="Start chat in the WebGL demo with this character"
+                    aria-label={sessionUser ? 'Start chat in the WebGL demo with this character' : 'Open sign in modal to start chat'}
                   >
                     Start Chat
                     <span className="text-white/95">
@@ -1011,11 +1020,10 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
 
       {heartToast ? (
         <div
-          className={`fixed bottom-6 right-6 z-[200] max-w-[min(calc(100vw-2rem),22rem)] rounded-lg border px-4 py-3 text-sm shadow-[0_12px_40px_rgba(0,0,0,0.45)] ${
-            heartToast.variant === 'error'
+          className={`fixed bottom-6 right-6 z-[200] max-w-[min(calc(100vw-2rem),22rem)] rounded-lg border px-4 py-3 text-sm shadow-[0_12px_40px_rgba(0,0,0,0.45)] ${heartToast.variant === 'error'
               ? 'border-rose-300/35 bg-[#1c1012] text-rose-100'
               : 'border-emerald-300/35 bg-[#0f1614] text-emerald-100'
-          }`}
+            }`}
           role={heartToast.variant === 'error' ? 'alert' : 'status'}
           aria-live={heartToast.variant === 'error' ? 'assertive' : 'polite'}
         >

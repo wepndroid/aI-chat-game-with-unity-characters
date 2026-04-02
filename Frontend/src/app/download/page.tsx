@@ -1,48 +1,26 @@
 import Link from 'next/link'
 
-type PurchasePathItem = {
+type DownloadPlatformItem = {
   id: string
   title: string
   description: string
   ctaLabel: string
-  href: string
+  href?: string
 }
 
 const DownloadPage = () => {
-  const itchIoUrl = process.env.NEXT_PUBLIC_ITCH_IO_URL?.trim() || 'https://itch.io'
-  const patreonUrl = process.env.NEXT_PUBLIC_PATREON_URL ?? '/members'
-  // Same env as home; default /support here so “Direct Website Purchase” is not a link to this same page when env is unset.
-  const directPurchaseUrl = process.env.NEXT_PUBLIC_DIRECT_PURCHASE_URL?.trim() || '/support'
+  // Download target for current Windows build.
+  const windowsDownloadUrl = process.env.NEXT_PUBLIC_WINDOWS_DOWNLOAD_URL?.trim() || '/support'
 
-  const purchasePathList: PurchasePathItem[] = [
+  const platformDownloadList: DownloadPlatformItem[] = [
     {
-      id: 'purchase-webgl',
-      title: 'Play Free WebGL Demo',
-      description: 'Try the game instantly in browser before purchasing.',
-      ctaLabel: 'Launch Demo',
-      href: '/play-demo'
+      id: 'download-windows',
+      title: 'Windows',
+      description: 'Current available build for desktop players.',
+      ctaLabel: 'Download for Windows',
+      href: windowsDownloadUrl
     },
-    {
-      id: 'purchase-itch',
-      title: 'Buy On itch.io',
-      description: 'Recommended path for full game checkout and release builds.',
-      ctaLabel: 'Open itch.io',
-      href: itchIoUrl
-    },
-    {
-      id: 'purchase-patreon',
-      title: 'Patreon Membership',
-      description: 'Use your tier to unlock gated content and synced account perks.',
-      ctaLabel: 'Open Patreon',
-      href: patreonUrl
-    },
-    {
-      id: 'purchase-direct',
-      title: 'Direct Website Purchase',
-      description: 'Future-ready direct purchase path for first-party checkout flow.',
-      ctaLabel: 'Open Direct Purchase',
-      href: directPurchaseUrl
-    }
+    
   ]
 
   const isExternalHref = (href: string) => href.startsWith('http://') || href.startsWith('https://')
@@ -55,38 +33,49 @@ const DownloadPage = () => {
 
         <div className="relative z-10 mx-auto w-full max-w-6xl pt-24">
           <h1 className="text-center font-[family-name:var(--font-heading)] text-5xl font-semibold italic leading-none text-white md:text-6xl">
-            Download And Purchase
+            Downloads
           </h1>
           <p className="mx-auto mt-4 max-w-3xl text-center text-sm leading-7 text-white/75">
-            Compare available purchase and access paths. Configure external links via environment variables for production.
+            Download by platform. Right now only Windows is available.
           </p>
 
           <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {purchasePathList.map((pathItem) => (
-              <article key={pathItem.id} className="rounded-xl border border-white/10 bg-[#121212]/95 p-5">
+            {platformDownloadList.map((platformItem) => (
+              <article key={platformItem.id} className="rounded-xl border border-white/10 bg-[#121212]/95 p-5">
                 <h2 className="font-[family-name:var(--font-heading)] text-3xl font-semibold italic leading-none text-white">
-                  {pathItem.title}
+                  {platformItem.title}
                 </h2>
-                <p className="mt-3 text-sm leading-6 text-white/70">{pathItem.description}</p>
+                <p className="mt-3 text-sm leading-6 text-white/70">{platformItem.description}</p>
 
-                {isExternalHref(pathItem.href) ? (
-                  <a
-                    href={pathItem.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-5 inline-flex h-10 min-w-[160px] items-center justify-center rounded-md border border-ember-300/40 px-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-ember-200 transition hover:border-ember-300 hover:text-white"
-                    aria-label={pathItem.ctaLabel}
-                  >
-                    {pathItem.ctaLabel}
-                  </a>
+                {platformItem.href ? (
+                  isExternalHref(platformItem.href) ? (
+                    <a
+                      href={platformItem.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-5 inline-flex h-10 min-w-[200px] items-center justify-center rounded-md border border-ember-300/40 px-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-ember-200 transition hover:border-ember-300 hover:text-white"
+                      aria-label={platformItem.ctaLabel}
+                    >
+                      {platformItem.ctaLabel}
+                    </a>
+                  ) : (
+                    <Link
+                      href={platformItem.href}
+                      className="mt-5 inline-flex h-10 min-w-[200px] items-center justify-center rounded-md border border-ember-300/40 px-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-ember-200 transition hover:border-ember-300 hover:text-white"
+                      aria-label={platformItem.ctaLabel}
+                    >
+                      {platformItem.ctaLabel}
+                    </Link>
+                  )
                 ) : (
-                  <Link
-                    href={pathItem.href}
-                    className="mt-5 inline-flex h-10 min-w-[160px] items-center justify-center rounded-md border border-ember-300/40 px-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-ember-200 transition hover:border-ember-300 hover:text-white"
-                    aria-label={pathItem.ctaLabel}
+                  <button
+                    type="button"
+                    disabled
+                    className="mt-5 inline-flex h-10 min-w-[200px] cursor-not-allowed items-center justify-center rounded-md border border-white/15 px-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-white/35"
+                    aria-label={`${platformItem.title} coming soon`}
                   >
-                    {pathItem.ctaLabel}
-                  </Link>
+                    {platformItem.ctaLabel}
+                  </button>
                 )}
               </article>
             ))}
@@ -94,11 +83,11 @@ const DownloadPage = () => {
 
           <div className="mt-8 flex justify-center">
             <Link
-              href="/play-demo"
+              href={windowsDownloadUrl}
               className="inline-flex h-11 min-w-[220px] items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-6 text-xs font-bold uppercase tracking-[0.1em] text-black transition hover:brightness-110"
-              aria-label="Play browser demo"
+              aria-label="Download Windows build"
             >
-              Play Browser Demo
+              Download Windows Build
             </Link>
           </div>
         </div>

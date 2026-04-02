@@ -16,6 +16,19 @@ const signUpHashFlag = '#sign-up'
 const oauthQueryFlagKey = 'oauth'
 const oauthMessageQueryFlagKey = 'message'
 
+const replaceHomeUrlWithoutQueryKeys = (keysToRemove: string[]) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+  const url = new URL(window.location.href)
+  for (const key of keysToRemove) {
+    url.searchParams.delete(key)
+  }
+  const query = url.searchParams.toString()
+  const next = query ? `${url.pathname}?${query}${url.hash}` : `${url.pathname}${url.hash}`
+  window.history.replaceState({}, '', next)
+}
+
 const normalizeOAuthErrorMessage = (rawMessage: string | null) => {
   if (!rawMessage) {
     return 'Google sign-in did not complete. Please try again.'
@@ -58,9 +71,22 @@ const Header = () => {
   const [signUpErrorMessage, setSignUpErrorMessage] = useState<string | null>(null)
 
   const handleOpenSignInModal = () => {
-    const redirectUrl = new URL(window.location.origin)
-    redirectUrl.searchParams.set(signInQueryFlagKey, '1')
-    window.location.assign(redirectUrl.toString())
+    clearAuthError()
+    setSignInErrorMessage(null)
+    setSignUpErrorMessage(null)
+    setIsSignUpModalOpen(false)
+    setIsSignInModalOpen(true)
+
+    if (pathname === '/') {
+      const url = new URL(window.location.href)
+      url.searchParams.set(signInQueryFlagKey, '1')
+      url.searchParams.delete(signUpQueryFlagKey)
+      const query = url.searchParams.toString()
+      const next = query ? `${url.pathname}?${query}${url.hash}` : `${url.pathname}${url.hash}`
+      window.history.replaceState({}, '', next)
+    } else {
+      window.location.assign(`${window.location.origin}/?${signInQueryFlagKey}=1`)
+    }
   }
 
   const handleOpenSignUpModal = () => {
@@ -69,16 +95,27 @@ const Header = () => {
     setSignInErrorMessage(null)
     setSignUpErrorMessage(null)
     setIsSignUpModalOpen(true)
+
+    if (pathname === '/') {
+      const url = new URL(window.location.href)
+      url.searchParams.delete(signInQueryFlagKey)
+      url.searchParams.set(signUpQueryFlagKey, '1')
+      const query = url.searchParams.toString()
+      const next = query ? `${url.pathname}?${query}${url.hash}` : `${url.pathname}${url.hash}`
+      window.history.replaceState({}, '', next)
+    }
   }
 
   const handleCloseSignInModal = () => {
     setIsSignInModalOpen(false)
     setSignInErrorMessage(null)
+    replaceHomeUrlWithoutQueryKeys([signInQueryFlagKey])
   }
 
   const handleCloseSignUpModal = () => {
     setIsSignUpModalOpen(false)
     setSignUpErrorMessage(null)
+    replaceHomeUrlWithoutQueryKeys([signUpQueryFlagKey])
   }
 
   const handleModalContainerClick = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -170,7 +207,17 @@ const Header = () => {
     const handleOpenSignInModalEvent = () => {
       clearAuthError()
       setSignInErrorMessage(null)
+      setSignUpErrorMessage(null)
+      setIsSignUpModalOpen(false)
       setIsSignInModalOpen(true)
+      if (pathname === '/') {
+        const url = new URL(window.location.href)
+        url.searchParams.set(signInQueryFlagKey, '1')
+        url.searchParams.delete(signUpQueryFlagKey)
+        const query = url.searchParams.toString()
+        const next = query ? `${url.pathname}?${query}${url.hash}` : `${url.pathname}${url.hash}`
+        window.history.replaceState({}, '', next)
+      }
     }
 
     window.addEventListener(AUTH_OPEN_SIGN_IN_MODAL_EVENT, handleOpenSignInModalEvent)
@@ -178,7 +225,7 @@ const Header = () => {
     return () => {
       window.removeEventListener(AUTH_OPEN_SIGN_IN_MODAL_EVENT, handleOpenSignInModalEvent)
     }
-  }, [clearAuthError])
+  }, [clearAuthError, pathname])
 
   useEffect(() => {
     if (pathname !== '/') {
@@ -210,15 +257,23 @@ const Header = () => {
     }
 
     clearAuthError()
-    url.searchParams.delete(signInQueryFlagKey)
-    url.searchParams.delete(signUpQueryFlagKey)
+    // Strip OAuth noise from the URL; keep openSignIn / openSignUp in the address bar while modals stay open.
     url.searchParams.delete(oauthQueryFlagKey)
     url.searchParams.delete(oauthMessageQueryFlagKey)
     url.searchParams.delete('provider')
     if (shouldOpenSignUpByHash) {
       url.hash = ''
     }
-    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+    if (shouldOpenSignUp || shouldOpenSignUpByHash) {
+      url.searchParams.set(signUpQueryFlagKey, '1')
+      url.searchParams.delete(signInQueryFlagKey)
+    } else {
+      url.searchParams.set(signInQueryFlagKey, '1')
+      url.searchParams.delete(signUpQueryFlagKey)
+    }
+    const query = url.searchParams.toString()
+    const next = query ? `${url.pathname}?${query}${url.hash}` : `${url.pathname}${url.hash}`
+    window.history.replaceState({}, '', next)
   }, [pathname, clearAuthError])
 
   return (
@@ -227,7 +282,7 @@ const Header = () => {
         <div className="mx-auto w-full max-w-[1150px] px-5 py-4 md:px-8 md:py-5">
           <div className="flex items-center justify-between gap-3">
             <Link href="/" className="inline-flex shrink-0 items-center text-white" aria-label="SecretWaifu home">
-              <Image src="/images/Logo.png" alt="SecretWaifu logo" width={164} height={44} className="h-9 w-auto" priority />
+              <Image src="/images/SecretWaifu Logo White.svg" alt="SecretWaifu logo" width={164} height={44} className="h-9 w-auto" priority />
             </Link>
 
             <nav className="hidden items-center gap-9 text-xs font-semibold uppercase tracking-[0.2em] text-white/85 md:flex">
@@ -474,8 +529,18 @@ const Header = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    handleCloseSignUpModal()
+                    clearAuthError()
+                    setSignUpErrorMessage(null)
+                    setIsSignUpModalOpen(false)
                     setIsSignInModalOpen(true)
+                    if (pathname === '/') {
+                      const url = new URL(window.location.href)
+                      url.searchParams.delete(signUpQueryFlagKey)
+                      url.searchParams.set(signInQueryFlagKey, '1')
+                      const q = url.searchParams.toString()
+                      const next = q ? `${url.pathname}?${q}${url.hash}` : `${url.pathname}${url.hash}`
+                      window.history.replaceState({}, '', next)
+                    }
                   }}
                   className="font-semibold text-ember-300 transition hover:text-ember-200"
                   aria-label="Open sign in modal"

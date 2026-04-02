@@ -193,6 +193,7 @@ const adminSettingsPatchSchema = z.object({
       maxPreviewImageSizeMb: z.number().int().min(1).max(100),
       allowedPreviewMimeTypes: z.array(z.string().min(1)).min(1)
     })
+    .strict()
     .optional(),
   requestLimits: z
     .object({
@@ -200,17 +201,20 @@ const adminSettingsPatchSchema = z.object({
       authPerMinute: z.number().int().min(5).max(5000),
       uploadPerMinute: z.number().int().min(1).max(5000)
     })
+    .strict()
     .optional(),
   sessionLogin: z
     .object({
       sessionTtlMinutes: z.number().int().min(10).max(60 * 24 * 90)
     })
+    .strict()
     .optional(),
   featureSwitches: z
     .object({
       publicUploadsEnabled: z.boolean(),
       communityPageEnabled: z.boolean()
     })
+    .strict()
     .optional(),
   maintenance: z
     .object({
@@ -222,6 +226,7 @@ const adminSettingsPatchSchema = z.object({
       readOnlyMode: z.boolean(),
       blockedRoutePrefixes: z.array(z.string())
     })
+    .strict()
     .optional(),
   apiKeys: z
     .object({
@@ -237,8 +242,9 @@ const adminSettingsPatchSchema = z.object({
       smtpPass: z.string(),
       smtpFrom: z.string()
     })
+    .strict()
     .optional()
-})
+}).strict()
 
 statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next) => {
   try {

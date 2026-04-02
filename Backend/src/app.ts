@@ -2,13 +2,16 @@ import path from 'node:path'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import express from 'express'
+import helmet from 'helmet'
 import morgan from 'morgan'
+import { rateLimit } from 'express-rate-limit'
 import { ZodError } from 'zod'
 import authRoutes from './routes/auth-routes'
 import characterAssetUploadRoutes from './routes/character-asset-upload-routes'
 import characterRoutes from './routes/character-routes'
 import healthRoutes from './routes/health-routes'
 import legacyRoutes from './routes/legacy-routes'
+import { createCsrfOriginMiddleware, normalizeOrigin } from './middleware/csrf-origin-middleware'
 import { runtimeAdminSettingsMiddleware } from './middleware/runtime-admin-settings-middleware'
 import patreonRoutes from './routes/patreon-routes'
 import reviewRoutes from './routes/review-routes'
@@ -17,14 +20,43 @@ import userRoutes from './routes/user-routes'
 
 const app = express()
 
-const normalizeOrigin = (origin: string) => {
-  return origin.trim().replace(/^['"]|['"]$/g, '').replace(/\/+$/, '')
-}
-
 const isProduction = process.env.NODE_ENV === 'production'
 const configuredOrigins = process.env.CORS_ORIGIN?.split(',').map((origin) => normalizeOrigin(origin)).filter(Boolean) ?? []
 const defaultDevOrigins = isProduction ? [] : ['http://127.0.0.1:7000', 'http://localhost:7000']
 const allowedOrigins = new Set<string>([...configuredOrigins, ...defaultDevOrigins])
+const trustedProxyHopCount = Number.parseInt(process.env.TRUST_PROXY_HOPS ?? '', 10)
+
+app.set('trust proxy', Number.isFinite(trustedProxyHopCount) ? trustedProxyHopCount : isProduction ? 1 : 0)
+
+const globalApiRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isProduction ? 300 : 1200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    message: 'Too many requests. Please try again later.'
+  }
+})
+
+const authRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isProduction ? 40 : 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    message: 'Too many authentication attempts. Please slow down.'
+  }
+})
+
+const assetUploadRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isProduction ? 30 : 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    message: 'Too many upload attempts. Please try again later.'
+  }
+})
 
 app.use(
   cors({
@@ -46,10 +78,30 @@ app.use(
     }
   })
 )
+app.use(
+  helmet({
+    // This is a JSON API (not serving frontend HTML), so strict CSP adds little value here.
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    // Frontend (different port origin) must be able to render uploaded images.
+    crossOriginResourcePolicy: { policy: 'cross-origin' }
+  })
+)
 app.use(express.json({ limit: '10mb' }))
+app.use(express.urlencoded({ extended: false, limit: '1mb', parameterLimit: 100 }))
 app.use(cookieParser())
 app.use(morgan('dev'))
 app.use(runtimeAdminSettingsMiddleware)
+app.use('/api', globalApiRateLimit)
+app.use(
+  '/api',
+  createCsrfOriginMiddleware({
+    allowedOrigins,
+    isProduction
+  })
+)
+app.use('/api/auth', authRateLimit)
+app.use('/api/characters/assets/upload', assetUploadRateLimit)
 
 const uploadsRoot = path.join(process.cwd(), 'uploads')
 app.use('/uploads', express.static(uploadsRoot))

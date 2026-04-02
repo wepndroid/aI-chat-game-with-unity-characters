@@ -17,7 +17,7 @@ const Footer = () => {
         <div className="flex flex-col gap-10 md:flex-row md:items-start md:justify-between md:gap-8">
           <div className="w-full max-w-[360px]">
             <div className="inline-flex items-center">
-              <Image src="/images/Logo.png" alt="SecretWaifu logo" width={164} height={44} className="h-8 w-auto opacity-95" />
+              <Image src="/images/SecretWaifu Logo White.svg" alt="SecretWaifu logo" width={164} height={44} className="h-8 w-auto opacity-95" />
             </div>
             <p className="mt-4 text-[14px] leading-[1.45] text-white/45">
               Step into a world, interactive world with your favorite VRoid girl uncensored and completely immersive VR supported

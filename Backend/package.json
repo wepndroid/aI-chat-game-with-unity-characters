@@ -9,6 +9,7 @@
     "prestart": "npm run build",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
+    "test:security": "tsx --test src/security/security-hardening.test.ts",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push --skip-generate",
     "prisma:sync": "prisma db push",
@@ -29,6 +30,8 @@
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.3.2",
+    "helmet": "^8.1.0",
     "morgan": "^1.10.1",
     "multer": "^2.1.1",
     "nodemailer": "^8.0.2",
@@ -40,7 +43,9 @@
     "@types/morgan": "^1.9.10",
     "@types/multer": "^2.1.0",
     "@types/node": "^25.5.0",
+    "@types/supertest": "^7.2.0",
     "prisma": "^6.19.0",
+    "supertest": "^7.2.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }

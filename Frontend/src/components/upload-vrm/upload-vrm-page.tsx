@@ -5,11 +5,9 @@ import MaintenanceWorkspaceGate from '@/components/shared/maintenance-workspace-
 import { useAuth } from '@/components/providers/auth-provider'
 import PreviewImageDropzone from '@/components/ui-elements/preview-image-dropzone'
 import UploadDropzone from '@/components/ui-elements/upload-dropzone'
-import FirstMessageRichEditor from '@/components/ui-elements/first-message-rich-editor'
 import FirstMessagePreviewBox from '@/components/ui-elements/first-message-preview-box'
 import UploadField from '@/components/ui-elements/upload-field'
-import { FIRST_MESSAGE_MAX_LENGTH, firstMessageToEditorHtml, isEmptyFirstMessageHtml } from '@/lib/first-message-preview'
-import { sanitizeFirstMessageHtml } from '@/lib/sanitize-first-message-html'
+import { FIRST_MESSAGE_MAX_LENGTH } from '@/lib/first-message-preview'
 import {
   createCharacter,
   getCharacterDetail,
@@ -113,11 +111,11 @@ const UploadVrmPage = () => {
       return false
     }
 
-    const sanitizedFirstMessage = sanitizeFirstMessageHtml(formState.firstMessageText.trim())
-    if (sanitizedFirstMessage.length > FIRST_MESSAGE_MAX_LENGTH) {
+    const normalizedFirstMessage = formState.firstMessageText.trim()
+    if (normalizedFirstMessage.length > FIRST_MESSAGE_MAX_LENGTH) {
       return false
     }
-    if (isEmptyFirstMessageHtml(sanitizedFirstMessage)) {
+    if (!normalizedFirstMessage) {
       return false
     }
 
@@ -181,7 +179,7 @@ const UploadVrmPage = () => {
           personality: payload.data.personality ?? '',
           scenario: payload.data.scenario ?? '',
           exampleDialogs: payload.data.exampleDialogs ?? '',
-          firstMessageText: firstMessageToEditorHtml(payload.data.firstMessage ?? ''),
+          firstMessageText: payload.data.firstMessage ?? '',
           isPublic: payload.data.visibility === 'PUBLIC'
         })
         setBaselinePreviewImageUrl(loadedPreviewUrl)
@@ -264,23 +262,21 @@ const UploadVrmPage = () => {
       return
     }
 
-    const sanitizedFirstMessage = sanitizeFirstMessageHtml(formState.firstMessageText.trim())
+    const normalizedFirstMessage = formState.firstMessageText.trim()
 
-    if (sanitizedFirstMessage.length > FIRST_MESSAGE_MAX_LENGTH) {
-      setErrorMessage(
-        `First message is too long after sanitizing (${sanitizedFirstMessage.length} / ${FIRST_MESSAGE_MAX_LENGTH} characters).`
-      )
+    if (normalizedFirstMessage.length > FIRST_MESSAGE_MAX_LENGTH) {
+      setErrorMessage(`First message is too long (${normalizedFirstMessage.length} / ${FIRST_MESSAGE_MAX_LENGTH} characters).`)
       setStatusMessage(null)
       return
     }
 
-    if (isEmptyFirstMessageHtml(sanitizedFirstMessage)) {
+    if (!normalizedFirstMessage) {
       setErrorMessage('Please enter a first message.')
       setStatusMessage(null)
       return
     }
 
-    const firstMessageForApi: string = sanitizedFirstMessage
+    const firstMessageForApi: string = normalizedFirstMessage
 
     setIsSubmitting(true)
     setErrorMessage(null)
@@ -558,27 +554,27 @@ const UploadVrmPage = () => {
                       First message <span className="font-normal normal-case text-white/35">(required)</span>
                     </p>
                     <p id="first-message-help" className="mt-1.5 text-[11px] leading-relaxed text-white/40">
-                      Required. Rich text: select text and set <span className="text-white/55">font</span>, <span className="text-white/55">color</span>,
-                      bold, italic, and more. The preview shows the same HTML as the character page. Older characters stored as plain text still work;
-                      they are converted when you open edit.
+                      Required plain text. Use <span className="text-white/55">*text*</span> for pink, <span className="text-white/55">"text"</span> for
+                      normal white, and <span className="text-white/55">**</span> for actions (same style as chat).
                     </p>
                   </div>
 
-                  <label className="sr-only" htmlFor="upload-vrm-first-message">
-                    First message text (required)
-                  </label>
-                  <FirstMessageRichEditor
-                    id="upload-vrm-first-message"
-                    aria-describedby="first-message-help"
+                  <UploadField
+                    label="First message"
                     value={formState.firstMessageText}
                     onChange={(value) => handleFieldChange('firstMessageText', value)}
+                    multiline
+                    rows={5}
+                    tokenLimit={FIRST_MESSAGE_MAX_LENGTH}
+                    maxLength={FIRST_MESSAGE_MAX_LENGTH}
+                    placeholder={'Use *like this* for pink, "like this" for normal white, and ** for actions.'}
                     disabled={isEditLoading}
                   />
 
                   <div className="mt-4">
                     <FirstMessagePreviewBox firstMessage={formState.firstMessageText} />
                     <p className="mt-2 text-[10px] text-white/35" aria-live="polite">
-                      Plain-text messages use narration (italics) vs dialogue when split by a blank line; rich HTML is shown as formatted.
+                      Preview uses your plain text message exactly as typed.
                     </p>
                   </div>
                 </div>

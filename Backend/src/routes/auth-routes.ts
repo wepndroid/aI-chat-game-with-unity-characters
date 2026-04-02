@@ -26,16 +26,16 @@ const registerSchema = z.object({
   email: z.string().email(),
   username: z.string().trim().min(3).max(30).regex(/^[a-zA-Z0-9_]+$/),
   password: z.string().min(8).max(128)
-})
+}).strict()
 
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1).max(128)
-})
+}).strict()
 
 const resendVerificationSchema = z.object({
   email: z.string().email().optional()
-})
+}).strict()
 
 const verifyEmailQuerySchema = z.object({
   token: z.string().min(6).max(500)
@@ -43,16 +43,16 @@ const verifyEmailQuerySchema = z.object({
 
 const verifyEmailCodeSchema = z.object({
   code: z.string().trim().min(6).max(32)
-})
+}).strict()
 
 const forgotPasswordSchema = z.object({
   email: z.string().email()
-})
+}).strict()
 
 const resetPasswordSchema = z.object({
   token: z.string().min(20).max(500),
   password: z.string().min(8).max(128)
-})
+}).strict()
 
 const oauthStartQuerySchema = z.object({
   redirectAfter: z.string().trim().optional(),
@@ -68,6 +68,104 @@ const oauthCallbackQuerySchema = z.object({
 
 const oauthProviderToSocialProviderMap: Record<'google', SocialProvider> = {
   google: 'GOOGLE'
+}
+
+const FAILED_LOGIN_WINDOW_MS = 15 * 60 * 1000
+const FAILED_LOGIN_MAX_ATTEMPTS = 6
+const FAILED_LOGIN_LOCK_MS = 20 * 60 * 1000
+
+const getLoginThrottleIp = (request: Request) => {
+  const candidate = request.ip || request.socket.remoteAddress || 'unknown'
+  return candidate.trim() || 'unknown'
+}
+
+const getLoginLockRemainingSeconds = async (ip: string, nowMs: number): Promise<number | null> => {
+  const record = await prisma.failedLoginAttempt.findUnique({
+    where: {
+      ipAddress: ip
+    },
+    select: {
+      windowStartAt: true,
+      lockUntil: true
+    }
+  })
+
+  if (!record) {
+    return null
+  }
+
+  const lockUntilMs = record.lockUntil?.getTime() ?? null
+  const windowStartMs = record.windowStartAt.getTime()
+  const windowExpired = nowMs - windowStartMs > FAILED_LOGIN_WINDOW_MS
+  const lockExpired = !lockUntilMs || lockUntilMs <= nowMs
+
+  if (windowExpired && lockExpired) {
+    await prisma.failedLoginAttempt.delete({
+      where: {
+        ipAddress: ip
+      }
+    })
+    return null
+  }
+
+  if (!lockUntilMs || lockUntilMs <= nowMs) {
+    return null
+  }
+
+  return Math.max(1, Math.ceil((lockUntilMs - nowMs) / 1000))
+}
+
+const recordFailedLoginAttempt = async (ip: string, nowMs: number) => {
+  const existingRecord = await prisma.failedLoginAttempt.findUnique({
+    where: {
+      ipAddress: ip
+    },
+    select: {
+      attempts: true,
+      windowStartAt: true
+    }
+  })
+
+  const nowDate = new Date(nowMs)
+  if (!existingRecord || nowMs - existingRecord.windowStartAt.getTime() > FAILED_LOGIN_WINDOW_MS) {
+    await prisma.failedLoginAttempt.upsert({
+      where: {
+        ipAddress: ip
+      },
+      update: {
+        attempts: 1,
+        windowStartAt: nowDate,
+        lockUntil: null
+      },
+      create: {
+        ipAddress: ip,
+        attempts: 1,
+        windowStartAt: nowDate,
+        lockUntil: null
+      }
+    })
+    return
+  }
+
+  const nextAttempts = existingRecord.attempts + 1
+  const shouldLock = nextAttempts >= FAILED_LOGIN_MAX_ATTEMPTS
+  await prisma.failedLoginAttempt.update({
+    where: {
+      ipAddress: ip
+    },
+    data: {
+      attempts: nextAttempts,
+      lockUntil: shouldLock ? new Date(nowMs + FAILED_LOGIN_LOCK_MS) : null
+    }
+  })
+}
+
+const clearFailedLoginAttempts = async (ip: string) => {
+  await prisma.failedLoginAttempt.deleteMany({
+    where: {
+      ipAddress: ip
+    }
+  })
 }
 
 const buildTokenLink = (baseUrl: string, rawToken: string) => {
@@ -588,6 +686,16 @@ authRoutes.post('/auth/verify-email-code', requireAuth, async (request, response
 
 authRoutes.post('/auth/login', async (request, response, next) => {
   try {
+    const nowMs = Date.now()
+    const throttleIp = getLoginThrottleIp(request)
+    const lockRemainingSeconds = await getLoginLockRemainingSeconds(throttleIp, nowMs)
+    if (lockRemainingSeconds !== null) {
+      response.status(429).json({
+        message: `Too many failed login attempts. Try again in ${lockRemainingSeconds} seconds.`
+      })
+      return
+    }
+
     const payload = loginSchema.parse(request.body)
     const normalizedEmail = payload.email.trim().toLowerCase()
 
@@ -607,6 +715,7 @@ authRoutes.post('/auth/login', async (request, response, next) => {
     })
 
     if (!existingUser?.passwordHash) {
+      await recordFailedLoginAttempt(throttleIp, nowMs)
       response.status(401).json({
         message: 'Invalid e-mail or password.'
       })
@@ -623,12 +732,14 @@ authRoutes.post('/auth/login', async (request, response, next) => {
     const passwordMatches = await verifyPassword(payload.password, existingUser.passwordHash)
 
     if (!passwordMatches) {
+      await recordFailedLoginAttempt(throttleIp, nowMs)
       response.status(401).json({
         message: 'Invalid e-mail or password.'
       })
       return
     }
 
+    await clearFailedLoginAttempts(throttleIp)
     const rawSessionToken = await createOpaqueSessionForUser(existingUser.id, extractSessionClientMeta(request))
     setAuthCookie(response, rawSessionToken)
 
