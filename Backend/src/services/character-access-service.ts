@@ -224,6 +224,15 @@ const buildCharacterListWhereClause = (
   const visibilityClause = params.visibility ? { visibility: params.visibility } : {}
 
   if (actor?.role === 'ADMIN') {
+    if (galleryScope === 'all') {
+      return {
+        ...buildPublicGalleryBranch('all'),
+        ...searchClause,
+        ...statusClause,
+        ...visibilityClause
+      } satisfies Prisma.CharacterWhereInput
+    }
+
     if (galleryScope === 'mine' && actor) {
       return {
         ownerId: actor.userId,
@@ -293,9 +302,9 @@ const buildCharacterListWhereClause = (
   }
 
   if (actor) {
-    // Keep "Official" and "Community" tabs catalog-pure for signed-in users.
+    // Keep public gallery tabs catalog-pure for signed-in users.
     // Personal rows belong to the dedicated "Your Characters" tab.
-    if (galleryScope === 'curated' || galleryScope === 'community') {
+    if (galleryScope === 'all' || galleryScope === 'curated' || galleryScope === 'community') {
       return {
         ...buildPublicGalleryBranch(galleryScope),
         ...searchClause,
@@ -303,24 +312,6 @@ const buildCharacterListWhereClause = (
         ...visibilityClause
       } satisfies Prisma.CharacterWhereInput
     }
-
-    const publicBranch = buildPublicGalleryBranch(galleryScope)
-
-    return {
-      AND: [
-        {
-          OR: [
-            {
-              ownerId: actor.userId
-            },
-            publicBranch
-          ]
-        },
-        searchClause,
-        statusClause,
-        visibilityClause
-      ]
-    } satisfies Prisma.CharacterWhereInput
   }
 
   return {

@@ -11,9 +11,10 @@ import { apiGet } from '@/lib/api-client'
 import { resolveAvailableTierCents, type PatreonStatusSnapshot } from '@/lib/patreon-access'
 import { useEffect, useMemo, useState } from 'react'
 
-type CharacterCategory = 'curated' | 'community' | 'your-characters'
+type CharacterCategory = 'all' | 'curated' | 'community' | 'your-characters'
 
 const categoryTabs: Array<{ key: CharacterCategory; label: string }> = [
+  { key: 'all', label: 'All' },
   { key: 'curated', label: 'Official' },
   { key: 'community', label: 'Community' },
   { key: 'your-characters', label: 'Your Characters' }
@@ -94,7 +95,7 @@ const CharactersPage = () => {
   const { sessionUser, isAuthLoading } = useAuth()
   const { isMaintenanceActive } = useMaintenance()
   const sessionUserId = sessionUser?.id ?? null
-  const [activeCategory, setActiveCategory] = useState<CharacterCategory>('curated')
+  const [activeCategory, setActiveCategory] = useState<CharacterCategory>('all')
   const [searchValue, setSearchValue] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [isCharactersLoading, setIsCharactersLoading] = useState(true)
@@ -127,7 +128,14 @@ const CharactersPage = () => {
       setCharactersErrorMessage(null)
 
       try {
-        const galleryScope = activeCategory === 'curated' ? 'curated' : activeCategory === 'community' ? 'community' : 'mine'
+        const galleryScope =
+          activeCategory === 'all'
+            ? 'all'
+            : activeCategory === 'curated'
+              ? 'curated'
+              : activeCategory === 'community'
+                ? 'community'
+                : 'mine'
 
         const payload = await listCharacters({
           search: searchValue,
