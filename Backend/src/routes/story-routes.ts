@@ -67,25 +67,48 @@ const listStoriesQuerySchema = z.object({
   characterId: z.string().min(1).optional(),
   search: z.string().trim().max(120).optional(),
   sort: z.enum(['newest', 'likes']).optional().default('newest'),
-  /** When scope is mine: filter by draft vs published. Ignored for scope=all. */
-  publication: z.enum(['all', 'draft', 'published']).optional().default('all'),
+  /** When scope is mine: filter by draft vs published vs rejected (rejected = published + moderation rejected). Ignored for scope=all. */
+  publication: z.enum(['all', 'draft', 'published', 'rejected']).optional().default('all'),
   limit: z.coerce.number().int().min(1).max(100).default(20)
 }).strict()
 
 const adminListStoriesQuerySchema = z
   .object({
     search: z.string().trim().max(120).optional(),
-    sort: z.enum(['newest', 'oldest', 'likes']).optional().default('newest'),
+    sort: z.enum(['newest', 'likes']).optional().default('newest'),
+    /** Which moderation bucket to list (only `PUBLISHED` stories appear in admin). */
+    moderation: z.enum(['all', 'pending', 'approved', 'rejected']).optional().default('pending'),
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(25)
   })
   .strict()
+
+const adminModerateStorySchema = z
+  .object({
+    decision: z.enum(['approve', 'reject']),
+    rejectReason: z.string().trim().max(2000).optional()
+  })
+  .strict()
+  .superRefine((data, ctx) => {
+    if (data.decision === 'reject') {
+      const reason = data.rejectReason?.trim() ?? ''
+      if (reason.length < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Reject reason is required.',
+          path: ['rejectReason']
+        })
+      }
+    }
+  })
 
 /** List view: no full body in JSON (only bodyPreview) to avoid leaking long private text in feed responses. */
 const storyListSelectFields = {
   id: true,
   title: true,
   publicationStatus: true,
+  moderationStatus: true,
+  moderationRejectReason: true,
   publishedAt: true,
   likesCount: true,
   characterId: true,
@@ -113,6 +136,8 @@ const storySelectFields = {
   title: true,
   body: true,
   publicationStatus: true,
+  moderationStatus: true,
+  moderationRejectReason: true,
   publishedAt: true,
   likesCount: true,
   characterId: true,
@@ -150,11 +175,16 @@ storyRoutes.get('/stories', optionalAuth, async (request, response, next) => {
       conditions.push({ authorId: authUser.userId })
       if (query.publication === 'draft') {
         conditions.push({ publicationStatus: 'DRAFT' })
+      } else if (query.publication === 'rejected') {
+        conditions.push({ publicationStatus: 'PUBLISHED' })
+        conditions.push({ moderationStatus: 'REJECTED' })
       } else if (query.publication === 'published') {
         conditions.push({ publicationStatus: 'PUBLISHED' })
+        conditions.push({ moderationStatus: { not: 'REJECTED' } })
       }
     } else {
       conditions.push({ publicationStatus: 'PUBLISHED' })
+      conditions.push({ moderationStatus: 'APPROVED' })
     }
 
     if (query.characterId) {
@@ -191,10 +221,18 @@ storyRoutes.get('/stories', optionalAuth, async (request, response, next) => {
       const bodyPreview = raw.length > 280 ? `${raw.slice(0, 280)}...` : raw
       const { body: _omit, ...rest } = story
 
-      return {
+      const withPreview = {
         ...rest,
         bodyPreview
       }
+
+      if (query.scope === 'mine') {
+        return withPreview
+      }
+
+      const { moderationRejectReason: _drop, ...publicRow } = withPreview
+
+      return publicRow
     })
 
     response.json({ data: listPayload })
@@ -217,6 +255,14 @@ storyRoutes.get('/admin/stories', requireAdmin, async (request, response, next) 
 
     const conditions: Record<string, unknown>[] = [{ publicationStatus: 'PUBLISHED' }]
 
+    if (query.moderation === 'pending') {
+      conditions.push({ moderationStatus: 'PENDING' })
+    } else if (query.moderation === 'approved') {
+      conditions.push({ moderationStatus: 'APPROVED' })
+    } else if (query.moderation === 'rejected') {
+      conditions.push({ moderationStatus: 'REJECTED' })
+    }
+
     if (query.search?.trim()) {
       const term = query.search.trim()
       conditions.push({
@@ -229,9 +275,7 @@ storyRoutes.get('/admin/stories', requireAdmin, async (request, response, next) 
     const orderBy: Prisma.StoryPostOrderByWithRelationInput[] =
       query.sort === 'likes'
         ? [{ likesCount: 'desc' }, { createdAt: 'desc' }]
-        : query.sort === 'oldest'
-          ? [{ createdAt: 'asc' }]
-          : [{ createdAt: 'desc' }]
+        : [{ createdAt: 'desc' }]
 
     const [total, stories] = await prisma.$transaction([
       prisma.storyPost.count({ where }),
@@ -288,6 +332,23 @@ storyRoutes.get('/stories/:storyId', optionalAuth, async (request, response, nex
       return
     }
 
+    const isAuthor = authUser?.userId === story.author.id
+    const isAdminViewer = authUser?.role === 'ADMIN'
+
+    if (story.publicationStatus === 'PUBLISHED' && story.moderationStatus !== 'APPROVED') {
+      if (!isAuthor && !isAdminViewer) {
+        response.status(404).json({ message: 'Story not found.' })
+        return
+      }
+    }
+
+    const showModerationMeta = Boolean(isAuthor || isAdminViewer)
+    const sanitizedStory = {
+      ...story,
+      moderationRejectReason:
+        showModerationMeta && story.moderationStatus === 'REJECTED' ? story.moderationRejectReason : null
+    }
+
     const hasLiked = authUser
       ? Boolean(
           await prisma.storyPostLike.findUnique({
@@ -299,7 +360,7 @@ storyRoutes.get('/stories/:storyId', optionalAuth, async (request, response, nex
 
     response.json({
       data: {
-        ...story,
+        ...sanitizedStory,
         hasLiked
       }
     })
@@ -333,6 +394,8 @@ storyRoutes.post('/stories', requireVerifiedEmail, async (request, response, nex
 
     const publicationStatus: 'DRAFT' | 'PUBLISHED' = payload.publicationStatus ?? 'PUBLISHED'
     const now = new Date()
+    const moderationStatus =
+      publicationStatus === 'PUBLISHED' ? ('PENDING' as const) : ('NONE' as const)
 
     const story = await prisma.storyPost.create({
       data: {
@@ -341,6 +404,8 @@ storyRoutes.post('/stories', requireVerifiedEmail, async (request, response, nex
         body: payload.body.trim(),
         characterId: payload.characterId ?? null,
         publicationStatus,
+        moderationStatus,
+        moderationRejectReason: null,
         publishedAt: publicationStatus === 'PUBLISHED' ? now : null
       },
       select: storySelectFields
@@ -371,7 +436,9 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
         title: true,
         body: true,
         publicationStatus: true,
-        publishedAt: true
+        publishedAt: true,
+        moderationStatus: true,
+        moderationRejectReason: true
       }
     })
 
@@ -437,6 +504,26 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
       if (payload.publicationStatus === 'PUBLISHED' && !existing.publishedAt) {
         updateData.publishedAt = new Date()
       }
+      if (payload.publicationStatus === 'PUBLISHED') {
+        if (existing.publicationStatus === 'DRAFT' || existing.moderationStatus === 'REJECTED') {
+          updateData.moderationStatus = 'PENDING'
+          updateData.moderationRejectReason = null
+        }
+      }
+      if (payload.publicationStatus === 'DRAFT') {
+        updateData.moderationStatus = 'NONE'
+        updateData.moderationRejectReason = null
+      }
+    }
+
+    if (
+      existing.authorId === authUser.userId &&
+      existing.moderationStatus === 'REJECTED' &&
+      existing.publicationStatus === 'PUBLISHED' &&
+      payload.publicationStatus === undefined
+    ) {
+      updateData.moderationStatus = 'PENDING'
+      updateData.moderationRejectReason = null
     }
 
     const updated = await prisma.storyPost.update({
@@ -485,6 +572,68 @@ storyRoutes.delete('/stories/:storyId', requireVerifiedEmail, async (request, re
   }
 })
 
+storyRoutes.post('/admin/stories/:storyId/moderate', requireAdmin, async (request, response, next) => {
+  try {
+    const authUser = request.authUser
+
+    if (!authUser || authUser.role !== 'ADMIN') {
+      response.status(403).json({ message: 'Forbidden.' })
+      return
+    }
+
+    const { storyId } = storyParamsSchema.parse(request.params)
+    const payload = adminModerateStorySchema.parse(request.body)
+
+    const existing = await prisma.storyPost.findUnique({
+      where: { id: storyId },
+      select: { id: true, publicationStatus: true, moderationStatus: true }
+    })
+
+    if (!existing || existing.publicationStatus !== 'PUBLISHED') {
+      response.status(404).json({ message: 'Story not found.' })
+      return
+    }
+
+    if (payload.decision === 'approve') {
+      if (existing.moderationStatus !== 'PENDING') {
+        response.status(400).json({ message: 'Only a pending story can be approved.' })
+        return
+      }
+      const updated = await prisma.storyPost.update({
+        where: { id: storyId },
+        data: {
+          moderationStatus: 'APPROVED',
+          moderationRejectReason: null
+        },
+        select: storySelectFields
+      })
+
+      response.json({ data: updated })
+      return
+    }
+
+    if (existing.moderationStatus !== 'PENDING' && existing.moderationStatus !== 'APPROVED') {
+      response.status(400).json({ message: 'This story cannot be rejected in its current state.' })
+      return
+    }
+
+    const reason = payload.rejectReason!.trim()
+
+    const updated = await prisma.storyPost.update({
+      where: { id: storyId },
+      data: {
+        moderationStatus: 'REJECTED',
+        moderationRejectReason: reason
+      },
+      select: storySelectFields
+    })
+
+    response.json({ data: updated })
+  } catch (error) {
+    next(error)
+  }
+})
+
 storyRoutes.post('/stories/:storyId/like/toggle', requireAuth, async (request, response, next) => {
   try {
     const authUser = request.authUser
@@ -498,7 +647,7 @@ storyRoutes.post('/stories/:storyId/like/toggle', requireAuth, async (request, r
 
     const story = await prisma.storyPost.findUnique({
       where: { id: storyId },
-      select: { id: true, authorId: true, publicationStatus: true }
+      select: { id: true, authorId: true, publicationStatus: true, moderationStatus: true }
     })
 
     if (!story) {
@@ -506,7 +655,7 @@ storyRoutes.post('/stories/:storyId/like/toggle', requireAuth, async (request, r
       return
     }
 
-    if (story.publicationStatus !== 'PUBLISHED') {
+    if (story.publicationStatus !== 'PUBLISHED' || story.moderationStatus !== 'APPROVED') {
       response.status(404).json({ message: 'Story not found.' })
       return
     }

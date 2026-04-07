@@ -118,6 +118,9 @@ const StoryDetailPage = ({ storyId }: StoryDetailPageProps) => {
   const canEdit = sessionUser && story && (story.author.id === sessionUser.id || sessionUser.role === 'ADMIN')
   const isOwnStory = Boolean(sessionUser && story && story.author.id === sessionUser.id)
   const isDraft = Boolean(story?.publicationStatus === 'DRAFT')
+  const isLiveForReaders = Boolean(
+    story?.publicationStatus === 'PUBLISHED' && story?.moderationStatus === 'APPROVED'
+  )
   const canPublishHere = Boolean(
     canEdit && isDraft && story && story.title.trim().length >= 3 && story.body.trim().length >= 10
   )
@@ -151,11 +154,32 @@ const StoryDetailPage = ({ storyId }: StoryDetailPageProps) => {
 
           {!isLoading && story ? (
             <article>
+              {!isDraft && story.publicationStatus === 'PUBLISHED' && story.moderationStatus === 'PENDING' ? (
+                <div className="mb-5 rounded-lg border border-sky-500/35 bg-sky-500/10 px-4 py-3 text-sm text-sky-100/95">
+                  <p className="font-semibold">In review</p>
+                  <p className="mt-1 text-xs text-sky-100/75">
+                    This story is waiting for a moderator. It is not visible on the public feed until it is approved.
+                  </p>
+                </div>
+              ) : null}
+
+              {!isDraft && story.moderationStatus === 'REJECTED' && story.moderationRejectReason ? (
+                <div className="mb-5 rounded-lg border border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-100/95">
+                  <p className="font-semibold">Not approved</p>
+                  <p className="mt-2 whitespace-pre-wrap text-xs text-rose-100/85">{story.moderationRejectReason}</p>
+                  {isOwnStory ? (
+                    <p className="mt-2 text-xs text-rose-100/65">
+                      Edit your story and save changes to send it back for review.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
               {isDraft ? (
                 <div className="mb-5 rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/95">
                   <p className="font-semibold">Draft</p>
                   <p className="mt-1 text-xs text-amber-100/75">
-                    This story is not visible to other people yet. Publish it when you are ready.
+                    This story is not visible to other people yet. Publish to submit it for review.
                   </p>
                   {publishError ? <p className="mt-2 text-xs text-rose-200">{publishError}</p> : null}
                   {canEdit ? (
@@ -199,6 +223,16 @@ const StoryDetailPage = ({ storyId }: StoryDetailPageProps) => {
                     Draft
                   </span>
                 ) : null}
+                {!isDraft && story.publicationStatus === 'PUBLISHED' && story.moderationStatus === 'PENDING' ? (
+                  <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] text-sky-200/90">
+                    In review
+                  </span>
+                ) : null}
+                {!isDraft && story.moderationStatus === 'REJECTED' ? (
+                  <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-200/90">
+                    Rejected
+                  </span>
+                ) : null}
               </div>
 
               <div className="mt-8 whitespace-pre-wrap text-sm leading-[1.85] text-white/75">
@@ -206,7 +240,7 @@ const StoryDetailPage = ({ storyId }: StoryDetailPageProps) => {
               </div>
 
               <div className="mt-10 flex items-center gap-4 border-t border-white/10 pt-5">
-                {sessionUser && !isOwnStory ? (
+                {sessionUser && !isOwnStory && isLiveForReaders ? (
                   <button
                     type="button"
                     onClick={handleToggleLike}

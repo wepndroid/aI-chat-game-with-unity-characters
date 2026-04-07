@@ -355,6 +355,21 @@ model Session {
   @@index([expiresAt, revokedAt])
 }
 
+/// Admin runtime JSON blobs; table is created/updated via raw SQL (`runtime-admin-settings.ts`).
+/// Declared with `@@ignore` so `prisma db push` / migrate does not drop this table.
+model RuntimeAdminSettings {
+  id                  String @id
+  uploadLimitsJson    String
+  requestLimitsJson   String
+  sessionLoginJson    String
+  featureSwitchesJson String
+  maintenanceJson     String
+  apiKeysJson         String
+  updatedAt           String
+
+  @@ignore
+}
+
 /// User-submitted story adjustments / community posts visible on the public feed.
 model StoryPost {
   id                  String                  @id @default(cuid())
@@ -363,6 +378,10 @@ model StoryPost {
   body                String
   characterId         String?
   publicationStatus   StoryPublicationStatus @default(PUBLISHED)
+  /// NONE = draft / not submitted; PENDING = submitted for review; APPROVED = public; REJECTED = author must revise.
+  moderationStatus    StoryModerationStatus   @default(NONE)
+  /// Shown to the author when moderationStatus is REJECTED (and to admins).
+  moderationRejectReason String?
   /// Set when the story is or was published; kept if moved back to draft for ordering/history.
   publishedAt         DateTime?
   likesCount          Int                     @default(0)
@@ -375,6 +394,7 @@ model StoryPost {
   @@index([authorId, createdAt])
   @@index([authorId, publicationStatus])
   @@index([publicationStatus, createdAt])
+  @@index([moderationStatus, publicationStatus])
   @@index([characterId])
 }
 
@@ -393,6 +413,13 @@ model StoryPostLike {
 enum StoryPublicationStatus {
   DRAFT
   PUBLISHED
+}
+
+enum StoryModerationStatus {
+  NONE
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 /// Rolling message quota tracker: one row per user per billing period.

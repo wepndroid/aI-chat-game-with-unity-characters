@@ -15,11 +15,16 @@ type StoryCharacterRef = {
 /** List API returns bodyPreview only (no full body) to avoid leaking long posts in feed JSON. */
 type StoryPublicationStatus = 'DRAFT' | 'PUBLISHED'
 
+type StoryModerationStatus = 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED'
+
 type StoryListRecord = {
   id: string
   title: string
   bodyPreview: string
   publicationStatus: StoryPublicationStatus
+  moderationStatus: StoryModerationStatus
+  /** Present for `scope=mine` when rejected; omitted on public lists. */
+  moderationRejectReason?: string | null
   publishedAt: string | null
   likesCount: number
   characterId: string | null
@@ -34,6 +39,8 @@ type StoryDetailRecord = {
   title: string
   body: string
   publicationStatus: StoryPublicationStatus
+  moderationStatus: StoryModerationStatus
+  moderationRejectReason: string | null
   publishedAt: string | null
   likesCount: number
   characterId: string | null
@@ -49,14 +56,15 @@ type ListStoriesParams = {
   characterId?: string
   search?: string
   sort?: 'newest' | 'likes'
-  /** When scope is mine: all | draft | published */
-  publication?: 'all' | 'draft' | 'published'
+  /** When scope is mine: all | draft | published | rejected */
+  publication?: 'all' | 'draft' | 'published' | 'rejected'
   limit?: number
 }
 
 type ListAdminStoriesParams = {
   search?: string
-  sort?: 'newest' | 'oldest' | 'likes'
+  sort?: 'newest' | 'likes'
+  moderation?: 'all' | 'pending' | 'approved' | 'rejected'
   page?: number
   limit?: number
 }
@@ -88,6 +96,7 @@ const listAdminStories = async (params: ListAdminStoriesParams = {}) => {
 
   if (params.search) searchParams.set('search', params.search)
   if (params.sort) searchParams.set('sort', params.sort)
+  if (params.moderation) searchParams.set('moderation', params.moderation)
   if (params.page) searchParams.set('page', String(params.page))
   if (params.limit) searchParams.set('limit', String(params.limit))
 
@@ -137,12 +146,21 @@ const toggleStoryLike = async (storyId: string) => {
   return apiPost<{ data: { liked: boolean; likesCount: number } }>(`/stories/${storyId}/like/toggle`)
 }
 
+type ModerateStoryPayload =
+  | { decision: 'approve' }
+  | { decision: 'reject'; rejectReason: string }
+
+const moderateStory = async (storyId: string, payload: ModerateStoryPayload) => {
+  return apiPost<{ data: StoryDetailRecord }>(`/admin/stories/${encodeURIComponent(storyId)}/moderate`, payload)
+}
+
 export {
   createStory,
   deleteStory,
   getStory,
   listAdminStories,
   listStories,
+  moderateStory,
   toggleStoryLike,
   updateStory
 }
@@ -153,5 +171,6 @@ export type {
   StoryCharacterRef,
   StoryDetailRecord,
   StoryListRecord,
+  StoryModerationStatus,
   StoryPublicationStatus
 }

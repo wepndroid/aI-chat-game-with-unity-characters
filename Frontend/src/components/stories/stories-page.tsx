@@ -9,7 +9,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
 type StoryScope = 'all' | 'mine'
-type MinePublicationFilter = 'all' | 'draft' | 'published'
+type MinePublicationFilter = 'all' | 'draft' | 'published' | 'rejected'
 
 const scopeTabs: Array<{ key: StoryScope; label: string; shortLabel: string }> = [
   { key: 'all', label: 'All Stories', shortLabel: 'All' },
@@ -19,7 +19,8 @@ const scopeTabs: Array<{ key: StoryScope; label: string; shortLabel: string }> =
 const minePublicationTabs: Array<{ key: MinePublicationFilter; label: string; shortLabel: string }> = [
   { key: 'all', label: 'All', shortLabel: 'All' },
   { key: 'published', label: 'Published', shortLabel: 'Pub.' },
-  { key: 'draft', label: 'Drafts', shortLabel: 'Draft' }
+  { key: 'draft', label: 'Drafts', shortLabel: 'Draft' },
+  { key: 'rejected', label: 'Rejected', shortLabel: 'Rej.' }
 ]
 
 const StoriesPage = () => {
@@ -190,7 +191,9 @@ const StoriesPage = () => {
                       ? 'You have no drafts. Save a story as a draft from the editor to see it here.'
                       : minePublication === 'published'
                         ? 'You have no published stories yet.'
-                        : "You haven't written any stories yet."
+                        : minePublication === 'rejected'
+                          ? 'You have no rejected stories. Submissions that moderators reject will appear here.'
+                          : "You haven't written any stories yet."
                     : 'No stories have been published yet. Be the first!'}
                 </p>
                 {sessionUser ? (
@@ -206,7 +209,12 @@ const StoriesPage = () => {
 
             {!isLoading && !errorMessage
               ? stories.map((story) => (
-                  <StoryCard key={story.id} story={story} currentUserId={sessionUserId} />
+                  <StoryCard
+                  key={story.id}
+                  story={story}
+                  currentUserId={sessionUserId}
+                  showOwnerStatusBadges={activeScope === 'mine'}
+                />
                 ))
               : null}
           </div>

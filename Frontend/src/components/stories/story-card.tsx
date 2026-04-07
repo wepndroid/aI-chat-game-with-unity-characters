@@ -7,6 +7,8 @@ type StoryCardProps = {
   story: StoryListRecord
   /** When set, heart/count is shown as non-interactive for the viewer’s own stories. */
   currentUserId?: string | null
+  /** My Stories list: show Draft / Published / Rejected (and In review when pending). */
+  showOwnerStatusBadges?: boolean
 }
 
 const formatRelativeTime = (dateString: string) => {
@@ -27,8 +29,9 @@ const formatRelativeTime = (dateString: string) => {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(dateString))
 }
 
-const StoryCard = ({ story, currentUserId }: StoryCardProps) => {
+const StoryCard = ({ story, currentUserId, showOwnerStatusBadges }: StoryCardProps) => {
   const isOwnStory = Boolean(currentUserId && story.author.id === currentUserId)
+  const mineStatus = showOwnerStatusBadges && isOwnStory
 
   return (
     <Link
@@ -40,11 +43,50 @@ const StoryCard = ({ story, currentUserId }: StoryCardProps) => {
           {story.title}
         </h3>
         <span className="flex shrink-0 flex-col items-end gap-1.5">
-          {story.publicationStatus === 'DRAFT' ? (
-            <span className="rounded-full border border-amber-500/35 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-amber-200/90">
-              Draft
-            </span>
-          ) : null}
+          {mineStatus ? (
+            <>
+              {story.publicationStatus === 'DRAFT' ? (
+                <span className="rounded-full border border-amber-500/35 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-amber-200/90">
+                  Draft
+                </span>
+              ) : null}
+              {story.publicationStatus === 'PUBLISHED' && story.moderationStatus === 'REJECTED' ? (
+                <span className="rounded-full border border-rose-500/35 bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-rose-200/90">
+                  Rejected
+                </span>
+              ) : null}
+              {story.publicationStatus === 'PUBLISHED' && story.moderationStatus !== 'REJECTED' ? (
+                <>
+                  <span className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-emerald-200/90">
+                    Published
+                  </span>
+                  {story.moderationStatus === 'PENDING' ? (
+                    <span className="rounded-full border border-sky-500/35 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-sky-200/90">
+                      In review
+                    </span>
+                  ) : null}
+                </>
+              ) : null}
+            </>
+          ) : (
+            <>
+              {story.publicationStatus === 'DRAFT' ? (
+                <span className="rounded-full border border-amber-500/35 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-amber-200/90">
+                  Draft
+                </span>
+              ) : null}
+              {story.publicationStatus === 'PUBLISHED' && story.moderationStatus === 'PENDING' ? (
+                <span className="rounded-full border border-sky-500/35 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-sky-200/90">
+                  In review
+                </span>
+              ) : null}
+              {story.publicationStatus === 'PUBLISHED' && story.moderationStatus === 'REJECTED' ? (
+                <span className="rounded-full border border-rose-500/35 bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-rose-200/90">
+                  Rejected
+                </span>
+              ) : null}
+            </>
+          )}
           <span className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/50">
             {formatRelativeTime(story.createdAt)}
           </span>
