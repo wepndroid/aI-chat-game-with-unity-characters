@@ -69,6 +69,30 @@ type CharacterDetailResponse = {
   data: CharacterDetailRecord
 }
 
+/** GET /character-cards/:id — persona fields for AI / Unity integration. */
+type CharacterCardPersonaRecord = {
+  characterId: string
+  slug: string
+  name: string
+  tagline: string | null
+  characterCardId: string | null
+  characterCardIsPublic: boolean | null
+  fullName: string | null
+  description: string | null
+  personality: string | null
+  scenario: string | null
+  firstMessage: string | null
+  exampleDialogs: string | null
+  gatedAccess: {
+    hasAccess: boolean
+    requiredTierCents: number | null
+  }
+}
+
+type CharacterCardPersonaResponse = {
+  data: CharacterCardPersonaRecord
+}
+
 type CreateCharacterPayload = {
   name: string
   fullName?: string
@@ -244,6 +268,8 @@ type GallerySort = 'name' | 'hearts' | 'views' | 'newest'
 const listCharacters = async (options?: {
   search?: string
   galleryScope?: GalleryScope
+  /** Restrict to characters owned by this user (API: you may only pass your own id unless admin). */
+  ownerId?: string
   sort?: GallerySort
   limit?: number
   /** Admin only: list every admin-owned curated row (Official VRMs admin table). Omit for public gallery parity. */
@@ -255,6 +281,10 @@ const listCharacters = async (options?: {
 
   if (options?.search && options.search.trim().length > 0) {
     query.set('search', options.search.trim())
+  }
+
+  if (options?.ownerId && options.ownerId.trim().length > 0) {
+    query.set('ownerId', options.ownerId.trim())
   }
 
   if (options?.galleryScope) {
@@ -281,6 +311,13 @@ const listCharacters = async (options?: {
 const getCharacterDetail = async (characterIdOrSlug: string) => {
   const normalizedCharacterId = characterIdOrSlug.trim()
   return apiGet<CharacterDetailResponse>(`/characters/${encodeURIComponent(normalizedCharacterId)}`)
+}
+
+const getCharacterCardPersona = async (characterIdOrSlug: string) => {
+  const normalizedCharacterId = characterIdOrSlug.trim()
+  return apiGet<CharacterCardPersonaResponse>(
+    `/character-cards/${encodeURIComponent(normalizedCharacterId)}`
+  )
 }
 
 const createCharacter = async (payload: CreateCharacterPayload) => {
@@ -375,6 +412,7 @@ const deleteCharacter = async (characterId: string) => {
 export {
   createCharacter,
   deleteCharacter,
+  getCharacterCardPersona,
   getCharacterDetail,
   listAdminReviewQueue,
   listCharacters,
@@ -389,6 +427,7 @@ export {
 }
 export type {
   CharacterAssetUploadResponse,
+  CharacterCardPersonaRecord,
   CharacterChatStartResponse,
   DeleteCharacterResponse,
   AdminReviewQueueRecord,

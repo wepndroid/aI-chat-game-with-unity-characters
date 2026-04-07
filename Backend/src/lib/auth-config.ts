@@ -38,6 +38,8 @@ const authConfig = {
   cookieName: process.env.AUTH_COOKIE_NAME?.trim() || 'secretwaifu_auth',
   // Opaque session lifetime used for cookie + DB expiry.
   sessionTtlMs: parseDuration(process.env.AUTH_SESSION_TTL_MS, 7 * 24 * 60 * 60 * 1000),
+  /** Short-lived session rows minted for Unity WebGL (Bearer); default 15 minutes. */
+  webglSessionTtlMs: parseDuration(process.env.AUTH_WEBGL_SESSION_TTL_MS, 15 * 60 * 1000),
   // One-time token lifetimes for email verification and password reset.
   emailVerificationTokenTtlMs: parseDuration(process.env.AUTH_EMAIL_VERIFICATION_TOKEN_TTL_MS, 24 * 60 * 60 * 1000),
   passwordResetTokenTtlMs: parseDuration(process.env.AUTH_PASSWORD_RESET_TOKEN_TTL_MS, 60 * 60 * 1000),

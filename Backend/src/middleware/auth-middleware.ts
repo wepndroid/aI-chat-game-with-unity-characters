@@ -15,6 +15,17 @@ const resolveTokenFromRequest = (request: Request) => {
     return tokenFromCookie
   }
 
+  const authHeader = request.header('authorization')
+  if (authHeader && authHeader.length > 0) {
+    const match = /^Bearer\s+(.+)$/i.exec(authHeader.trim())
+    if (match?.[1]) {
+      const bearer = match[1].trim()
+      if (bearer.length > 0) {
+        return bearer
+      }
+    }
+  }
+
   return null
 }
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useAuth } from '@/components/providers/auth-provider'
+import { getWebGlBridgeToken } from '@/lib/auth-api'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -172,6 +173,21 @@ const PlayDemoClient = () => {
         setHasUnityProgressFeed(true)
         setUnityReady(true)
         setLoadingProgress(100)
+
+        if (sessionUser && iframeRef.current?.contentWindow) {
+          iframeRef.current.contentWindow.postMessage(
+            {
+              type: 'secretwaifu-auth:user',
+              user: {
+                id: sessionUser.id,
+                username: sessionUser.username,
+                email: sessionUser.email,
+                role: sessionUser.role
+              }
+            },
+            '*'
+          )
+        }
       }
     }
 
@@ -180,7 +196,40 @@ const PlayDemoClient = () => {
     return () => {
       window.removeEventListener('message', onUnityMessage)
     }
-  }, [webglEmbedUrl])
+  }, [webglEmbedUrl, sessionUser])
+
+  useEffect(() => {
+    if (!unityReady || !sessionUser || !iframeRef.current?.contentWindow) {
+      return
+    }
+
+    let isCancelled = false
+
+    void (async () => {
+      try {
+        const payload = await getWebGlBridgeToken()
+        if (isCancelled || !iframeRef.current?.contentWindow) {
+          return
+        }
+
+        iframeRef.current.contentWindow.postMessage(
+          {
+            type: 'secretwaifu-auth:api-token',
+            token: payload.data.token,
+            expiresAt: payload.data.expiresAt,
+            tokenType: payload.data.tokenType
+          },
+          '*'
+        )
+      } catch {
+        // Token mint failed (e.g. network); Unity may still use same-site cookies for API if applicable.
+      }
+    })()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [unityReady, sessionUser])
 
   useEffect(() => {
     const canHideOverlay = unityReady && loadingProgress >= 100

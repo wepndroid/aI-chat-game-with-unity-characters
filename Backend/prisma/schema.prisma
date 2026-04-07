@@ -46,12 +46,29 @@ enum EntitlementStatus {
   EXPIRED
 }
 
+/// Subscription tier catalog (PDF: Tiers.code, message_limit). Used for chat quota and optional User.tierCode.
+model Tier {
+  code          String @id
+  messageLimit  Int
+  periodDays    Int    @default(30)
+  label         String?
+  users         User[]
+}
+
+enum ChatMessageRole {
+  USER
+  ASSISTANT
+}
+
 model User {
   id                      String                   @id @default(cuid())
   email                   String                   @unique
   username                String                   @unique
   passwordHash            String?
   role                    UserRole                 @default(USER)
+  /// Optional FK to Tier — overrides Patreon-derived tier for message limits when set (PDF: Users.tier_code).
+  tierCode                String?
+  tier                    Tier?                    @relation(fields: [tierCode], references: [code], onDelete: SetNull, onUpdate: Cascade)
   isEmailVerified         Boolean                  @default(false)
   isBanned                Boolean                  @default(false)
   /// When this admin last opened Official VRMs; used for sidebar “new official” badge (per admin).
@@ -70,6 +87,11 @@ model User {
   passwordResetTokens     PasswordResetToken[]
   oauthAccounts           OAuthAccount[]
   sessions                Session[]
+  chatMessageUsage        ChatMessageUsage[]
+  storyPosts              StoryPost[]
+  storyPostLikes          StoryPostLike[]
+  characterCardsCreated   CharacterCard[]
+  chatSessions            ChatSession[]
 }
 
 /// Append-only entries for admin dashboard “System Activity” (bans, etc.).
@@ -114,12 +136,62 @@ model Character {
   hearts              CharacterHeart[]
   chatStartLedgerRows CharacterChatStartLedger[]
   systemScanReports    CharacterSystemScanReport[]
+  storyPosts           StoryPost[]
+  /// Primary character card (PDF: CharacterCards) — AI persona / chat context. Mirrors legacy fields on Character.
+  characterCard        CharacterCard?
   createdAt           DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
   publishedAt      DateTime?
 
   @@index([ownerId, status])
   @@index([status, visibility])
+}
+
+/// PDF: CharacterCards — persona / behavior layer on top of base Character (visual avatar).
+model CharacterCard {
+  id              String    @id @default(cuid())
+  characterId     String    @unique
+  creatorUserId   String
+  fullName        String?
+  description     String?
+  personality     String?
+  scenario        String?
+  firstMessage    String?
+  exampleDialogs  String?
+  isPublic        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  character       Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  creator         User      @relation(fields: [creatorUserId], references: [id], onDelete: Cascade)
+  chatSessions    ChatSession[]
+
+  @@index([creatorUserId])
+}
+
+/// PDF: ChatSessions — groups messages per user + character card.
+model ChatSession {
+  id              String @id @default(cuid())
+  userId          String
+  characterCardId String
+  createdAt       DateTime @default(now())
+  user            User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  characterCard   CharacterCard @relation(fields: [characterCardId], references: [id], onDelete: Cascade)
+  messages        ChatMessage[]
+
+  @@index([userId, createdAt])
+  @@index([characterCardId])
+}
+
+/// PDF: ChatMessages — chat history (role + content).
+model ChatMessage {
+  id        String @id @default(cuid())
+  sessionId String
+  role      ChatMessageRole
+  content   String
+  createdAt DateTime @default(now())
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
 }
 
 /// Moderation/system scan output (e.g. Unity-side checks) stored per character (append-only).
@@ -281,6 +353,67 @@ model Session {
   @@index([userId, expiresAt])
   @@index([revokedAt])
   @@index([expiresAt, revokedAt])
+}
+
+/// User-submitted story adjustments / community posts visible on the public feed.
+model StoryPost {
+  id                  String                  @id @default(cuid())
+  authorId            String
+  title               String
+  body                String
+  characterId         String?
+  visibility          StoryVisibility         @default(PUBLIC)
+  publicationStatus   StoryPublicationStatus @default(PUBLISHED)
+  /// Set when the story is or was published; kept if moved back to draft for ordering/history.
+  publishedAt         DateTime?
+  likesCount          Int                     @default(0)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  author              User                    @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  character           Character?              @relation(fields: [characterId], references: [id], onDelete: SetNull)
+  likes               StoryPostLike[]
+
+  @@index([authorId, createdAt])
+  @@index([authorId, publicationStatus])
+  @@index([visibility, publicationStatus, createdAt])
+  @@index([characterId])
+}
+
+model StoryPostLike {
+  id        String    @id @default(cuid())
+  userId    String
+  storyId   String
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  story     StoryPost @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, storyId])
+  @@index([storyId])
+}
+
+enum StoryVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum StoryPublicationStatus {
+  DRAFT
+  PUBLISHED
+}
+
+/// Rolling message quota tracker: one row per user per billing period.
+model ChatMessageUsage {
+  id             String   @id @default(cuid())
+  userId         String
+  periodStartAt  DateTime
+  periodEndAt    DateTime
+  messagesUsed   Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, periodStartAt])
+  @@index([userId, periodEndAt])
 }
 
 /// Persistent failed-login throttling by client IP to survive process restarts.

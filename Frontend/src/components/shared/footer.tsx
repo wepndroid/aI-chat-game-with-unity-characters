@@ -35,6 +35,9 @@ const Footer = () => {
               <Link href="/characters" className="transition hover:text-white/60" aria-label="Characters link in footer">
                 Characters
               </Link>
+              <Link href="/stories" className="transition hover:text-white/60" aria-label="Stories link in footer">
+                Stories
+              </Link>
               <Link href="/access-code" className="transition hover:text-white/60" aria-label="Access code link in footer">
                 Access Code
               </Link>

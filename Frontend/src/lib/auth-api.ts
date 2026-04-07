@@ -57,6 +57,19 @@ const getCurrentSessionUser = async () => {
   return apiGet<AuthUserResponse>('/auth/me')
 }
 
+type WebGlBridgeTokenResponse = {
+  data: {
+    token: string
+    expiresAt: string
+    tokenType: 'Bearer'
+  }
+}
+
+/** Short-lived API token for Unity WebGL (`Authorization: Bearer`). Requires cookie session. */
+const getWebGlBridgeToken = async () => {
+  return apiGet<WebGlBridgeTokenResponse>('/auth/webgl-token')
+}
+
 const resendVerificationCode = async () => {
   return apiPost<{ data: { sent: boolean; alreadyVerified?: boolean } }>('/auth/resend-verification', {})
 }
@@ -92,6 +105,7 @@ const isGoogleOauthEnabled = () => process.env.NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED 
 
 export {
   getCurrentSessionUser,
+  getWebGlBridgeToken,
   getGoogleOauthStartUrl,
   isGoogleOauthEnabled,
   loginWithPassword,

@@ -17,6 +17,8 @@ import patreonRoutes from './routes/patreon-routes'
 import reviewRoutes from './routes/review-routes'
 import statsRoutes from './routes/stats-routes'
 import userRoutes from './routes/user-routes'
+import chatQuotaRoutes from './routes/chat-quota-routes'
+import storyRoutes from './routes/story-routes'
 
 const app = express()
 
@@ -114,6 +116,8 @@ app.use('/api', characterRoutes)
 app.use('/api', reviewRoutes)
 app.use('/api', statsRoutes)
 app.use('/api', patreonRoutes)
+app.use('/api', chatQuotaRoutes)
+app.use('/api', storyRoutes)
 app.use('/', legacyRoutes)
 
 app.use((_request, response) => {
@@ -124,8 +128,9 @@ app.use((_request, response) => {
 
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
   if (error instanceof ZodError) {
+    const first = error.issues[0]
     response.status(400).json({
-      message: 'Validation failed.',
+      message: first?.message ?? 'Validation failed.',
       issues: error.issues
     })
     return

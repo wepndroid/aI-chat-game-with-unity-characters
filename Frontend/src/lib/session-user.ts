@@ -1,5 +1,12 @@
 type SessionUserRole = 'USER' | 'CREATOR' | 'ADMIN'
 
+type SessionUserTier = {
+  code: string
+  messageLimit: number
+  periodDays: number
+  label: string | null
+}
+
 type SessionUser = {
   id: string
   email: string
@@ -8,6 +15,9 @@ type SessionUser = {
   isEmailVerified: boolean
   createdAt?: string
   updatedAt?: string
+  /** Optional override — maps to Tier table (PDF schema). */
+  tierCode?: string | null
+  tier?: SessionUserTier | null
 }
 
-export type { SessionUser, SessionUserRole }
+export type { SessionUser, SessionUserRole, SessionUserTier }

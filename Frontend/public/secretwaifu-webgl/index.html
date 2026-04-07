@@ -175,6 +175,31 @@
           postToParent("progress", { progress: progress });
         }
       ).then((unityInstance) => {
+        var unityInstanceRef = unityInstance;
+
+        window.addEventListener("message", function (event) {
+          var data = event.data;
+          if (!data || typeof data !== "object") {
+            return;
+          }
+
+          if (data.type === "secretwaifu-auth:api-token" && data.token && typeof data.token === "string") {
+            try {
+              unityInstanceRef.SendMessage("AuthManager", "ReceiveWebGlApiToken", data.token);
+            } catch (sendError) {
+              console.warn("AuthManager.ReceiveWebGlApiToken SendMessage failed (Unity may not expose AuthManager yet).", sendError);
+            }
+          }
+
+          if (data.type === "secretwaifu-auth:user" && data.user) {
+            try {
+              unityInstanceRef.SendMessage("AuthManager", "ReceiveWebGlUserJson", JSON.stringify(data.user));
+            } catch (sendError) {
+              console.warn("AuthManager.ReceiveWebGlUserJson SendMessage failed.", sendError);
+            }
+          }
+        });
+
         postToParent("ready", { progress: 1 });
       }).catch((message) => {
         var errorText = String(message || "");

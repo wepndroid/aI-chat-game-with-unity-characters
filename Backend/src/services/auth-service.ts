@@ -53,6 +53,32 @@ const createOpaqueSessionForUser = async (userId: string, clientMeta: SessionCli
   return rawSessionToken
 }
 
+/**
+ * Short-lived session for WebGL: parent page calls GET /auth/webgl-token with cookie auth;
+ * Unity uses `Authorization: Bearer <token>` (same resolution path as cookie session).
+ */
+const createWebGlBridgeSessionForUser = async (userId: string, clientMeta: SessionClientMeta) => {
+  const rawSessionToken = generateOpaqueSessionToken()
+  const sessionTokenHash = hashOpaqueSessionToken(rawSessionToken)
+  const now = new Date()
+  const ttlMs = Math.max(60_000, authConfig.webglSessionTtlMs)
+  const expiresAt = new Date(now.getTime() + ttlMs)
+
+  await prisma.session.create({
+    data: {
+      userId,
+      sessionTokenHash,
+      expiresAt,
+      createdAt: now,
+      lastSeenAt: now,
+      ipAddress: clientMeta.ipAddress,
+      userAgent: clientMeta.userAgent ? `[webgl-bridge] ${clientMeta.userAgent}` : '[webgl-bridge]'
+    }
+  })
+
+  return { rawSessionToken, expiresAt }
+}
+
 /** `banned` = session was valid but the user is banned (all sessions revoked). */
 type ResolveSessionResult = AuthenticatedSessionUser | null | 'banned'
 
@@ -137,6 +163,7 @@ const revokeAllSessionsForUser = async (userId: string, revokedAt: Date) => {
 
 export {
   createOpaqueSessionForUser,
+  createWebGlBridgeSessionForUser,
   extractSessionClientMeta,
   revokeAllSessionsForUser,
   resolveAuthenticatedSessionUser,

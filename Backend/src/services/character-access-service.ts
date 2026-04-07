@@ -193,6 +193,8 @@ const buildCharacterListWhereClause = (
     visibility?: CharacterVisibility
     search?: string
     galleryScope?: GalleryScope
+    /** Restrict list to this user’s characters (caller must authorize: self or admin). */
+    listOwnerId?: string
     /** When true, admin `curated` lists every admin-owned row (admin UI). Default catalog omits non–public-approved. */
     adminCuratedAll?: boolean
     /** When true, admin `community` lists every non-admin-owned row (moderation UI). Default matches public Community tab. */
@@ -222,6 +224,15 @@ const buildCharacterListWhereClause = (
 
   const statusClause = params.status ? { status: params.status } : {}
   const visibilityClause = params.visibility ? { visibility: params.visibility } : {}
+
+  if (params.listOwnerId) {
+    return {
+      ownerId: params.listOwnerId,
+      ...searchClause,
+      ...statusClause,
+      ...visibilityClause
+    } satisfies Prisma.CharacterWhereInput
+  }
 
   if (actor?.role === 'ADMIN') {
     if (galleryScope === 'all') {

@@ -16,7 +16,8 @@
     "prisma:migrate": "prisma migrate dev --name init",
     "prisma:studio": "prisma studio",
     "seed": "tsx src/seed.ts",
-    "remove-demo-data": "tsx scripts/remove-demo-data.ts"
+    "remove-demo-data": "tsx scripts/remove-demo-data.ts",
+    "backfill:character-cards": "tsx scripts/backfill-character-cards.ts"
   },
   "keywords": [],
   "author": "",

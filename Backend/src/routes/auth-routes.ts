@@ -14,7 +14,12 @@ import {
   issueEmailVerificationToken,
   issuePasswordResetToken
 } from '../services/auth-token-service'
-import { createOpaqueSessionForUser, extractSessionClientMeta, revokeOpaqueSessionByToken } from '../services/auth-service'
+import {
+  createOpaqueSessionForUser,
+  createWebGlBridgeSessionForUser,
+  extractSessionClientMeta,
+  revokeOpaqueSessionByToken
+} from '../services/auth-service'
 import { emailService } from '../services/email-service'
 import { resolveUserForOAuthAuthentication } from '../services/oauth/oauth-account-service'
 import { getOAuthProviderClient, isOAuthProviderKey } from '../services/oauth/oauth-provider-registry'
@@ -898,7 +903,16 @@ authRoutes.get('/auth/me', requireAuth, async (request, response, next) => {
         role: true,
         isEmailVerified: true,
         createdAt: true,
-        updatedAt: true
+        updatedAt: true,
+        tierCode: true,
+        tier: {
+          select: {
+            code: true,
+            messageLimit: true,
+            periodDays: true,
+            label: true
+          }
+        }
       }
     })
 
@@ -916,6 +930,34 @@ authRoutes.get('/auth/me', requireAuth, async (request, response, next) => {
           ...existingUser,
           role: getEffectiveUserRoleForTesting(existingUser.role)
         }
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+/**
+ * Mint a short-lived session token for Unity WebGL: call with browser cookie auth, then pass the
+ * returned `token` to Unity (e.g. via SendMessage) and send `Authorization: Bearer <token>` on API requests.
+ */
+authRoutes.get('/auth/webgl-token', requireAuth, async (request, response, next) => {
+  try {
+    const authUser = request.authUser
+
+    if (!authUser) {
+      response.status(401).json({ message: 'Authentication required.' })
+      return
+    }
+
+    const clientMeta = extractSessionClientMeta(request)
+    const { rawSessionToken, expiresAt } = await createWebGlBridgeSessionForUser(authUser.userId, clientMeta)
+
+    response.json({
+      data: {
+        token: rawSessionToken,
+        expiresAt: expiresAt.toISOString(),
+        tokenType: 'Bearer'
       }
     })
   } catch (error) {

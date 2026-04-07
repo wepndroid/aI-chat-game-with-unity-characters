@@ -8,6 +8,7 @@ import { tryDeleteTrustedUploadFile } from '../lib/delete-local-upload-file'
 import { optionalAuth, requireAdmin, requireAuth, requireVerifiedEmail } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
 import { buildUniqueSlug } from '../lib/slug'
+import { resolvePersonaFields } from '../lib/character-persona'
 import {
   buildCharacterListWhereClause,
   canCreateCharacter,
@@ -69,6 +70,8 @@ const listCharactersQuerySchema = z.object({
   visibility: z.nativeEnum(CharacterVisibility).optional(),
   search: z.string().trim().max(120).optional(),
   galleryScope: z.enum(['all', 'curated', 'community', 'mine']).optional(),
+  /** List characters owned by this user (signed-in user may only use their own id; admins may use any). */
+  ownerId: z.string().min(1).optional(),
   sort: z.enum(['name', 'hearts', 'views', 'newest']).optional().default('newest'),
   limit: z.coerce.number().int().min(1).max(200).default(24),
   adminCuratedAll: z.enum(['true', '1']).optional(),
@@ -148,11 +151,24 @@ characterRoutes.get('/characters', optionalAuth, async (request, response, next)
       return
     }
 
+    if (query.ownerId) {
+      if (!actor) {
+        response.status(401).json({ message: 'Authentication required.' })
+        return
+      }
+
+      if (actor.userId !== query.ownerId && actor.role !== 'ADMIN') {
+        response.status(403).json({ message: 'You can only list your own characters.' })
+        return
+      }
+    }
+
     const whereClause = buildCharacterListWhereClause(actor, {
       status: query.status,
       visibility: query.visibility,
       search: query.search,
       galleryScope,
+      listOwnerId: query.ownerId,
       adminCuratedAll: query.adminCuratedAll !== undefined,
       adminCommunityAll: query.adminCommunityAll !== undefined
     })
@@ -205,6 +221,166 @@ characterRoutes.get('/characters', optionalAuth, async (request, response, next)
       return
     }
 
+    next(error)
+  }
+})
+
+/** PDF / integration spec: public character catalog alias — same as `GET /characters` with `galleryScope=all`. */
+characterRoutes.get('/characters/public', optionalAuth, async (request, response, next) => {
+  try {
+    const query = listCharactersQuerySchema.parse({
+      ...request.query,
+      galleryScope: 'all'
+    })
+    const actor = toCharacterAccessActor(request)
+
+    const whereClause = buildCharacterListWhereClause(actor, {
+      status: query.status,
+      visibility: query.visibility,
+      search: query.search,
+      galleryScope: 'all',
+      adminCuratedAll: query.adminCuratedAll !== undefined,
+      adminCommunityAll: query.adminCommunityAll !== undefined
+    })
+
+    const orderBy: Prisma.CharacterOrderByWithRelationInput =
+      query.sort === 'name'
+        ? { name: 'asc' }
+        : query.sort === 'hearts'
+          ? { heartsCount: 'desc' }
+          : query.sort === 'views'
+            ? { viewsCount: 'desc' }
+            : { createdAt: 'desc' }
+
+    const characterList = await prisma.character.findMany({
+      where: whereClause,
+      take: query.limit,
+      orderBy,
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        tagline: true,
+        status: true,
+        visibility: true,
+        officialListing: true,
+        isPatreonGated: true,
+        minimumTierCents: true,
+        heartsCount: true,
+        viewsCount: true,
+        previewImageUrl: true,
+        owner: {
+          select: {
+            id: true,
+            username: true
+          }
+        },
+        createdAt: true,
+        updatedAt: true
+      }
+    })
+
+    response.json({
+      data: characterList
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message.toLowerCase().includes('url')) {
+      response.status(400).json({
+        message: error.message
+      })
+      return
+    }
+
+    next(error)
+  }
+})
+
+/**
+ * Integration / Unity: AI persona fields (CharacterCard + legacy fallbacks) without full character payload.
+ * Same access rules as GET /characters/:characterId for reading.
+ */
+characterRoutes.get('/character-cards/:characterId', optionalAuth, async (request, response, next) => {
+  try {
+    const { characterId } = characterParamsSchema.parse(request.params)
+    const actor = toCharacterAccessActor(request)
+
+    const character = await prisma.character.findFirst({
+      where: {
+        OR: [{ id: characterId }, { slug: characterId }]
+      },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        fullName: true,
+        tagline: true,
+        description: true,
+        personality: true,
+        scenario: true,
+        firstMessage: true,
+        exampleDialogs: true,
+        status: true,
+        visibility: true,
+        ownerId: true,
+        isPatreonGated: true,
+        minimumTierCents: true,
+        characterCard: {
+          select: {
+            id: true,
+            fullName: true,
+            description: true,
+            personality: true,
+            scenario: true,
+            firstMessage: true,
+            exampleDialogs: true,
+            isPublic: true
+          }
+        }
+      }
+    })
+
+    if (!character) {
+      response.status(404).json({ message: 'Character not found.' })
+      return
+    }
+
+    const persona = resolvePersonaFields(character, character.characterCard)
+
+    const characterAccess = await resolveCharacterAccess(actor, {
+      id: character.id,
+      ownerId: character.ownerId,
+      status: character.status,
+      visibility: character.visibility,
+      isPatreonGated: character.isPatreonGated,
+      minimumTierCents: character.minimumTierCents
+    })
+
+    if (!characterAccess.canReadCharacter) {
+      response.status(404).json({ message: 'Character not found.' })
+      return
+    }
+
+    response.json({
+      data: {
+        characterId: character.id,
+        slug: character.slug,
+        name: character.name,
+        tagline: character.tagline,
+        characterCardId: persona.characterCardId,
+        characterCardIsPublic: persona.characterCardIsPublic,
+        fullName: persona.fullName,
+        description: persona.description,
+        personality: persona.personality,
+        scenario: persona.scenario,
+        firstMessage: persona.firstMessage,
+        exampleDialogs: persona.exampleDialogs,
+        gatedAccess: {
+          hasAccess: characterAccess.canAccessPatreonGatedContent,
+          requiredTierCents: character.minimumTierCents ?? null
+        }
+      }
+    })
+  } catch (error) {
     next(error)
   }
 })
@@ -336,6 +512,18 @@ characterRoutes.get('/characters/:characterId', optionalAuth, async (request, re
             id: true,
             username: true
           }
+        },
+        characterCard: {
+          select: {
+            id: true,
+            fullName: true,
+            description: true,
+            personality: true,
+            scenario: true,
+            firstMessage: true,
+            exampleDialogs: true,
+            isPublic: true
+          }
         }
       }
     })
@@ -346,6 +534,8 @@ characterRoutes.get('/characters/:characterId', optionalAuth, async (request, re
       })
       return
     }
+
+    const persona = resolvePersonaFields(character, character.characterCard)
 
     const characterAccess = await resolveCharacterAccess(actor, {
       id: character.id,
@@ -384,13 +574,15 @@ characterRoutes.get('/characters/:characterId', optionalAuth, async (request, re
         id: character.id,
         slug: character.slug,
         name: character.name,
-        fullName: character.fullName,
+        fullName: persona.fullName,
         tagline: character.tagline,
-        description: character.description,
-        personality: character.personality,
-        scenario: character.scenario,
-        firstMessage: character.firstMessage,
-        exampleDialogs: character.exampleDialogs,
+        description: persona.description,
+        personality: persona.personality,
+        scenario: persona.scenario,
+        firstMessage: persona.firstMessage,
+        exampleDialogs: persona.exampleDialogs,
+        characterCardId: persona.characterCardId,
+        characterCardIsPublic: persona.characterCardIsPublic,
         vroidFileUrl: characterAccess.canAccessPatreonGatedContent ? character.vroidFileUrl : null,
         previewImageUrl: character.previewImageUrl,
         legacyFileHash: character.legacyFileHash,
@@ -604,6 +796,20 @@ characterRoutes.post('/characters', requireVerifiedEmail, async (request, respon
         }
       })
 
+      await transactionClient.characterCard.create({
+        data: {
+          characterId: nextCharacter.id,
+          creatorUserId: actor.userId,
+          fullName: payload.fullName ?? null,
+          description: payload.description ?? null,
+          personality: payload.personality ?? null,
+          scenario: payload.scenario ?? null,
+          firstMessage: payload.firstMessage ?? null,
+          exampleDialogs: payload.exampleDialogs ?? null,
+          isPublic: nextVisibility === 'PUBLIC'
+        }
+      })
+
       return nextCharacter
     })
 
@@ -703,9 +909,41 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
           id: true,
           slug: true,
           name: true,
+          fullName: true,
+          description: true,
+          personality: true,
+          scenario: true,
+          firstMessage: true,
+          exampleDialogs: true,
           status: true,
           visibility: true,
           updatedAt: true
+        }
+      })
+
+      await transactionClient.characterCard.upsert({
+        where: {
+          characterId: nextCharacter.id
+        },
+        create: {
+          characterId: nextCharacter.id,
+          creatorUserId: existingCharacter.ownerId,
+          fullName: nextCharacter.fullName,
+          description: nextCharacter.description,
+          personality: nextCharacter.personality,
+          scenario: nextCharacter.scenario,
+          firstMessage: nextCharacter.firstMessage,
+          exampleDialogs: nextCharacter.exampleDialogs,
+          isPublic: nextCharacter.visibility === 'PUBLIC'
+        },
+        update: {
+          fullName: nextCharacter.fullName,
+          description: nextCharacter.description,
+          personality: nextCharacter.personality,
+          scenario: nextCharacter.scenario,
+          firstMessage: nextCharacter.firstMessage,
+          exampleDialogs: nextCharacter.exampleDialogs,
+          isPublic: nextCharacter.visibility === 'PUBLIC'
         }
       })
 

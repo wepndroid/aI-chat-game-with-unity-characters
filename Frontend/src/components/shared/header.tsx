@@ -295,6 +295,9 @@ const Header = () => {
               <Link href="/characters" className="transition hover:text-ember-300" aria-label="Go to characters">
                 Characters
               </Link>
+              <Link href="/stories" className="transition hover:text-ember-300" aria-label="Go to stories">
+                Stories
+              </Link>
               {sessionUser ? (
                 <Link href="/profile" className="transition hover:text-ember-300" aria-label="Go to profile">
                   Profile
@@ -347,6 +350,9 @@ const Header = () => {
             </Link>
             <Link href="/characters" className="transition hover:text-ember-300" aria-label="Go to characters">
               Characters
+            </Link>
+            <Link href="/stories" className="transition hover:text-ember-300" aria-label="Go to stories">
+              Stories
             </Link>
             {sessionUser ? (
               <Link href="/profile" className="transition hover:text-ember-300" aria-label="Go to profile">
