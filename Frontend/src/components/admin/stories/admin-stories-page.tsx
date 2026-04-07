@@ -41,7 +41,7 @@ const storyActionButtonClassName =
 
 /** Admin list is published-only; compact pill for the column. */
 const publishedBadgeClassName =
-  'inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-950/35 px-1.5 py-px text-[9px] font-medium uppercase tracking-[0.05em] text-emerald-300/95'
+  'inline-flex max-h-[14px] items-center rounded border border-emerald-500/35 bg-emerald-950/30 px-[5px] py-0 text-[8px] font-medium leading-none uppercase tracking-[0.04em] text-emerald-300/95'
 
 const AdminStoriesPage = () => {
   const [storyList, setStoryList] = useState<StoryListRecord[]>([])
