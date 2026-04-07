@@ -19,7 +19,6 @@ type StoryListRecord = {
   id: string
   title: string
   bodyPreview: string
-  visibility: 'PUBLIC' | 'PRIVATE'
   publicationStatus: StoryPublicationStatus
   publishedAt: string | null
   likesCount: number
@@ -34,7 +33,6 @@ type StoryDetailRecord = {
   id: string
   title: string
   body: string
-  visibility: 'PUBLIC' | 'PRIVATE'
   publicationStatus: StoryPublicationStatus
   publishedAt: string | null
   likesCount: number
@@ -56,6 +54,19 @@ type ListStoriesParams = {
   limit?: number
 }
 
+type ListAdminStoriesParams = {
+  search?: string
+  sort?: 'newest' | 'oldest' | 'likes'
+  page?: number
+  limit?: number
+}
+
+type AdminStoriesListMeta = {
+  page: number
+  limit: number
+  total: number
+}
+
 const listStories = async (params: ListStoriesParams = {}) => {
   const searchParams = new URLSearchParams()
 
@@ -72,6 +83,20 @@ const listStories = async (params: ListStoriesParams = {}) => {
   return apiGet<{ data: StoryListRecord[] }>(path)
 }
 
+const listAdminStories = async (params: ListAdminStoriesParams = {}) => {
+  const searchParams = new URLSearchParams()
+
+  if (params.search) searchParams.set('search', params.search)
+  if (params.sort) searchParams.set('sort', params.sort)
+  if (params.page) searchParams.set('page', String(params.page))
+  if (params.limit) searchParams.set('limit', String(params.limit))
+
+  const query = searchParams.toString()
+  const path = query ? `/admin/stories?${query}` : '/admin/stories'
+
+  return apiGet<{ data: StoryListRecord[]; meta: AdminStoriesListMeta }>(path)
+}
+
 const getStory = async (storyId: string) => {
   return apiGet<{ data: StoryDetailRecord }>(`/stories/${storyId}`)
 }
@@ -80,7 +105,6 @@ type CreateStoryPayload = {
   title: string
   body: string
   characterId?: string
-  visibility?: 'PUBLIC' | 'PRIVATE'
   publicationStatus?: StoryPublicationStatus
 }
 
@@ -90,7 +114,6 @@ const createStory = async (payload: CreateStoryPayload) => {
     title: payload.title,
     body: payload.body,
     ...(payload.characterId ? { characterId: payload.characterId } : {}),
-    ...(payload.visibility ? { visibility: payload.visibility } : {}),
     publicationStatus
   })
 }
@@ -99,7 +122,6 @@ type UpdateStoryPayload = {
   title?: string
   body?: string
   characterId?: string | null
-  visibility?: 'PUBLIC' | 'PRIVATE'
   publicationStatus?: StoryPublicationStatus
 }
 
@@ -119,12 +141,14 @@ export {
   createStory,
   deleteStory,
   getStory,
+  listAdminStories,
   listStories,
   toggleStoryLike,
   updateStory
 }
 
 export type {
+  AdminStoriesListMeta,
   StoryAuthor,
   StoryCharacterRef,
   StoryDetailRecord,

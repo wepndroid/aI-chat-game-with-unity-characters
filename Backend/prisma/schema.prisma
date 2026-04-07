@@ -362,7 +362,6 @@ model StoryPost {
   title               String
   body                String
   characterId         String?
-  visibility          StoryVisibility         @default(PUBLIC)
   publicationStatus   StoryPublicationStatus @default(PUBLISHED)
   /// Set when the story is or was published; kept if moved back to draft for ordering/history.
   publishedAt         DateTime?
@@ -375,7 +374,7 @@ model StoryPost {
 
   @@index([authorId, createdAt])
   @@index([authorId, publicationStatus])
-  @@index([visibility, publicationStatus, createdAt])
+  @@index([publicationStatus, createdAt])
   @@index([characterId])
 }
 
@@ -389,11 +388,6 @@ model StoryPostLike {
 
   @@unique([userId, storyId])
   @@index([storyId])
-}
-
-enum StoryVisibility {
-  PUBLIC
-  PRIVATE
 }
 
 enum StoryPublicationStatus {

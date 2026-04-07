@@ -24,6 +24,7 @@ const AdminPageShell = ({
       users: 'Users',
       'community-vrms': 'Community VRMs',
       'official-vrms': 'Official VRMs',
+      stories: 'Stories',
       'review-queue': 'Review Queue',
       'global-settings': 'Global Settings'
     }

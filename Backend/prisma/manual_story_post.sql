@@ -6,7 +6,6 @@ CREATE TABLE IF NOT EXISTS "StoryPost" (
     "title"       TEXT NOT NULL,
     "body"        TEXT NOT NULL,
     "characterId" TEXT,
-    "visibility"  TEXT NOT NULL DEFAULT 'PUBLIC',
     "likesCount"  INTEGER NOT NULL DEFAULT 0,
     "createdAt"   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt"   DATETIME NOT NULL,
@@ -15,7 +14,6 @@ CREATE TABLE IF NOT EXISTS "StoryPost" (
 );
 
 CREATE INDEX IF NOT EXISTS "StoryPost_authorId_createdAt_idx" ON "StoryPost"("authorId", "createdAt");
-CREATE INDEX IF NOT EXISTS "StoryPost_visibility_createdAt_idx" ON "StoryPost"("visibility", "createdAt");
 CREATE INDEX IF NOT EXISTS "StoryPost_characterId_idx" ON "StoryPost"("characterId");
 
 CREATE TABLE IF NOT EXISTS "StoryPostLike" (

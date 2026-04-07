@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { Router } from 'express'
 import { z } from 'zod'
-import { optionalAuth, requireAuth, requireVerifiedEmail } from '../middleware/auth-middleware'
+import { optionalAuth, requireAdmin, requireAuth, requireVerifiedEmail } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
 
 const storyRoutes = Router()
@@ -15,7 +15,6 @@ const createStorySchema = z
     title: z.string().trim().max(200),
     body: z.string().trim().max(20000),
     characterId: z.string().min(1).optional(),
-    visibility: z.enum(['PUBLIC', 'PRIVATE']).optional(),
     /** Omit or `PUBLISHED` = publish rules; `DRAFT` = save without listing publicly. */
     publicationStatus: z.enum(['DRAFT', 'PUBLISHED']).optional()
   })
@@ -56,7 +55,6 @@ const updateStorySchema = z
     title: z.string().trim().max(200).optional(),
     body: z.string().trim().max(20000).optional(),
     characterId: z.string().min(1).nullable().optional(),
-    visibility: z.enum(['PUBLIC', 'PRIVATE']).optional(),
     publicationStatus: z.enum(['DRAFT', 'PUBLISHED']).optional()
   })
   .strict()
@@ -74,11 +72,19 @@ const listStoriesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20)
 }).strict()
 
+const adminListStoriesQuerySchema = z
+  .object({
+    search: z.string().trim().max(120).optional(),
+    sort: z.enum(['newest', 'oldest', 'likes']).optional().default('newest'),
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(25)
+  })
+  .strict()
+
 /** List view: no full body in JSON (only bodyPreview) to avoid leaking long private text in feed responses. */
 const storyListSelectFields = {
   id: true,
   title: true,
-  visibility: true,
   publicationStatus: true,
   publishedAt: true,
   likesCount: true,
@@ -106,7 +112,6 @@ const storySelectFields = {
   id: true,
   title: true,
   body: true,
-  visibility: true,
   publicationStatus: true,
   publishedAt: true,
   likesCount: true,
@@ -149,7 +154,6 @@ storyRoutes.get('/stories', optionalAuth, async (request, response, next) => {
         conditions.push({ publicationStatus: 'PUBLISHED' })
       }
     } else {
-      conditions.push({ visibility: 'PUBLIC' })
       conditions.push({ publicationStatus: 'PUBLISHED' })
     }
 
@@ -199,6 +203,71 @@ storyRoutes.get('/stories', optionalAuth, async (request, response, next) => {
   }
 })
 
+storyRoutes.get('/admin/stories', requireAdmin, async (request, response, next) => {
+  try {
+    const authUser = request.authUser
+
+    if (!authUser || authUser.role !== 'ADMIN') {
+      response.status(403).json({ message: 'Forbidden.' })
+      return
+    }
+
+    const query = adminListStoriesQuerySchema.parse(request.query)
+    const skip = (query.page - 1) * query.limit
+
+    const conditions: Record<string, unknown>[] = [{ publicationStatus: 'PUBLISHED' }]
+
+    if (query.search?.trim()) {
+      const term = query.search.trim()
+      conditions.push({
+        OR: [{ title: { contains: term } }, { body: { contains: term } }]
+      })
+    }
+
+    const where = conditions.length > 0 ? { AND: conditions } : {}
+
+    const orderBy: Prisma.StoryPostOrderByWithRelationInput[] =
+      query.sort === 'likes'
+        ? [{ likesCount: 'desc' }, { createdAt: 'desc' }]
+        : query.sort === 'oldest'
+          ? [{ createdAt: 'asc' }]
+          : [{ createdAt: 'desc' }]
+
+    const [total, stories] = await prisma.$transaction([
+      prisma.storyPost.count({ where }),
+      prisma.storyPost.findMany({
+        where,
+        skip,
+        take: query.limit,
+        orderBy,
+        select: storyListSelectFields
+      })
+    ])
+
+    const listPayload = stories.map((story) => {
+      const raw = story.body
+      const bodyPreview = raw.length > 400 ? `${raw.slice(0, 400)}...` : raw
+      const { body: _omit, ...rest } = story
+
+      return {
+        ...rest,
+        bodyPreview
+      }
+    })
+
+    response.json({
+      data: listPayload,
+      meta: {
+        page: query.page,
+        limit: query.limit,
+        total
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 storyRoutes.get('/stories/:storyId', optionalAuth, async (request, response, next) => {
   try {
     const { storyId } = storyParamsSchema.parse(request.params)
@@ -214,16 +283,7 @@ storyRoutes.get('/stories/:storyId', optionalAuth, async (request, response, nex
       return
     }
 
-    if (story.visibility === 'PRIVATE' && story.author.id !== authUser?.userId) {
-      response.status(404).json({ message: 'Story not found.' })
-      return
-    }
-
-    if (
-      story.publicationStatus === 'DRAFT' &&
-      story.author.id !== authUser?.userId &&
-      authUser?.role !== 'ADMIN'
-    ) {
+    if (story.publicationStatus === 'DRAFT' && story.author.id !== authUser?.userId) {
       response.status(404).json({ message: 'Story not found.' })
       return
     }
@@ -280,7 +340,6 @@ storyRoutes.post('/stories', requireVerifiedEmail, async (request, response, nex
         title: payload.title.trim(),
         body: payload.body.trim(),
         characterId: payload.characterId ?? null,
-        visibility: payload.visibility ?? 'PUBLIC',
         publicationStatus,
         publishedAt: publicationStatus === 'PUBLISHED' ? now : null
       },
@@ -372,7 +431,6 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
 
     if (payload.title !== undefined) updateData.title = payload.title.trim()
     if (payload.body !== undefined) updateData.body = payload.body.trim()
-    if (payload.visibility !== undefined) updateData.visibility = payload.visibility
     if (payload.characterId !== undefined) updateData.characterId = payload.characterId
     if (payload.publicationStatus !== undefined) {
       updateData.publicationStatus = payload.publicationStatus
@@ -440,7 +498,7 @@ storyRoutes.post('/stories/:storyId/like/toggle', requireAuth, async (request, r
 
     const story = await prisma.storyPost.findUnique({
       where: { id: storyId },
-      select: { id: true, visibility: true, authorId: true, publicationStatus: true }
+      select: { id: true, authorId: true, publicationStatus: true }
     })
 
     if (!story) {
@@ -449,11 +507,6 @@ storyRoutes.post('/stories/:storyId/like/toggle', requireAuth, async (request, r
     }
 
     if (story.publicationStatus !== 'PUBLISHED') {
-      response.status(404).json({ message: 'Story not found.' })
-      return
-    }
-
-    if (story.visibility === 'PRIVATE' && story.authorId !== authUser.userId) {
       response.status(404).json({ message: 'Story not found.' })
       return
     }

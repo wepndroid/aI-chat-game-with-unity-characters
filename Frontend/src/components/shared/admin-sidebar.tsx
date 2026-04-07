@@ -8,7 +8,15 @@ import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 
-type AdminSidebarKey = 'dashboard' | 'activity' | 'users' | 'community-vrms' | 'official-vrms' | 'review-queue' | 'global-settings'
+type AdminSidebarKey =
+  | 'dashboard'
+  | 'activity'
+  | 'users'
+  | 'community-vrms'
+  | 'official-vrms'
+  | 'stories'
+  | 'review-queue'
+  | 'global-settings'
 
 type AdminSidebarEntry = {
   id: AdminSidebarKey
@@ -73,6 +81,16 @@ const ClipboardIcon = () => {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <rect x="6.1" y="5.1" width="11.8" height="15.2" rx="2" />
       <path d="M9.1 5.1h5.8V3.8H9.1v1.3ZM9 11.2h6.1M9 14.8h6.1" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+const BookOpenIcon = () => {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M12 6.9c-1.2-.9-2.8-1.4-4.5-1.4-1.4 0-2.7.3-3.8.9v12.4c1.1-.5 2.4-.8 3.8-.8 1.8 0 3.4.5 4.5 1.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12 6.9c1.2-.9 2.8-1.4 4.5-1.4 1.4 0 2.7.3 3.8.9v12.4c-1.1-.5-2.4-.8-3.8-.8-1.8 0-3.4.5-4.5 1.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12 6.9v12.2" strokeLinecap="round" />
     </svg>
   )
 }
@@ -181,6 +199,12 @@ const AdminSidebar = ({ activeKey, className }: AdminSidebarProps) => {
             ...(newOfficialVrmsCount !== null && newOfficialVrmsCount > 0
               ? { badgeText: String(newOfficialVrmsCount), badgeVariant: 'danger' as const }
               : {})
+          },
+          {
+            id: 'stories',
+            label: 'Stories',
+            href: '/admin/stories',
+            icon: <BookOpenIcon />
           }
         ]
       },

@@ -194,11 +194,6 @@ const StoryDetailPage = ({ storyId }: StoryDetailPageProps) => {
                     {story.character.name}
                   </Link>
                 ) : null}
-                {story.visibility === 'PRIVATE' ? (
-                  <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/50">
-                    Private
-                  </span>
-                ) : null}
                 {isDraft ? (
                   <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-200/90">
                     Draft
