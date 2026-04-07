@@ -39,9 +39,9 @@ const storyActionLinkClassName =
 const storyActionButtonClassName =
   'inline-flex size-9 items-center justify-center rounded-lg text-[#9ca3af] transition hover:bg-white/5 hover:text-[#d4d4d8] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-[#9ca3af]'
 
-/** Admin list is published-only; compact pill for the column. */
+/** Same visual as Active on admin/users (`AdminUserStatusPill` active). */
 const publishedBadgeClassName =
-  'inline-flex max-h-[14px] items-center rounded border border-emerald-500/35 bg-emerald-950/30 px-[5px] py-0 text-[8px] font-medium leading-none uppercase tracking-[0.04em] text-emerald-300/95'
+  'inline-flex items-center rounded-full border border-emerald-500/35 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-normal leading-none text-emerald-300'
 
 const AdminStoriesPage = () => {
   const [storyList, setStoryList] = useState<StoryListRecord[]>([])
@@ -234,52 +234,52 @@ const AdminStoriesPage = () => {
 
               {!isLoading
                 ? storyList.map((row) => {
-                    const rowBusy = busyStoryId === row.id
+                  const rowBusy = busyStoryId === row.id
 
-                    return (
-                      <tr key={row.id} className="border-t border-white/10">
-                        <td className="max-w-[min(420px,45vw)] px-4 py-4 align-top">
-                          <p className="font-[family-name:var(--font-heading)] text-[17px] font-normal leading-snug text-white">{row.title}</p>
-                          <p className="mt-1 line-clamp-2 text-sm leading-snug text-[#6f809d]">{row.bodyPreview}</p>
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-4 align-middle text-[15px] font-[family-name:var(--font-heading)] font-normal text-[#9ca9c2]">
-                          {row.author.username}
-                        </td>
-                        <td className="px-4 py-4 align-middle">
-                          <span className={publishedBadgeClassName}>Published</span>
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-4 align-middle">
-                          <span className="inline-flex items-center gap-1 text-xs font-normal text-pink-400">
-                            <AdminVrmMetricHeartIcon />
-                            {row.likesCount}
-                          </span>
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-4 align-middle text-sm text-[#a8b6d0]">{formatDate(row.updatedAt)}</td>
-                        <td className="whitespace-nowrap px-4 py-4 align-middle">
-                          <div className="inline-flex items-center gap-0.5">
-                            <Link
-                              href={`/stories/${row.id}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className={storyActionLinkClassName}
-                              aria-label={`Open story ${row.title}`}
-                            >
-                              <StoryEyeIcon />
-                            </Link>
-                            <button
-                              type="button"
-                              className={storyActionButtonClassName}
-                              disabled={rowBusy}
-                              aria-label={`Delete story ${row.title}`}
-                              onClick={() => requestDeleteStory(row.id, row.title)}
-                            >
-                              <StoryTrashIcon />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })
+                  return (
+                    <tr key={row.id} className="border-t border-white/10">
+                      <td className="max-w-[min(420px,45vw)] px-4 py-4 align-top">
+                        <p className="font-[family-name:var(--font-heading)] text-[17px] font-normal leading-snug text-white">{row.title}</p>
+                        <p className="mt-1 line-clamp-2 text-sm leading-snug text-[#6f809d]">{row.bodyPreview}</p>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-4 align-middle text-[15px] font-[family-name:var(--font-heading)] font-normal text-[#9ca9c2]">
+                        {row.author.username}
+                      </td>
+                      <td className="px-4 py-4 align-middle">
+                        <span className={publishedBadgeClassName}>Published</span>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-4 align-middle">
+                        <span className="inline-flex items-center gap-1 text-xs font-normal text-pink-400">
+                          <AdminVrmMetricHeartIcon />
+                          {row.likesCount}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-4 align-middle text-sm text-[#a8b6d0]">{formatDate(row.updatedAt)}</td>
+                      <td className="whitespace-nowrap px-4 py-4 align-middle">
+                        <div className="inline-flex items-center gap-0.5">
+                          <Link
+                            href={`/stories/${row.id}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={storyActionLinkClassName}
+                            aria-label={`Open story ${row.title}`}
+                          >
+                            <StoryEyeIcon />
+                          </Link>
+                          <button
+                            type="button"
+                            className={storyActionButtonClassName}
+                            disabled={rowBusy}
+                            aria-label={`Delete story ${row.title}`}
+                            onClick={() => requestDeleteStory(row.id, row.title)}
+                          >
+                            <StoryTrashIcon />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
                 : null}
             </tbody>
           </table>
