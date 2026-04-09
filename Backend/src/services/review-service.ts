@@ -73,7 +73,7 @@ const assertReviewEligibility = async (userId: string, characterIdOrSlug: string
     throw new ReviewVerificationError(403, 'Please verify your e-mail before posting a review.')
   }
 
-  if (character.status !== 'APPROVED' || character.visibility !== 'PUBLIC') {
+  if (character.status !== 'APPROVED') {
     throw new ReviewVerificationError(403, 'This character is not available for public reviews.')
   }
 

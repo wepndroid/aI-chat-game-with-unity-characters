@@ -4,50 +4,42 @@
 import AdminPageShell from '@/components/shared/admin-page-shell'
 import AdminModalDialog from '@/components/ui-elements/admin-modal-dialog'
 import { AdminVrmMetricHeartIcon, AdminVrmMetricViewsIcon } from '@/components/ui-elements/admin-vrm-metric-icons'
-import {
-  deleteCharacter,
-  listCharacters,
-  submitCharacterForReview,
-  updateCharacterVisibility,
-  type CharacterListRecord
-} from '@/lib/character-api'
+import { deleteCharacter, listCharacters, submitCharacterForReview, type CharacterListRecord } from '@/lib/character-api'
 import { ADMIN_OVERVIEW_REFRESH_EVENT } from '@/lib/admin-overview-events'
 import { apiPost } from '@/lib/api-client'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { createPortal } from 'react-dom'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
-type CommunityVrmFilterValue = 'all' | 'public' | 'private'
+type CommunityVrmFilterValue = 'all' | 'live' | 'draft' | 'removed'
 
 const communityVrmFilterOptions: Array<{ value: CommunityVrmFilterValue; label: string }> = [
   { value: 'all', label: 'All status' },
-  { value: 'public', label: 'Public' },
-  { value: 'private', label: 'Private' }
+  { value: 'live', label: 'Live' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'removed', label: 'Removed' }
 ]
 
 const isRemovedCharacter = (characterRecord: CharacterListRecord) =>
   characterRecord.status === 'REJECTED' || characterRecord.status === 'ARCHIVED'
 
-/** Single status column: public / private / removed (UNLISTED counts as private). */
-type CommunityVrmRowStatus = 'public' | 'private' | 'removed'
+type CommunityVrmRowStatus = 'live' | 'draft' | 'removed'
 
 const getCommunityVrmRowStatus = (characterRecord: CharacterListRecord): CommunityVrmRowStatus => {
   if (isRemovedCharacter(characterRecord)) {
     return 'removed'
   }
 
-  if (characterRecord.visibility === 'PUBLIC') {
-    return 'public'
+  if (characterRecord.status === 'APPROVED') {
+    return 'live'
   }
 
-  return 'private'
+  return 'draft'
 }
 
-/** Pill styles aligned with admin reference: blue public, cool grey private, red removed. */
 const communityVrmRowStatusClassName: Record<CommunityVrmRowStatus, string> = {
-  public: 'border border-blue-500/55 bg-blue-950/55 text-blue-400',
-  private: 'border border-slate-600/65 bg-[#222831] text-[#b6c4d8]',
+  live: 'border border-blue-500/55 bg-blue-950/55 text-blue-400',
+  draft: 'border border-slate-600/65 bg-[#222831] text-[#b6c4d8]',
   removed: 'border border-red-500/55 bg-red-950/50 text-red-400'
 }
 
@@ -58,17 +50,20 @@ const matchesCommunityVrmFilter = (characterRecord: CharacterListRecord, filter:
     return true
   }
 
-  // Public / Private filters exclude rejected/archived rows (still shown under All with the Removed pill).
   if (removed) {
+    return filter === 'removed'
+  }
+
+  if (filter === 'live') {
+    return characterRecord.status === 'APPROVED'
+  }
+
+  if (filter === 'draft') {
+    return characterRecord.status === 'DRAFT'
+  }
+
+  if (filter === 'removed') {
     return false
-  }
-
-  if (filter === 'public') {
-    return characterRecord.visibility === 'PUBLIC'
-  }
-
-  if (filter === 'private') {
-    return characterRecord.visibility === 'PRIVATE' || characterRecord.visibility === 'UNLISTED'
   }
 
   return true
@@ -83,7 +78,6 @@ const SearchIcon = () => {
   )
 }
 
-// Match admin users table actions: size-9 hit target, rounded-lg, same gray + hover as admin-user-table-row.
 const communityVrmActionLinkClassName =
   'inline-flex size-9 items-center justify-center rounded-lg text-[#9ca3af] transition hover:bg-white/5 hover:text-[#d4d4d8]'
 
@@ -97,19 +91,9 @@ const CommunityVrmEyeIcon = () => (
   </svg>
 )
 
-const CommunityVrmGearIcon = () => (
-  <svg
-    viewBox="0 0 24 24"
-    className="size-[18px]"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden
-  >
-    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-    <circle cx="12" cy="12" r="3" />
+const CommunityVrmReviewIcon = () => (
+  <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+    <path d="M12 3v18M3 12h18" strokeLinecap="round" />
   </svg>
 )
 
@@ -119,113 +103,15 @@ const CommunityVrmTrashIcon = () => (
   </svg>
 )
 
-const SETTINGS_MENU_MIN_WIDTH_PX = 200
-
 type CommunityVrmRowActionsProps = {
   characterRecord: CharacterListRecord
   busyCharacterId: string | null
-  onSetVisibility: (characterId: string, visibility: 'PUBLIC' | 'PRIVATE') => void
   onReview: (characterId: string) => void
   onMarkRemoved: (characterId: string, characterName: string) => void
 }
 
-const CommunityVrmRowActions = ({
-  characterRecord,
-  busyCharacterId,
-  onSetVisibility,
-  onReview,
-  onMarkRemoved
-}: CommunityVrmRowActionsProps) => {
-  const [visibilityMenuOpen, setVisibilityMenuOpen] = useState(false)
-  const [visibilityMenuPosition, setVisibilityMenuPosition] = useState<{ top: number; left: number } | null>(null)
-  const visibilityMenuAnchorRef = useRef<HTMLDivElement>(null)
-  const visibilityMenuPortalRef = useRef<HTMLDivElement>(null)
-
+const CommunityVrmRowActions = ({ characterRecord, busyCharacterId, onReview, onMarkRemoved }: CommunityVrmRowActionsProps) => {
   const rowBusy = busyCharacterId === characterRecord.id
-
-  useLayoutEffect(() => {
-    if (!visibilityMenuOpen) {
-      setVisibilityMenuPosition(null)
-      return
-    }
-
-    const updatePosition = () => {
-      const anchor = visibilityMenuAnchorRef.current
-      if (!anchor) {
-        return
-      }
-
-      const rect = anchor.getBoundingClientRect()
-      const left = Math.min(
-        Math.max(8, rect.right - SETTINGS_MENU_MIN_WIDTH_PX),
-        window.innerWidth - SETTINGS_MENU_MIN_WIDTH_PX - 8
-      )
-
-      setVisibilityMenuPosition({
-        top: rect.bottom + 4,
-        left
-      })
-    }
-
-    updatePosition()
-    window.addEventListener('scroll', updatePosition, true)
-    window.addEventListener('resize', updatePosition)
-    return () => {
-      window.removeEventListener('scroll', updatePosition, true)
-      window.removeEventListener('resize', updatePosition)
-    }
-  }, [visibilityMenuOpen])
-
-  useEffect(() => {
-    if (!visibilityMenuOpen) {
-      return
-    }
-
-    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
-      const target = event.target as Node
-      if (visibilityMenuAnchorRef.current?.contains(target)) {
-        return
-      }
-
-      if (visibilityMenuPortalRef.current?.contains(target)) {
-        return
-      }
-
-      setVisibilityMenuOpen(false)
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setVisibilityMenuOpen(false)
-      }
-    }
-
-    document.addEventListener('mousedown', handlePointerDown)
-    document.addEventListener('touchstart', handlePointerDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown)
-      document.removeEventListener('touchstart', handlePointerDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [visibilityMenuOpen])
-
-  const handlePickVisibility = (picked: 'PUBLIC' | 'PRIVATE') => {
-    setVisibilityMenuOpen(false)
-    const currentVisibility = characterRecord.visibility
-    if (picked === 'PUBLIC' && currentVisibility === 'PUBLIC') {
-      return
-    }
-
-    if (picked === 'PRIVATE' && currentVisibility === 'PRIVATE') {
-      return
-    }
-
-    onSetVisibility(characterRecord.id, picked)
-  }
-
-  const isPublicCurrent = characterRecord.visibility === 'PUBLIC'
-  const isPrivateCurrent = characterRecord.visibility === 'PRIVATE' || characterRecord.visibility === 'UNLISTED'
 
   return (
     <div className="inline-flex items-center gap-2">
@@ -237,73 +123,15 @@ const CommunityVrmRowActions = ({
         <CommunityVrmEyeIcon />
       </Link>
 
-      <div className="inline-flex" ref={visibilityMenuAnchorRef}>
-        <button
-          type="button"
-          onClick={() => setVisibilityMenuOpen((open) => !open)}
-          disabled={rowBusy}
-          className={communityVrmActionButtonClassName}
-          aria-expanded={visibilityMenuOpen}
-          aria-haspopup="menu"
-          aria-label={`Options for ${characterRecord.name}: Public, Private, or Review`}
-        >
-          {rowBusy ? <span className="text-[10px] text-ember-300">…</span> : <CommunityVrmGearIcon />}
-        </button>
-      </div>
-
-      {visibilityMenuOpen && visibilityMenuPosition && typeof document !== 'undefined'
-        ? createPortal(
-            <div
-              ref={visibilityMenuPortalRef}
-              role="menu"
-              style={{
-                position: 'fixed',
-                top: visibilityMenuPosition.top,
-                left: visibilityMenuPosition.left,
-                zIndex: 100,
-                minWidth: SETTINGS_MENU_MIN_WIDTH_PX
-              }}
-              className="rounded-lg border border-white/15 bg-[#12161c] py-1 shadow-lg shadow-black/40"
-            >
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => handlePickVisibility('PUBLIC')}
-                className={`flex w-full items-center px-3 py-2 text-left text-sm transition hover:bg-white/5 ${
-                  isPublicCurrent ? 'text-ember-300' : 'text-white/90'
-                }`}
-              >
-                Public
-                {isPublicCurrent ? <span className="ml-auto pl-2 text-[10px] uppercase text-white/40">current</span> : null}
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => handlePickVisibility('PRIVATE')}
-                className={`flex w-full items-center px-3 py-2 text-left text-sm transition hover:bg-white/5 ${
-                  isPrivateCurrent ? 'text-ember-300' : 'text-white/90'
-                }`}
-              >
-                Private
-                {isPrivateCurrent ? <span className="ml-auto pl-2 text-[10px] uppercase text-white/40">current</span> : null}
-              </button>
-              <div className="my-1 border-t border-white/10" role="separator" aria-hidden="true" />
-              <button
-                type="button"
-                role="menuitem"
-                disabled={rowBusy}
-                className="flex w-full items-center px-3 py-2 text-left text-sm text-white/90 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-45"
-                onClick={() => {
-                  setVisibilityMenuOpen(false)
-                  onReview(characterRecord.id)
-                }}
-              >
-                Review
-              </button>
-            </div>,
-            document.body
-          )
-        : null}
+      <button
+        type="button"
+        disabled={rowBusy}
+        className={communityVrmActionButtonClassName}
+        aria-label={`Send ${characterRecord.name} to review queue`}
+        onClick={() => onReview(characterRecord.id)}
+      >
+        {rowBusy ? <span className="text-[10px] text-ember-300">…</span> : <CommunityVrmReviewIcon />}
+      </button>
 
       <button
         type="button"
@@ -404,7 +232,6 @@ const CommunityVrmsPage = () => {
     const normalizedSearchValue = searchValue.trim().toLowerCase()
 
     return characterList.filter((characterRecord) => {
-      // Pending submissions are listed only on Review Queue; rejected submissions should not be listed here.
       if (characterRecord.status === 'PENDING' || characterRecord.status === 'REJECTED') {
         return false
       }
@@ -449,22 +276,6 @@ const CommunityVrmsPage = () => {
         setErrorMessage(error instanceof Error ? error.message : 'Failed to delete character.')
       } finally {
         await loadCharacters(false)
-        setBusyCharacterId(null)
-      }
-    })
-  }
-
-  const handleSetVisibility = (characterId: string, visibility: 'PUBLIC' | 'PRIVATE') => {
-    Promise.resolve().then(async () => {
-      setBusyCharacterId(characterId)
-      setErrorMessage(null)
-
-      try {
-        await updateCharacterVisibility(characterId, visibility)
-        await loadCharacters(false)
-      } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'Failed to update visibility.')
-      } finally {
         setBusyCharacterId(null)
       }
     })
@@ -515,7 +326,7 @@ const CommunityVrmsPage = () => {
               className="h-full w-full appearance-none truncate bg-transparent pr-8 text-base text-[#9cb0cc] outline-none"
             >
               {communityVrmFilterOptions.map((filterOption) => (
-                <option key={filterOption.value} value={filterOption.value} className="bg-[#10151d] text-[#9cb0cc]">
+                <option key={filterOption.value} value={filterOption.value} className="bg-[#10151d] text-[#9cb0cb]">
                   {filterOption.label}
                 </option>
               ))}
@@ -642,7 +453,6 @@ const CommunityVrmsPage = () => {
                           <CommunityVrmRowActions
                             characterRecord={characterRecord}
                             busyCharacterId={busyCharacterId}
-                            onSetVisibility={handleSetVisibility}
                             onReview={handleReviewEnqueue}
                             onMarkRemoved={requestDeleteCharacter}
                           />

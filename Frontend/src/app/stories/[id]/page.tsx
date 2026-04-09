@@ -1,13 +1,13 @@
-import StoryDetailPage from '@/components/stories/story-detail-page'
+import StoryToCharacterRedirect from '@/components/stories/story-to-character-redirect'
 
-type StoryDetailRouteProps = {
+type StoryIdRouteProps = {
   params: Promise<{ id: string }>
 }
 
-const StoryDetailRoute = async ({ params }: StoryDetailRouteProps) => {
+const StoryIdRoute = async ({ params }: StoryIdRouteProps) => {
   const { id } = await params
 
-  return <StoryDetailPage storyId={id} />
+  return <StoryToCharacterRedirect storyId={id} />
 }
 
-export default StoryDetailRoute
+export default StoryIdRoute

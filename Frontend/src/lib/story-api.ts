@@ -1,4 +1,7 @@
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api-client'
+import type { StoryScenarioType } from '@/lib/story-scenario-types'
+
+export type { StoryScenarioType } from '@/lib/story-scenario-types'
 
 type StoryAuthor = {
   id: string
@@ -20,6 +23,10 @@ type StoryModerationStatus = 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED'
 type StoryListRecord = {
   id: string
   title: string
+  /** Left column text (may be empty on very old rows before backfill). */
+  scenarioStory: string
+  /** Right column: dialogue + direction (mini-markup). */
+  scenarioChat: string
   bodyPreview: string
   publicationStatus: StoryPublicationStatus
   moderationStatus: StoryModerationStatus
@@ -28,6 +35,7 @@ type StoryListRecord = {
   publishedAt: string | null
   likesCount: number
   characterId: string | null
+  scenarioType: string | null
   author: StoryAuthor
   character: StoryCharacterRef
   createdAt: string
@@ -37,6 +45,9 @@ type StoryListRecord = {
 type StoryDetailRecord = {
   id: string
   title: string
+  scenarioStory: string
+  scenarioChat: string
+  /** Combined scenario (search / legacy). */
   body: string
   publicationStatus: StoryPublicationStatus
   moderationStatus: StoryModerationStatus
@@ -44,6 +55,7 @@ type StoryDetailRecord = {
   publishedAt: string | null
   likesCount: number
   characterId: string | null
+  scenarioType: string | null
   author: StoryAuthor
   character: StoryCharacterRef
   hasLiked: boolean
@@ -112,8 +124,10 @@ const getStory = async (storyId: string) => {
 
 type CreateStoryPayload = {
   title: string
-  body: string
+  scenarioStory: string
+  scenarioChat: string
   characterId?: string
+  scenarioType?: StoryScenarioType
   publicationStatus?: StoryPublicationStatus
 }
 
@@ -121,16 +135,20 @@ const createStory = async (payload: CreateStoryPayload) => {
   const publicationStatus = payload.publicationStatus ?? 'PUBLISHED'
   return apiPost<{ data: StoryDetailRecord }>('/stories', {
     title: payload.title,
-    body: payload.body,
+    scenarioStory: payload.scenarioStory,
+    scenarioChat: payload.scenarioChat,
     ...(payload.characterId ? { characterId: payload.characterId } : {}),
+    ...(payload.scenarioType ? { scenarioType: payload.scenarioType } : {}),
     publicationStatus
   })
 }
 
 type UpdateStoryPayload = {
   title?: string
-  body?: string
+  scenarioStory?: string
+  scenarioChat?: string
   characterId?: string | null
+  scenarioType?: StoryScenarioType | null
   publicationStatus?: StoryPublicationStatus
 }
 

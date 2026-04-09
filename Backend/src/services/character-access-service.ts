@@ -102,8 +102,9 @@ const canModerateCharacterStatus = (actor: CharacterAccessActor) => {
   return actor?.role === 'ADMIN'
 }
 
+/** Approved characters are visible in the public catalog; visibility is always treated as public. */
 const isPublicApprovedCharacter = (character: CharacterAccessSubject) => {
-  return character.status === 'APPROVED' && character.visibility === 'PUBLIC'
+  return character.status === 'APPROVED'
 }
 
 const canAccessPrivateOrUnlisted = (actor: CharacterAccessActor, character: CharacterAccessSubject) => {
@@ -167,7 +168,6 @@ const buildPublicGalleryBranch = (galleryScope: GalleryScope): Prisma.CharacterW
   if (galleryScope === 'curated') {
     return {
       status: 'APPROVED',
-      visibility: 'PUBLIC',
       owner: { role: 'ADMIN' }
     }
   }
@@ -175,14 +175,12 @@ const buildPublicGalleryBranch = (galleryScope: GalleryScope): Prisma.CharacterW
   if (galleryScope === 'community') {
     return {
       status: 'APPROVED',
-      visibility: 'PUBLIC',
       owner: { role: { not: 'ADMIN' } }
     }
   }
 
   return {
-    status: 'APPROVED',
-    visibility: 'PUBLIC'
+    status: 'APPROVED'
   }
 }
 
@@ -190,7 +188,6 @@ const buildCharacterListWhereClause = (
   actor: CharacterAccessActor,
   params: {
     status?: CharacterStatus
-    visibility?: CharacterVisibility
     search?: string
     galleryScope?: GalleryScope
     /** Restrict list to this user’s characters (caller must authorize: self or admin). */
@@ -223,14 +220,12 @@ const buildCharacterListWhereClause = (
     : {}
 
   const statusClause = params.status ? { status: params.status } : {}
-  const visibilityClause = params.visibility ? { visibility: params.visibility } : {}
 
   if (params.listOwnerId) {
     return {
       ownerId: params.listOwnerId,
       ...searchClause,
-      ...statusClause,
-      ...visibilityClause
+      ...statusClause
     } satisfies Prisma.CharacterWhereInput
   }
 
@@ -239,8 +234,7 @@ const buildCharacterListWhereClause = (
       return {
         ...buildPublicGalleryBranch('all'),
         ...searchClause,
-        ...statusClause,
-        ...visibilityClause
+        ...statusClause
       } satisfies Prisma.CharacterWhereInput
     }
 
@@ -248,32 +242,27 @@ const buildCharacterListWhereClause = (
       return {
         ownerId: actor.userId,
         ...searchClause,
-        ...statusClause,
-        ...visibilityClause
+        ...statusClause
       } satisfies Prisma.CharacterWhereInput
     }
 
     if (galleryScope === 'curated') {
-      const catalogOnly =
-        !params.adminCuratedAll && params.status === undefined && params.visibility === undefined
+      const catalogOnly = !params.adminCuratedAll && params.status === undefined
 
       return {
         owner: { role: 'ADMIN' },
         ...(catalogOnly
           ? {
-              status: 'APPROVED',
-              visibility: 'PUBLIC'
+              status: 'APPROVED'
             }
           : {}),
         ...searchClause,
-        ...statusClause,
-        ...visibilityClause
+        ...statusClause
       } satisfies Prisma.CharacterWhereInput
     }
 
     if (galleryScope === 'community') {
-      const catalogOnly =
-        !params.adminCommunityAll && params.status === undefined && params.visibility === undefined
+      const catalogOnly = !params.adminCommunityAll && params.status === undefined
 
       return {
         owner: { role: { not: 'ADMIN' } },
@@ -286,20 +275,17 @@ const buildCharacterListWhereClause = (
           : {}),
         ...(catalogOnly
           ? {
-              status: 'APPROVED',
-              visibility: 'PUBLIC'
+              status: 'APPROVED'
             }
           : {}),
         ...searchClause,
-        ...statusClause,
-        ...visibilityClause
+        ...statusClause
       } satisfies Prisma.CharacterWhereInput
     }
 
     return {
       ...searchClause,
-      ...statusClause,
-      ...visibilityClause
+      ...statusClause
     } satisfies Prisma.CharacterWhereInput
   }
 
@@ -307,8 +293,7 @@ const buildCharacterListWhereClause = (
     return {
       ownerId: actor.userId,
       ...searchClause,
-      ...statusClause,
-      ...visibilityClause
+      ...statusClause
     } satisfies Prisma.CharacterWhereInput
   }
 
@@ -319,8 +304,7 @@ const buildCharacterListWhereClause = (
       return {
         ...buildPublicGalleryBranch(galleryScope),
         ...searchClause,
-        ...statusClause,
-        ...visibilityClause
+        ...statusClause
       } satisfies Prisma.CharacterWhereInput
     }
   }

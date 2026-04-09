@@ -30,11 +30,18 @@ const trustedProxyHopCount = Number.parseInt(process.env.TRUST_PROXY_HOPS ?? '',
 
 app.set('trust proxy', Number.isFinite(trustedProxyHopCount) ? trustedProxyHopCount : isProduction ? 1 : 0)
 
+/** v7 validations throw when proxies send X-Forwarded-For / Forwarded while trust proxy is off — yields 500. */
+const rateLimitValidateRelaxed = {
+  xForwardedForHeader: false,
+  forwardedHeader: false
+} as const
+
 const globalApiRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: isProduction ? 300 : 1200,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: rateLimitValidateRelaxed,
   message: {
     message: 'Too many requests. Please try again later.'
   }
@@ -45,6 +52,7 @@ const authRateLimit = rateLimit({
   max: isProduction ? 40 : 200,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: rateLimitValidateRelaxed,
   message: {
     message: 'Too many authentication attempts. Please slow down.'
   }
@@ -55,6 +63,7 @@ const assetUploadRateLimit = rateLimit({
   max: isProduction ? 30 : 120,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: rateLimitValidateRelaxed,
   message: {
     message: 'Too many upload attempts. Please try again later.'
   }

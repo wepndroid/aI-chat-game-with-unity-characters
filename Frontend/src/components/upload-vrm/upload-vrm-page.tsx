@@ -30,7 +30,6 @@ type UploadVrmFormState = {
   scenario: string
   exampleDialogs: string
   firstMessageText: string
-  isPublic: boolean
 }
 
 const initialFormState: UploadVrmFormState = {
@@ -42,8 +41,7 @@ const initialFormState: UploadVrmFormState = {
   personality: '',
   scenario: '',
   exampleDialogs: '',
-  firstMessageText: '',
-  isPublic: false
+  firstMessageText: ''
 }
 
 const UploadVrmPage = () => {
@@ -179,8 +177,7 @@ const UploadVrmPage = () => {
           personality: payload.data.personality ?? '',
           scenario: payload.data.scenario ?? '',
           exampleDialogs: payload.data.exampleDialogs ?? '',
-          firstMessageText: payload.data.firstMessage ?? '',
-          isPublic: payload.data.visibility === 'PUBLIC'
+          firstMessageText: payload.data.firstMessage ?? ''
         })
         setBaselinePreviewImageUrl(loadedPreviewUrl)
       } catch (error) {
@@ -328,8 +325,7 @@ const UploadVrmPage = () => {
       if (isAdmin && mode === 'admin-publish') {
         if (isEditing) {
           await updateCharacter(editCharacterId, {
-            ...basePayload,
-            visibility: 'PUBLIC'
+            ...basePayload
           })
           await updateCharacterStatus(editCharacterId, 'APPROVED')
         } else {
@@ -344,7 +340,6 @@ const UploadVrmPage = () => {
             firstMessage: firstMessageForApi,
             vroidFileUrl: vroidUrl || undefined,
             previewImageUrl: previewUrl || undefined,
-            visibility: 'PUBLIC',
             draft: false
           })
         }
@@ -354,8 +349,7 @@ const UploadVrmPage = () => {
       } else if (isAdmin && mode === 'admin-draft') {
         if (isEditing) {
           await updateCharacter(editCharacterId, {
-            ...basePayload,
-            visibility: 'PRIVATE'
+            ...basePayload
           })
           await updateCharacterStatus(editCharacterId, 'DRAFT')
         } else {
@@ -375,12 +369,9 @@ const UploadVrmPage = () => {
         }
         setStatusMessage('Saved as draft.')
       } else {
-        const visibility = formState.isPublic ? 'PUBLIC' : 'PRIVATE'
-
         if (isEditing) {
           await updateCharacter(editCharacterId, {
-            ...basePayload,
-            visibility
+            ...basePayload
           })
         } else {
           await createCharacter({
@@ -393,14 +384,13 @@ const UploadVrmPage = () => {
             exampleDialogs: exampleDialogsText,
             firstMessage: firstMessageForApi,
             vroidFileUrl: vroidUrl || undefined,
-            previewImageUrl: previewUrl || undefined,
-            visibility
+            previewImageUrl: previewUrl || undefined
           })
         }
 
         setStatusMessage(
           isEditing
-            ? 'Character updated successfully. If it was public, it may require re-approval before republishing.'
+            ? 'Character updated successfully. It may require re-approval before republishing.'
             : 'Character submitted successfully. It is now waiting for admin approval.'
         )
       }
@@ -579,18 +569,6 @@ const UploadVrmPage = () => {
                   </div>
                 </div>
               </div>
-
-              {!isAdmin ? (
-                <label className="mt-5 inline-flex cursor-pointer items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={formState.isPublic}
-                    onChange={(event) => handleFieldChange('isPublic', event.target.checked)}
-                    aria-label="Make character public"
-                  />
-                  <span className="text-sm font-medium text-white/70">Make Character Public</span>
-                </label>
-              ) : null}
 
               {statusMessage ? (
                 <p className="mt-3 rounded-md border border-emerald-300/30 bg-emerald-300/10 px-3 py-2 text-xs text-emerald-100">

@@ -1,13 +1,7 @@
-import EditStoryPage from '@/components/stories/edit-story-page'
+import LegacyEditRedirect from '../legacy-edit-redirect'
 
-type EditStoryRouteProps = {
-  params: Promise<{ id: string }>
+const StoryEditLegacyRoute = () => {
+  return <LegacyEditRedirect />
 }
 
-const EditStoryRoute = async ({ params }: EditStoryRouteProps) => {
-  const { id } = await params
-
-  return <EditStoryPage storyId={id} />
-}
-
-export default EditStoryRoute
+export default StoryEditLegacyRoute

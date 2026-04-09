@@ -109,9 +109,8 @@ type CreateCharacterPayload = {
   legacyHeyWaifu?: number
   isPatreonGated?: boolean
   minimumTierCents?: number
-  visibility?: CharacterVisibility
   officialListing?: boolean
-  /** Admin only: create as draft (DRAFT + PRIVATE). Ignored for non-admin. */
+  /** Admin only: save as draft instead of publishing. Ignored for non-admin. */
   draft?: boolean
 }
 
@@ -131,7 +130,6 @@ type UpdateCharacterPayload = {
   legacyHeyWaifu?: number | null
   isPatreonGated?: boolean
   minimumTierCents?: number | null
-  visibility?: CharacterVisibility
   officialListing?: boolean
 }
 
@@ -221,17 +219,6 @@ type UpdateCharacterStatusResponse = {
     publishedAt: string | null
     updatedAt: string
     moderationRejectReason: string | null
-  }
-}
-
-type UpdateCharacterVisibilityResponse = {
-  data: {
-    id: string
-    name: string
-    status: CharacterStatus
-    visibility: CharacterVisibility
-    publishedAt: string | null
-    updatedAt: string
   }
 }
 
@@ -397,13 +384,6 @@ const updateCharacterStatus = async (characterId: string, status: CharacterStatu
   })
 }
 
-const updateCharacterVisibility = async (characterId: string, visibility: CharacterVisibility) => {
-  const normalizedCharacterId = characterId.trim()
-  return apiPatch<UpdateCharacterVisibilityResponse>(`/characters/${encodeURIComponent(normalizedCharacterId)}/visibility`, {
-    visibility
-  })
-}
-
 const deleteCharacter = async (characterId: string) => {
   const normalizedCharacterId = characterId.trim()
   return apiDelete<DeleteCharacterResponse>(`/characters/${encodeURIComponent(normalizedCharacterId)}`)
@@ -422,7 +402,6 @@ export {
   toggleCharacterHeart,
   updateCharacter,
   updateCharacterStatus,
-  updateCharacterVisibility,
   uploadCharacterAssets
 }
 export type {
@@ -443,7 +422,6 @@ export type {
   UpdateCharacterPayload,
   UpdateCharacterResponse,
   UpdateCharacterStatusResponse,
-  UpdateCharacterVisibilityResponse,
   SubmitCharacterForReviewResponse,
   CharacterMineListResponse,
   ToggleCharacterHeartResponse

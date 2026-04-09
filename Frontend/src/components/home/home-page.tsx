@@ -50,7 +50,7 @@ const formatHeartsCount = (count: number) => {
 
 const toTopRatedCharacterCardData = (characterList: CharacterListRecord[]): CharacterCardData[] => {
   return characterList
-    .filter((character) => character.status === 'APPROVED' && character.visibility === 'PUBLIC')
+    .filter((character) => character.status === 'APPROVED')
     .slice(0, 4)
     .map((character, index) => ({
       id: character.id,

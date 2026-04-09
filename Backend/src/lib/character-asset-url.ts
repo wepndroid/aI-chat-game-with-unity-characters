@@ -19,7 +19,8 @@ const normalizeTrustedOrigins = (): string[] => {
   if (process.env.NODE_ENV !== 'production') {
     const parsedPort = Number.parseInt(process.env.PORT ?? '4000', 10)
     const port = Number.isNaN(parsedPort) ? 4000 : parsedPort
-    return [`http://127.0.0.1:${port}`]
+    // Browsers and env files often use localhost; static compare is origin-exact.
+    return [`http://127.0.0.1:${port}`, `http://localhost:${port}`]
   }
 
   return []
@@ -74,6 +75,39 @@ const isSafeExternalUrl = (rawUrl: string) => {
   }
 }
 
+const isLoopbackHostname = (hostname: string) => {
+  const h = hostname.toLowerCase()
+  if (h === 'localhost' || h.endsWith('.localhost')) {
+    return true
+  }
+  if (h === '127.0.0.1' || h === '[::1]' || h === '::1') {
+    return true
+  }
+  return false
+}
+
+/**
+ * Dev-only: same machine uploads often use a different port than BACKEND_PUBLIC_URL in .env.
+ * Accept any loopback http(s) URL under /uploads/ (still enforces extension in assertSafeAssetUrl).
+ */
+const isDevLoopbackSelfHostedUpload = (rawUrl: string) => {
+  if (process.env.NODE_ENV === 'production') {
+    return false
+  }
+  try {
+    const parsed = new URL(rawUrl)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return false
+    }
+    if (!isLoopbackHostname(parsed.hostname)) {
+      return false
+    }
+    return parsed.pathname.startsWith(UPLOAD_PATH_PREFIX)
+  } catch {
+    return false
+  }
+}
+
 /**
  * URLs served by this API under /uploads/* (see character asset upload + static middleware).
  */
@@ -108,7 +142,7 @@ const assertSafeAssetUrl = (rawUrl: string | null | undefined, fieldLabel: strin
 
   const normalizedUrl = rawUrl.trim()
 
-  if (isTrustedSelfHostedAssetUrl(normalizedUrl)) {
+  if (isTrustedSelfHostedAssetUrl(normalizedUrl) || isDevLoopbackSelfHostedUpload(normalizedUrl)) {
     const parsedUrl = new URL(normalizedUrl)
     const normalizedPath = parsedUrl.pathname.toLowerCase()
 
@@ -136,4 +170,11 @@ const assertSafeCharacterAssetUrls = (payload: { vroidFileUrl?: string | null; p
   assertSafeAssetUrl(payload.previewImageUrl, 'Preview image URL', ['.png', '.jpg', '.jpeg', '.webp', '.gif'])
 }
 
-export { assertSafeCharacterAssetUrls, isSafeExternalUrl, isTrustedSelfHostedAssetUrl, normalizeTrustedOrigins, UPLOAD_PATH_PREFIX }
+export {
+  assertSafeCharacterAssetUrls,
+  isDevLoopbackSelfHostedUpload,
+  isSafeExternalUrl,
+  isTrustedSelfHostedAssetUrl,
+  normalizeTrustedOrigins,
+  UPLOAD_PATH_PREFIX
+}

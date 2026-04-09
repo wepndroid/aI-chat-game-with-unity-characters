@@ -1,9 +1,11 @@
-import { CharacterStatus, CharacterVisibility, Prisma } from '@prisma/client'
-import { randomUUID } from 'node:crypto'
+import { CharacterStatus, Prisma } from '@prisma/client'
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
 import type { Request } from 'express'
 import { Router } from 'express'
 import { z } from 'zod'
-import { assertSafeCharacterAssetUrls } from '../lib/character-asset-url'
+import { assertSafeCharacterAssetUrls, isTrustedSelfHostedAssetUrl } from '../lib/character-asset-url'
 import { tryDeleteTrustedUploadFile } from '../lib/delete-local-upload-file'
 import { optionalAuth, requireAdmin, requireAuth, requireVerifiedEmail } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
@@ -35,9 +37,8 @@ const createCharacterSchema = z.object({
   legacyHeyWaifu: z.number().int().min(0).max(1).optional(),
   isPatreonGated: z.boolean().optional(),
   minimumTierCents: z.number().int().min(0).optional(),
-  visibility: z.nativeEnum(CharacterVisibility).optional(),
   officialListing: z.boolean().optional(),
-  /** Admin only: save as DRAFT / PRIVATE instead of publishing. Ignored for non-admin. */
+  /** Admin only: save as DRAFT instead of publishing. Ignored for non-admin. */
   draft: z.boolean().optional()
 })
 
@@ -58,7 +59,6 @@ const updateCharacterSchema = z
     legacyHeyWaifu: z.number().int().min(0).max(1).nullable().optional(),
     isPatreonGated: z.boolean().optional(),
     minimumTierCents: z.number().int().min(0).nullable().optional(),
-    visibility: z.nativeEnum(CharacterVisibility).optional(),
     officialListing: z.boolean().optional()
   })
   .refine((payload) => Object.keys(payload).length > 0, {
@@ -67,7 +67,6 @@ const updateCharacterSchema = z
 
 const listCharactersQuerySchema = z.object({
   status: z.nativeEnum(CharacterStatus).optional(),
-  visibility: z.nativeEnum(CharacterVisibility).optional(),
   search: z.string().trim().max(120).optional(),
   galleryScope: z.enum(['all', 'curated', 'community', 'mine']).optional(),
   /** List characters owned by this user (signed-in user may only use their own id; admins may use any). */
@@ -96,12 +95,12 @@ const updateCharacterStatusSchema = z
     }
   })
 
-const updateCharacterVisibilitySchema = z.object({
-  visibility: z.nativeEnum(CharacterVisibility)
-})
-
 const characterParamsSchema = z.object({
   characterId: z.string().min(1)
+})
+
+const signedVrmTokenParamsSchema = z.object({
+  token: z.string().min(8)
 })
 
 const chatStartBodySchema = z.object({
@@ -138,6 +137,125 @@ const toCharacterAccessActor = (request: Request): CharacterAccessActor => {
   }
 }
 
+const uploadsRoot = path.join(process.cwd(), 'uploads')
+const vrmSignedUrlSecret = process.env.VRM_SIGNED_URL_SECRET?.trim() || process.env.AUTH_COOKIE_NAME || 'secretwaifu-vrm'
+const parsePositiveInt = (value: string | undefined, fallbackValue: number) => {
+  const parsed = Number.parseInt(value ?? '', 10)
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    return fallbackValue
+  }
+  return parsed
+}
+const vrmSignedUrlTtlSeconds = Math.min(60 * 30, parsePositiveInt(process.env.VRM_SIGNED_URL_TTL_SECONDS, 60))
+
+type VrmSignedTokenPayload = {
+  c: string
+  f: string
+  e: number
+}
+
+const toBase64Url = (value: string) => Buffer.from(value, 'utf8').toString('base64url')
+const fromBase64Url = (value: string) => Buffer.from(value, 'base64url').toString('utf8')
+
+const signVrmPayload = (payloadEncoded: string) => {
+  return createHmac('sha256', vrmSignedUrlSecret).update(payloadEncoded).digest('base64url')
+}
+
+const createSignedVrmToken = (payload: VrmSignedTokenPayload) => {
+  const payloadEncoded = toBase64Url(JSON.stringify(payload))
+  const signature = signVrmPayload(payloadEncoded)
+  return `${payloadEncoded}.${signature}`
+}
+
+const parseSignedVrmToken = (token: string): VrmSignedTokenPayload | null => {
+  const [payloadEncoded, signature] = token.split('.')
+
+  if (!payloadEncoded || !signature) {
+    return null
+  }
+
+  const expectedSignature = signVrmPayload(payloadEncoded)
+  const provided = Buffer.from(signature)
+  const expected = Buffer.from(expectedSignature)
+
+  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
+    return null
+  }
+
+  try {
+    const decoded = JSON.parse(fromBase64Url(payloadEncoded)) as Partial<VrmSignedTokenPayload>
+    if (
+      typeof decoded.c !== 'string' ||
+      typeof decoded.f !== 'string' ||
+      typeof decoded.e !== 'number' ||
+      !Number.isFinite(decoded.e)
+    ) {
+      return null
+    }
+
+    if (!/^[a-zA-Z0-9._-]+$/.test(decoded.f) || !decoded.f.toLowerCase().endsWith('.vrm')) {
+      return null
+    }
+
+    return {
+      c: decoded.c,
+      f: decoded.f,
+      e: decoded.e
+    }
+  } catch {
+    return null
+  }
+}
+
+const buildApiBaseUrl = (request: Request) => {
+  const configured = process.env.BACKEND_PUBLIC_URL?.trim().replace(/\/+$/, '')
+  if (configured) {
+    return configured
+  }
+
+  const forwardedProto = request.headers['x-forwarded-proto']
+  const proto = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto) || request.protocol
+  const forwardedHost = request.headers['x-forwarded-host']
+  const host = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost) || request.get('host')
+  return `${proto}://${host}`
+}
+
+const extractUploadFilenameFromVrmUrl = (urlValue: string | null) => {
+  if (!urlValue || !isTrustedSelfHostedAssetUrl(urlValue)) {
+    return null
+  }
+
+  try {
+    const parsed = new URL(urlValue)
+    const filename = decodeURIComponent(parsed.pathname.split('/').pop() ?? '')
+
+    if (!filename || !/^[a-zA-Z0-9._-]+$/.test(filename) || !filename.toLowerCase().endsWith('.vrm')) {
+      return null
+    }
+
+    return filename
+  } catch {
+    return null
+  }
+}
+
+const buildSignedVrmDownloadUrl = (request: Request, characterId: string, vroidFileUrl: string | null) => {
+  const filename = extractUploadFilenameFromVrmUrl(vroidFileUrl)
+
+  if (!filename) {
+    return vroidFileUrl
+  }
+
+  const expiresAtMs = Date.now() + vrmSignedUrlTtlSeconds * 1000
+  const token = createSignedVrmToken({
+    c: characterId,
+    f: filename,
+    e: expiresAtMs
+  })
+  const base = buildApiBaseUrl(request)
+  return `${base}/api/characters/assets/vrm/${encodeURIComponent(token)}`
+}
+
 characterRoutes.get('/characters', optionalAuth, async (request, response, next) => {
   try {
     const query = listCharactersQuerySchema.parse(request.query)
@@ -165,7 +283,6 @@ characterRoutes.get('/characters', optionalAuth, async (request, response, next)
 
     const whereClause = buildCharacterListWhereClause(actor, {
       status: query.status,
-      visibility: query.visibility,
       search: query.search,
       galleryScope,
       listOwnerId: query.ownerId,
@@ -211,7 +328,10 @@ characterRoutes.get('/characters', optionalAuth, async (request, response, next)
     })
 
     response.json({
-      data: characterList
+      data: characterList.map((character) => ({
+        ...character,
+        thumbnailUrl: character.previewImageUrl
+      }))
     })
   } catch (error) {
     if (error instanceof Error && error.message.toLowerCase().includes('url')) {
@@ -236,7 +356,6 @@ characterRoutes.get('/characters/public', optionalAuth, async (request, response
 
     const whereClause = buildCharacterListWhereClause(actor, {
       status: query.status,
-      visibility: query.visibility,
       search: query.search,
       galleryScope: 'all',
       adminCuratedAll: query.adminCuratedAll !== undefined,
@@ -403,7 +522,6 @@ characterRoutes.get('/characters/mine', requireAuth, async (request, response, n
       where: {
         ownerId: authUser.userId,
         ...(query.status ? { status: query.status } : {}),
-        ...(query.visibility ? { visibility: query.visibility } : {}),
         ...(normalizedSearch
           ? {
               OR: [
@@ -583,7 +701,9 @@ characterRoutes.get('/characters/:characterId', optionalAuth, async (request, re
         exampleDialogs: persona.exampleDialogs,
         characterCardId: persona.characterCardId,
         characterCardIsPublic: persona.characterCardIsPublic,
-        vroidFileUrl: characterAccess.canAccessPatreonGatedContent ? character.vroidFileUrl : null,
+        vroidFileUrl: characterAccess.canAccessPatreonGatedContent
+          ? buildSignedVrmDownloadUrl(request, character.id, character.vroidFileUrl)
+          : null,
         previewImageUrl: character.previewImageUrl,
         legacyFileHash: character.legacyFileHash,
         legacyTier: character.legacyTier,
@@ -612,6 +732,140 @@ characterRoutes.get('/characters/:characterId', optionalAuth, async (request, re
 })
 
 /** Count a “chat start” (play demo) — not a page view. Same eligibility as the former GET increment. */
+characterRoutes.get('/characters/:characterId/vrm-signed-url', requireAuth, async (request, response, next) => {
+  try {
+    const authUser = request.authUser
+
+    if (!authUser) {
+      response.status(401).json({
+        message: 'Authentication required.'
+      })
+      return
+    }
+
+    const { characterId } = characterParamsSchema.parse(request.params)
+    const actor = toCharacterAccessActor(request)
+
+    const character = await prisma.character.findFirst({
+      where: {
+        OR: [{ id: characterId }, { slug: characterId }]
+      },
+      select: {
+        id: true,
+        ownerId: true,
+        status: true,
+        visibility: true,
+        isPatreonGated: true,
+        minimumTierCents: true,
+        vroidFileUrl: true
+      }
+    })
+
+    if (!character) {
+      response.status(404).json({
+        message: 'Character not found.'
+      })
+      return
+    }
+
+    const access = await resolveCharacterAccess(actor, character)
+
+    if (!access.canReadCharacter) {
+      response.status(404).json({
+        message: 'Character not found.'
+      })
+      return
+    }
+
+    if (!access.canAccessPatreonGatedContent) {
+      response.status(403).json({
+        message: 'Your membership tier does not allow this character.'
+      })
+      return
+    }
+
+    if (!character.vroidFileUrl) {
+      response.status(404).json({
+        message: 'No VRM asset is available for this character.'
+      })
+      return
+    }
+
+    const signedUrl = buildSignedVrmDownloadUrl(request, character.id, character.vroidFileUrl)
+
+    response.json({
+      data: {
+        characterId: character.id,
+        downloadUrl: signedUrl,
+        expiresAt: new Date(Date.now() + vrmSignedUrlTtlSeconds * 1000).toISOString()
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+characterRoutes.get('/characters/assets/vrm/:token', async (request, response, next) => {
+  try {
+    const { token } = signedVrmTokenParamsSchema.parse(request.params)
+    const parsed = parseSignedVrmToken(token)
+
+    if (!parsed) {
+      response.status(403).json({
+        message: 'Invalid VRM download token.'
+      })
+      return
+    }
+
+    if (parsed.e < Date.now()) {
+      response.status(403).json({
+        message: 'VRM download token has expired.'
+      })
+      return
+    }
+
+    const character = await prisma.character.findUnique({
+      where: {
+        id: parsed.c
+      },
+      select: {
+        id: true,
+        vroidFileUrl: true
+      }
+    })
+
+    if (!character) {
+      response.status(404).json({
+        message: 'Character not found.'
+      })
+      return
+    }
+
+    const expectedFilename = extractUploadFilenameFromVrmUrl(character.vroidFileUrl)
+    if (!expectedFilename || expectedFilename !== parsed.f) {
+      response.status(403).json({
+        message: 'VRM token no longer matches the current asset.'
+      })
+      return
+    }
+
+    const absolutePath = path.join(uploadsRoot, expectedFilename)
+    if (!absolutePath.startsWith(uploadsRoot)) {
+      response.status(403).json({
+        message: 'Invalid asset path.'
+      })
+      return
+    }
+
+    await fs.promises.access(absolutePath, fs.constants.R_OK)
+    response.setHeader('Cache-Control', 'private, max-age=0, no-store')
+    response.setHeader('Content-Type', 'model/gltf-binary')
+    response.sendFile(absolutePath)
+  } catch (error) {
+    next(error)
+  }
+})
+
 characterRoutes.post('/characters/:characterId/chat-start', optionalAuth, async (request, response, next) => {
   try {
     const { characterId } = characterParamsSchema.parse(request.params)
@@ -665,7 +919,7 @@ characterRoutes.post('/characters/:characterId/chat-start', optionalAuth, async 
 
     let viewsCount = character.viewsCount
 
-    if (character.status === 'APPROVED' && character.visibility === 'PUBLIC') {
+    if (character.status === 'APPROVED') {
       const shouldCountView = !actor || (actor.userId !== character.ownerId && actor.role !== 'ADMIN')
 
       if (shouldCountView) {
@@ -754,12 +1008,7 @@ characterRoutes.post('/characters', requireVerifiedEmail, async (request, respon
     const isAdmin = actor.role === 'ADMIN'
     const adminSaveAsDraft = isAdmin && payload.draft === true
     const nextStatus = isAdmin ? (adminSaveAsDraft ? 'DRAFT' : 'APPROVED') : 'PENDING'
-    const nextVisibility = adminSaveAsDraft
-      ? 'PRIVATE'
-      : isAdmin
-        ? (payload.visibility ?? 'PUBLIC')
-        : (payload.visibility ?? 'PRIVATE')
-    const publishedAt = nextStatus === 'APPROVED' && nextVisibility === 'PUBLIC' ? new Date() : null
+    const publishedAt = nextStatus === 'APPROVED' ? new Date() : null
 
     const createdCharacter = await prisma.$transaction(async (transactionClient) => {
       const nextCharacter = await transactionClient.character.create({
@@ -781,7 +1030,7 @@ characterRoutes.post('/characters', requireVerifiedEmail, async (request, respon
           legacyHeyWaifu: payload.legacyHeyWaifu,
           isPatreonGated: payload.isPatreonGated ?? false,
           minimumTierCents: payload.minimumTierCents,
-          visibility: nextVisibility,
+          visibility: 'PUBLIC',
           officialListing,
           status: nextStatus,
           ...(publishedAt ? { publishedAt } : { publishedAt: null })
@@ -806,7 +1055,7 @@ characterRoutes.post('/characters', requireVerifiedEmail, async (request, respon
           scenario: payload.scenario ?? null,
           firstMessage: payload.firstMessage ?? null,
           exampleDialogs: payload.exampleDialogs ?? null,
-          isPublic: nextVisibility === 'PUBLIC'
+          isPublic: true
         }
       })
 
@@ -895,7 +1144,7 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
           ...(payload.legacyHeyWaifu !== undefined ? { legacyHeyWaifu: payload.legacyHeyWaifu } : {}),
           ...(payload.isPatreonGated !== undefined ? { isPatreonGated: payload.isPatreonGated } : {}),
           ...(payload.minimumTierCents !== undefined ? { minimumTierCents: payload.minimumTierCents } : {}),
-          ...(payload.visibility !== undefined ? { visibility: payload.visibility } : {}),
+          visibility: 'PUBLIC',
           officialListing: existingCharacter.owner.role === 'ADMIN',
           ...(shouldResetStatusToPending
             ? {
@@ -934,7 +1183,7 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
           scenario: nextCharacter.scenario,
           firstMessage: nextCharacter.firstMessage,
           exampleDialogs: nextCharacter.exampleDialogs,
-          isPublic: nextCharacter.visibility === 'PUBLIC'
+          isPublic: true
         },
         update: {
           fullName: nextCharacter.fullName,
@@ -943,7 +1192,7 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
           scenario: nextCharacter.scenario,
           firstMessage: nextCharacter.firstMessage,
           exampleDialogs: nextCharacter.exampleDialogs,
-          isPublic: nextCharacter.visibility === 'PUBLIC'
+          isPublic: true
         }
       })
 
@@ -1157,7 +1406,6 @@ characterRoutes.patch('/characters/:characterId/status', requireAdmin, async (re
       },
       select: {
         id: true,
-        visibility: true,
         publishedAt: true
       }
     })
@@ -1179,9 +1427,7 @@ characterRoutes.patch('/characters/:characterId/status', requireAdmin, async (re
         moderationRejectReason: payload.status === 'REJECTED' ? rejectReasonTrimmed : null,
         ...(payload.status === 'APPROVED'
           ? {
-              // Approval should not override creator's visibility choice.
-              publishedAt:
-                currentCharacter.visibility === 'PUBLIC' ? (currentCharacter.publishedAt ?? new Date()) : null
+              publishedAt: currentCharacter.publishedAt ?? new Date()
             }
           : {
               publishedAt: null
@@ -1195,54 +1441,6 @@ characterRoutes.patch('/characters/:characterId/status', requireAdmin, async (re
         publishedAt: true,
         updatedAt: true,
         moderationRejectReason: true
-      }
-    })
-
-    response.json({
-      data: updatedCharacter
-    })
-  } catch (error) {
-    next(error)
-  }
-})
-
-characterRoutes.patch('/characters/:characterId/visibility', requireAdmin, async (request, response, next) => {
-  try {
-    const { characterId } = characterParamsSchema.parse(request.params)
-    const payload = updateCharacterVisibilitySchema.parse(request.body)
-
-    const existingCharacter = await prisma.character.findUnique({
-      where: {
-        id: characterId
-      },
-      select: {
-        id: true,
-        status: true
-      }
-    })
-
-    if (!existingCharacter) {
-      response.status(404).json({
-        message: 'Character not found.'
-      })
-      return
-    }
-
-    const updatedCharacter = await prisma.character.update({
-      where: {
-        id: characterId
-      },
-      data: {
-        visibility: payload.visibility,
-        publishedAt: payload.visibility === 'PUBLIC' && existingCharacter.status === 'APPROVED' ? new Date() : null
-      },
-      select: {
-        id: true,
-        name: true,
-        status: true,
-        visibility: true,
-        publishedAt: true,
-        updatedAt: true
       }
     })
 

@@ -66,9 +66,6 @@ const toCardRecord = (characterRecord: CharacterMineRecord): MyCharacterCardReco
       ? (normalizedStatus as CharacterModerationStatus)
       : 'draft'
 
-  const normalizedVisibility = characterRecord.visibility.toLowerCase()
-  const mappedVisibility = normalizedVisibility === 'public' || normalizedVisibility === 'unlisted' ? normalizedVisibility : 'private'
-
   return {
     id: characterRecord.id,
     slug: characterRecord.slug,
@@ -76,7 +73,6 @@ const toCardRecord = (characterRecord: CharacterMineRecord): MyCharacterCardReco
     summary: characterRecord.tagline?.trim() || 'No tagline yet. Update this character to improve discoverability.',
     moderationStatus: mappedStatus,
     moderationRejectReason: characterRecord.moderationRejectReason,
-    visibility: mappedVisibility,
     nsfwLevel: 'none',
     updatedAtLabel: formatRelativeTimeLabel(characterRecord.updatedAt),
     views: characterRecord.viewsCount,

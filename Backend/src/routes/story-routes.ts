@@ -2,9 +2,20 @@ import { Prisma } from '@prisma/client'
 import { Router } from 'express'
 import { z } from 'zod'
 import { optionalAuth, requireAdmin, requireAuth, requireVerifiedEmail } from '../middleware/auth-middleware'
+import { combineScenarioFields } from '../lib/combine-scenario-body'
 import { prisma } from '../lib/prisma'
+import { storyScenarioTypeSchema } from '../lib/story-scenario-type'
 
 const storyRoutes = Router()
+
+/** Express may pass repeated query keys as string[]; strip to a single value for Zod. */
+const firstQueryValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value[0]
+  }
+
+  return value
+}
 
 const storyParamsSchema = z.object({
   storyId: z.string().min(1)
@@ -13,24 +24,42 @@ const storyParamsSchema = z.object({
 const createStorySchema = z
   .object({
     title: z.string().trim().max(200),
-    body: z.string().trim().max(20000),
+    /** Left column on scenario cards: setting / narrative (plain text). */
+    scenarioStory: z.string().max(12000),
+    /** Right column: dialogue and stage direction (mini-markup: `"…"`, `**…**`, `*…*`). */
+    scenarioChat: z.string().max(12000),
     characterId: z.string().min(1).optional(),
+    scenarioType: storyScenarioTypeSchema.optional(),
     /** Omit or `PUBLISHED` = publish rules; `DRAFT` = save without listing publicly. */
     publicationStatus: z.enum(['DRAFT', 'PUBLISHED']).optional()
   })
   .strict()
   .superRefine((data, ctx) => {
     const title = data.title.trim()
-    const body = data.body.trim()
+    const story = data.scenarioStory.trim()
+    const chat = data.scenarioChat.trim()
     const effectivePublication = data.publicationStatus ?? 'PUBLISHED'
     const isDraft = effectivePublication === 'DRAFT'
+    const combined = combineScenarioFields(data.scenarioStory, data.scenarioChat)
+
+    if (combined.length > 20000) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Story and chat combined must be at most 20000 characters.',
+        path: ['scenarioChat']
+      })
+    }
 
     if (isDraft) {
       if (title.length < 1) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Title is required.', path: ['title'] })
       }
-      if (body.length < 1) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Body is required.', path: ['body'] })
+      if (story.length < 1 && chat.length < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Add a story setup and/or chat preview.',
+          path: ['scenarioChat']
+        })
       }
     } else {
       if (title.length < 3) {
@@ -40,21 +69,38 @@ const createStorySchema = z
           path: ['title']
         })
       }
-      if (body.length < 10) {
+      if (story.length < 30) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Body must be at least 10 characters.',
-          path: ['body']
+          message: 'Story setup must be at least 30 characters.',
+          path: ['scenarioStory']
         })
       }
+      if (chat.length < 10) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Chat & explanation must be at least 10 characters.',
+          path: ['scenarioChat']
+        })
+      }
+    }
+
+    if (effectivePublication === 'PUBLISHED' && !data.scenarioType) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Story category is required to publish.',
+        path: ['scenarioType']
+      })
     }
   })
 
 const updateStorySchema = z
   .object({
     title: z.string().trim().max(200).optional(),
-    body: z.string().trim().max(20000).optional(),
+    scenarioStory: z.string().trim().max(12000).optional(),
+    scenarioChat: z.string().trim().max(12000).optional(),
     characterId: z.string().min(1).nullable().optional(),
+    scenarioType: storyScenarioTypeSchema.nullable().optional(),
     publicationStatus: z.enum(['DRAFT', 'PUBLISHED']).optional()
   })
   .strict()
@@ -62,26 +108,34 @@ const updateStorySchema = z
     message: 'At least one field must be provided.'
   })
 
-const listStoriesQuerySchema = z.object({
-  scope: z.enum(['all', 'mine']).optional().default('all'),
-  characterId: z.string().min(1).optional(),
-  search: z.string().trim().max(120).optional(),
-  sort: z.enum(['newest', 'likes']).optional().default('newest'),
-  /** When scope is mine: filter by draft vs published vs rejected (rejected = published + moderation rejected). Ignored for scope=all. */
-  publication: z.enum(['all', 'draft', 'published', 'rejected']).optional().default('all'),
-  limit: z.coerce.number().int().min(1).max(100).default(20)
-}).strict()
+const listStoriesQuerySchema = z
+  .object({
+    scope: z.preprocess(firstQueryValue, z.enum(['all', 'mine']).optional().default('all')),
+    characterId: z.preprocess(firstQueryValue, z.string().min(1).optional()),
+    search: z.preprocess(firstQueryValue, z.string().trim().max(120).optional()),
+    sort: z.preprocess(firstQueryValue, z.enum(['newest', 'likes']).optional().default('newest')),
+    /** When scope is mine: filter by draft vs published vs rejected (rejected = published + moderation rejected). Ignored for scope=all. */
+    publication: z.preprocess(
+      firstQueryValue,
+      z.enum(['all', 'draft', 'published', 'rejected']).optional().default('all')
+    ),
+    limit: z.preprocess(firstQueryValue, z.coerce.number().int().min(1).max(100).default(20))
+  })
+  .strip()
 
 const adminListStoriesQuerySchema = z
   .object({
-    search: z.string().trim().max(120).optional(),
-    sort: z.enum(['newest', 'likes']).optional().default('newest'),
+    search: z.preprocess(firstQueryValue, z.string().trim().max(120).optional()),
+    sort: z.preprocess(firstQueryValue, z.enum(['newest', 'likes']).optional().default('newest')),
     /** Which moderation bucket to list (only `PUBLISHED` stories appear in admin). */
-    moderation: z.enum(['all', 'pending', 'approved', 'rejected']).optional().default('pending'),
-    page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(25)
+    moderation: z.preprocess(
+      firstQueryValue,
+      z.enum(['all', 'pending', 'approved', 'rejected']).optional().default('pending')
+    ),
+    page: z.preprocess(firstQueryValue, z.coerce.number().int().min(1).default(1)),
+    limit: z.preprocess(firstQueryValue, z.coerce.number().int().min(1).max(100).default(25))
   })
-  .strict()
+  .strip()
 
 const adminModerateStorySchema = z
   .object({
@@ -106,12 +160,15 @@ const adminModerateStorySchema = z
 const storyListSelectFields = {
   id: true,
   title: true,
+  scenarioStory: true,
+  scenarioChat: true,
   publicationStatus: true,
   moderationStatus: true,
   moderationRejectReason: true,
   publishedAt: true,
   likesCount: true,
   characterId: true,
+  scenarioType: true,
   createdAt: true,
   updatedAt: true,
   body: true,
@@ -134,6 +191,8 @@ const storyListSelectFields = {
 const storySelectFields = {
   id: true,
   title: true,
+  scenarioStory: true,
+  scenarioChat: true,
   body: true,
   publicationStatus: true,
   moderationStatus: true,
@@ -141,6 +200,7 @@ const storySelectFields = {
   publishedAt: true,
   likesCount: true,
   characterId: true,
+  scenarioType: true,
   createdAt: true,
   updatedAt: true,
   author: {
@@ -159,6 +219,38 @@ const storySelectFields = {
   }
 } as const
 
+/** Public catalog: global feeds allow legacy `NONE`; character page is moderator-approved only. */
+const buildPublicCatalogWhere = (input: {
+  characterId?: string
+  searchTerm?: string
+}): Prisma.StoryPostWhereInput => {
+  const moderationClause: Prisma.StoryPostWhereInput = input.characterId
+    ? { moderationStatus: 'APPROVED' }
+    : {
+        OR: [{ moderationStatus: 'APPROVED' }, { moderationStatus: 'NONE' }]
+      }
+
+  const andParts: Prisma.StoryPostWhereInput[] = [{ publicationStatus: 'PUBLISHED' }, moderationClause]
+
+  if (input.characterId) {
+    andParts.push({ characterId: input.characterId })
+  }
+
+  if (input.searchTerm?.trim()) {
+    const term = input.searchTerm.trim()
+    andParts.push({
+      OR: [
+        { title: { contains: term } },
+        { body: { contains: term } },
+        { scenarioStory: { contains: term } },
+        { scenarioChat: { contains: term } }
+      ]
+    })
+  }
+
+  return { AND: andParts }
+}
+
 storyRoutes.get('/stories', optionalAuth, async (request, response, next) => {
   try {
     const query = listStoriesQuerySchema.parse(request.query)
@@ -169,38 +261,61 @@ storyRoutes.get('/stories', optionalAuth, async (request, response, next) => {
       return
     }
 
-    const conditions: Record<string, unknown>[] = []
-
-    if (query.scope === 'mine' && authUser) {
-      conditions.push({ authorId: authUser.userId })
-      if (query.publication === 'draft') {
-        conditions.push({ publicationStatus: 'DRAFT' })
-      } else if (query.publication === 'rejected') {
-        conditions.push({ publicationStatus: 'PUBLISHED' })
-        conditions.push({ moderationStatus: 'REJECTED' })
-      } else if (query.publication === 'published') {
-        conditions.push({ publicationStatus: 'PUBLISHED' })
-        conditions.push({ moderationStatus: { not: 'REJECTED' } })
-      }
-    } else {
-      conditions.push({ publicationStatus: 'PUBLISHED' })
-      conditions.push({ moderationStatus: 'APPROVED' })
-    }
+    let resolvedCharacterIdForFilter: string | undefined
 
     if (query.characterId) {
-      conditions.push({ characterId: query.characterId })
+      const character = await prisma.character.findFirst({
+        where: {
+          OR: [{ id: query.characterId }, { slug: query.characterId }]
+        },
+        select: { id: true }
+      })
+
+      if (!character) {
+        response.json({ data: [] })
+        return
+      }
+
+      resolvedCharacterIdForFilter = character.id
     }
 
-    if (query.search?.trim()) {
-      conditions.push({
-        OR: [
-          { title: { contains: query.search.trim() } },
-          { body: { contains: query.search.trim() } }
-        ]
+    let where: Prisma.StoryPostWhereInput = {}
+
+    if (query.scope === 'mine' && authUser) {
+      const mineParts: Prisma.StoryPostWhereInput[] = [{ authorId: authUser.userId }]
+      if (query.publication === 'draft') {
+        mineParts.push({ publicationStatus: 'DRAFT' })
+      } else if (query.publication === 'rejected') {
+        mineParts.push({ publicationStatus: 'PUBLISHED' })
+        mineParts.push({ moderationStatus: 'REJECTED' })
+      } else if (query.publication === 'published') {
+        mineParts.push({ publicationStatus: 'PUBLISHED' })
+        mineParts.push({ moderationStatus: { not: 'REJECTED' } })
+      }
+
+      if (resolvedCharacterIdForFilter) {
+        mineParts.push({ characterId: resolvedCharacterIdForFilter })
+      }
+
+      if (query.search?.trim()) {
+        const term = query.search.trim()
+        mineParts.push({
+          OR: [
+            { title: { contains: term } },
+            { body: { contains: term } },
+            { scenarioStory: { contains: term } },
+            { scenarioChat: { contains: term } }
+          ]
+        })
+      }
+
+      where = { AND: mineParts }
+    } else {
+      where = buildPublicCatalogWhere({
+        characterId: resolvedCharacterIdForFilter,
+        searchTerm: query.search
       })
     }
-
-    const where = conditions.length > 0 ? { AND: conditions } : {}
 
     const orderBy: Prisma.StoryPostOrderByWithRelationInput[] =
       query.sort === 'likes'
@@ -217,8 +332,9 @@ storyRoutes.get('/stories', optionalAuth, async (request, response, next) => {
     })
 
     const listPayload = stories.map((story) => {
-      const raw = story.body
-      const bodyPreview = raw.length > 280 ? `${raw.slice(0, 280)}...` : raw
+      const combined =
+        combineScenarioFields(story.scenarioStory ?? '', story.scenarioChat ?? '').trim() || story.body
+      const bodyPreview = combined.length > 280 ? `${combined.slice(0, 280)}...` : combined
       const { body: _omit, ...rest } = story
 
       const withPreview = {
@@ -266,7 +382,12 @@ storyRoutes.get('/admin/stories', requireAdmin, async (request, response, next) 
     if (query.search?.trim()) {
       const term = query.search.trim()
       conditions.push({
-        OR: [{ title: { contains: term } }, { body: { contains: term } }]
+        OR: [
+          { title: { contains: term } },
+          { body: { contains: term } },
+          { scenarioStory: { contains: term } },
+          { scenarioChat: { contains: term } }
+        ]
       })
     }
 
@@ -289,8 +410,9 @@ storyRoutes.get('/admin/stories', requireAdmin, async (request, response, next) 
     ])
 
     const listPayload = stories.map((story) => {
-      const raw = story.body
-      const bodyPreview = raw.length > 400 ? `${raw.slice(0, 400)}...` : raw
+      const combined =
+        combineScenarioFields(story.scenarioStory ?? '', story.scenarioChat ?? '').trim() || story.body
+      const bodyPreview = combined.length > 400 ? `${combined.slice(0, 400)}...` : combined
       const { body: _omit, ...rest } = story
 
       return {
@@ -397,12 +519,19 @@ storyRoutes.post('/stories', requireVerifiedEmail, async (request, response, nex
     const moderationStatus =
       publicationStatus === 'PUBLISHED' ? ('PENDING' as const) : ('NONE' as const)
 
+    const scenarioStory = payload.scenarioStory.trim()
+    const scenarioChat = payload.scenarioChat.trim()
+    const body = combineScenarioFields(scenarioStory, scenarioChat)
+
     const story = await prisma.storyPost.create({
       data: {
         authorId: authUser.userId,
         title: payload.title.trim(),
-        body: payload.body.trim(),
+        scenarioStory,
+        scenarioChat,
+        body,
         characterId: payload.characterId ?? null,
+        scenarioType: payload.scenarioType ?? null,
         publicationStatus,
         moderationStatus,
         moderationRejectReason: null,
@@ -435,6 +564,10 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
         authorId: true,
         title: true,
         body: true,
+        scenarioStory: true,
+        scenarioChat: true,
+        characterId: true,
+        scenarioType: true,
         publicationStatus: true,
         publishedAt: true,
         moderationStatus: true,
@@ -453,7 +586,9 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
     }
 
     const nextTitle = (payload.title !== undefined ? payload.title : existing.title).trim()
-    const nextBody = (payload.body !== undefined ? payload.body : existing.body).trim()
+    const mergedStory = (payload.scenarioStory !== undefined ? payload.scenarioStory : existing.scenarioStory).trim()
+    const mergedChat = (payload.scenarioChat !== undefined ? payload.scenarioChat : existing.scenarioChat).trim()
+    const nextBody = combineScenarioFields(mergedStory, mergedChat)
     const nextPublication =
       payload.publicationStatus !== undefined ? payload.publicationStatus : existing.publicationStatus
 
@@ -462,8 +597,12 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
         response.status(400).json({ message: 'Title must be at least 3 characters to publish.' })
         return
       }
-      if (nextBody.length < 10) {
-        response.status(400).json({ message: 'Body must be at least 10 characters to publish.' })
+      if (mergedStory.length < 30) {
+        response.status(400).json({ message: 'Story setup must be at least 30 characters to publish.' })
+        return
+      }
+      if (mergedChat.length < 10) {
+        response.status(400).json({ message: 'Chat & explanation must be at least 10 characters to publish.' })
         return
       }
     } else {
@@ -471,10 +610,15 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
         response.status(400).json({ message: 'Title is required.' })
         return
       }
-      if (nextBody.length < 1) {
-        response.status(400).json({ message: 'Body is required.' })
+      if (mergedStory.length < 1 && mergedChat.length < 1) {
+        response.status(400).json({ message: 'Add a story setup and/or chat preview.' })
         return
       }
+    }
+
+    if (nextBody.length > 20000) {
+      response.status(400).json({ message: 'Story and chat combined must be at most 20000 characters.' })
+      return
     }
 
     if (payload.characterId) {
@@ -494,11 +638,28 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
       }
     }
 
+    const mergedCharacterId =
+      payload.characterId !== undefined ? payload.characterId : existing.characterId
+    const mergedScenarioType =
+      payload.scenarioType !== undefined ? payload.scenarioType : existing.scenarioType ?? null
+
+    if (nextPublication === 'PUBLISHED' && !mergedScenarioType) {
+      response.status(400).json({
+        message: 'Story category is required to publish.'
+      })
+      return
+    }
+
     const updateData: Record<string, unknown> = {}
 
     if (payload.title !== undefined) updateData.title = payload.title.trim()
-    if (payload.body !== undefined) updateData.body = payload.body.trim()
+    if (payload.scenarioStory !== undefined) updateData.scenarioStory = mergedStory
+    if (payload.scenarioChat !== undefined) updateData.scenarioChat = mergedChat
+    if (payload.scenarioStory !== undefined || payload.scenarioChat !== undefined) {
+      updateData.body = nextBody
+    }
     if (payload.characterId !== undefined) updateData.characterId = payload.characterId
+    if (payload.scenarioType !== undefined) updateData.scenarioType = payload.scenarioType
     if (payload.publicationStatus !== undefined) {
       updateData.publicationStatus = payload.publicationStatus
       if (payload.publicationStatus === 'PUBLISHED' && !existing.publishedAt) {

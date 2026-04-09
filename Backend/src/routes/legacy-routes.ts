@@ -176,10 +176,7 @@ legacyRoutes.get(['/modeldownload/models.json', '/modeldownload/modes.json'], as
   try {
     const characterList = await prisma.character.findMany({
       where: {
-        status: 'APPROVED',
-        visibility: {
-          in: ['PUBLIC', 'UNLISTED']
-        }
+        status: 'APPROVED'
       },
       orderBy: {
         name: 'asc'
@@ -228,10 +225,7 @@ legacyRoutes.get('/wp-json/characters/v1/info', async (request, response, next) 
 
     const characterList = await prisma.character.findMany({
       where: {
-        status: 'APPROVED',
-        visibility: {
-          in: ['PUBLIC', 'UNLISTED']
-        }
+        status: 'APPROVED'
       },
       select: {
         id: true,

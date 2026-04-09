@@ -2,14 +2,14 @@
 
 import { useAuth } from '@/components/providers/auth-provider'
 import CharacterStatTile from '@/components/ui-elements/character-stat-tile'
-import FirstMessagePreviewBox from '@/components/ui-elements/first-message-preview-box'
-import StartChatIcon from '@/components/ui-elements/start-chat-icon'
+import CharacterCommunityStories from '@/components/character/character-community-stories'
 import {
   getCharacterDetail,
   recordCharacterChatStart,
   toggleCharacterHeart,
   type CharacterDetailRecord
 } from '@/lib/character-api'
+import { listStories, type StoryListRecord } from '@/lib/story-api'
 import {
   createCharacterReview,
   deleteCharacterReview,
@@ -27,6 +27,7 @@ import {
 } from '@/lib/vrm-three'
 import Image from 'next/image'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 type CharacterPageProps = {
@@ -99,30 +100,6 @@ const HeartStatIcon = ({ className = 'size-4' }: { className?: string }) => {
   )
 }
 
-const UploadedByStatIcon = ({ className = 'size-4' }: { className?: string }) => {
-  return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-      <rect x="5" y="6" width="14" height="14" rx="0.9" fill="#6d7380" />
-      <rect x="9" y="2" width="6" height="4.3" rx="0.55" fill="#6d7380" />
-      <circle cx="12" cy="4.15" r="0.95" fill="#17181c" />
-      <circle cx="12" cy="13.05" r="2.15" fill="#17181c" />
-      <path d="M8.6 19.2c.58-2.02 1.95-3.2 3.4-3.2s2.82 1.18 3.4 3.2v.8H8.6v-.8Z" fill="#17181c" />
-    </svg>
-  )
-}
-
-const DescriptionHeartIcon = ({ className = 'size-4' }: { className?: string }) => {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden="true">
-      <path
-        d="m12 20.2-.78-.7C6.46 15.21 3.5 12.53 3.5 9.23 3.5 6.55 5.6 4.5 8.25 4.5c1.5 0 2.95.7 3.75 1.82A4.83 4.83 0 0 1 15.75 4.5c2.66 0 4.75 2.05 4.75 4.73 0 3.3-2.96 5.98-7.72 10.27l-.78.7Z"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
 const CharacterPreviewVisual = ({ previewImageUrl, characterName }: { previewImageUrl: string | null; characterName: string }) => {
   return (
     <div className="relative mx-auto flex h-[430px] w-[225px] items-end justify-center overflow-hidden rounded-sm border border-white/10 bg-black">
@@ -151,6 +128,7 @@ const CharacterPreviewVisual = ({ previewImageUrl, characterName }: { previewIma
 }
 
 const CharacterPage = ({ characterId }: CharacterPageProps) => {
+  const pathname = usePathname()
   const { sessionUser } = useAuth()
   const [isLoading, setIsLoading] = useState(Boolean(characterId))
   const [errorMessage, setErrorMessage] = useState<string | null>(characterId ? null : 'No character selected. Open one from the gallery.')
@@ -169,6 +147,10 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
   const [reviewInputBody, setReviewInputBody] = useState('')
   const [isReviewSubmitting, setIsReviewSubmitting] = useState(false)
   const [reviewActionMessage, setReviewActionMessage] = useState<string | null>(null)
+  const [communityStories, setCommunityStories] = useState<StoryListRecord[]>([])
+  const [communitySort, setCommunitySort] = useState<'trending' | 'newest'>('trending')
+  const [communityLoading, setCommunityLoading] = useState(false)
+  const [communityStoriesError, setCommunityStoriesError] = useState<string | null>(null)
   const threePreviewContainerReference = useRef<HTMLDivElement | null>(null)
   const [threePreviewContainerRevision, setThreePreviewContainerRevision] = useState(0)
   const orbitControlsReference = useRef<import('three/examples/jsm/controls/OrbitControls.js').OrbitControls | null>(null)
@@ -273,6 +255,16 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
 
   const selectedCharacterId = characterRecord?.id ?? null
 
+  /** API accepts id or slug; use URL segment first so we query before detail fetch finishes. */
+  const storiesCharacterKey = useMemo(() => {
+    const fromRoute = characterId?.trim()
+    if (fromRoute) {
+      return fromRoute
+    }
+
+    return characterRecord?.id ?? null
+  }, [characterId, characterRecord?.id])
+
   useEffect(() => {
     if (!selectedCharacterId) {
       return
@@ -283,6 +275,56 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
       setIsReviewsLoading(false)
     })
   }, [refreshReviewList, selectedCharacterId])
+
+  /** Avoid showing the previous character’s scenarios while switching routes. */
+  useEffect(() => {
+    setCommunityStories([])
+    setCommunityStoriesError(null)
+  }, [characterId])
+
+  const loadCommunityStories = useCallback(async () => {
+    if (!storiesCharacterKey) {
+      return
+    }
+
+    setCommunityLoading(true)
+    setCommunityStoriesError(null)
+
+    try {
+      const payload = await listStories({
+        scope: 'all',
+        characterId: storiesCharacterKey,
+        sort: communitySort === 'trending' ? 'likes' : 'newest',
+        limit: 80
+      })
+      setCommunityStories(payload.data)
+      setCommunityStoriesError(null)
+    } catch (error: unknown) {
+      setCommunityStories([])
+      setCommunityStoriesError(
+        error instanceof Error ? error.message : 'Could not load community scenarios.'
+      )
+    } finally {
+      setCommunityLoading(false)
+    }
+  }, [storiesCharacterKey, communitySort])
+
+  /** Initial load + when sort or route segment changes (e.g. returning from write-scenario). */
+  useEffect(() => {
+    void loadCommunityStories()
+  }, [loadCommunityStories, pathname])
+
+  /** Admin may approve in another tab; refresh when this tab becomes visible again. */
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void loadCommunityStories()
+      }
+    }
+
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [loadCommunityStories])
 
   const ownReview = useMemo(() => {
     if (!sessionUser) {
@@ -305,7 +347,11 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
   const isPatreonGated = characterRecord?.isPatreonGated ?? false
   const canUseCharacterActions = !isPatreonGated || canAccessGatedContent
   const canOpenThreePreview = canUseCharacterActions && Boolean(characterRecord?.vroidFileUrl)
-  const descriptionText = characterRecord?.description ?? 'Character description is not available yet.'
+
+  const storyLikesTotal = useMemo(
+    () => communityStories.reduce((sum, row) => sum + row.likesCount, 0),
+    [communityStories]
+  )
 
   const characterStats = useMemo(() => {
     if (!characterRecord) {
@@ -314,25 +360,19 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
 
     return [
       {
-        id: 'total-chats',
+        id: 'total-global-chats',
         icon: <ChatStatIcon className="size-[24px]" />,
         value: formatCompactNumber(characterRecord.viewsCount),
-        label: 'Total Chats'
+        label: 'Total Global Chats'
       },
       {
-        id: 'likes',
+        id: 'total-story-likes',
         icon: <HeartStatIcon className="size-[24px]" />,
-        value: formatCompactNumber(characterRecord.heartsCount),
-        label: 'Likes'
-      },
-      {
-        id: 'uploaded-by',
-        icon: <UploadedByStatIcon className="size-[24px]" />,
-        value: characterRecord.owner.username,
-        label: 'Uploaded By'
+        value: formatCompactNumber(storyLikesTotal),
+        label: 'Total Story Likes'
       }
     ]
-  }, [characterRecord])
+  }, [characterRecord, storyLikesTotal])
 
   const isViewerCharacterOwner = useMemo(() => {
     if (!sessionUser?.id || !characterRecord) {
@@ -450,20 +490,34 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     }
   }
 
-  const playDemoHref = useMemo(() => {
+  const officialScenarioPlayHref = useMemo(() => {
     if (!characterRecord) {
       return '/play-demo'
     }
-
-    return `/play-demo?characterId=${encodeURIComponent(characterRecord.id)}&character=${encodeURIComponent(characterRecord.slug)}`
-  }, [characterRecord])
-
-  const startChatHref = useMemo(() => {
     if (!sessionUser) {
       return '/?openSignIn=1'
     }
-    return playDemoHref
-  }, [playDemoHref, sessionUser])
+    if (characterRecord.isPatreonGated && !characterRecord.gatedAccess.hasAccess) {
+      return '/members'
+    }
+    return `/play-demo?characterId=${encodeURIComponent(characterRecord.id)}&character=${encodeURIComponent(characterRecord.slug)}`
+  }, [characterRecord, sessionUser])
+
+  const buildScenarioPlayHref = useCallback(
+    (storyId: string) => {
+      if (!characterRecord) {
+        return '/play-demo'
+      }
+      if (!sessionUser) {
+        return '/?openSignIn=1'
+      }
+      if (characterRecord.isPatreonGated && !characterRecord.gatedAccess.hasAccess) {
+        return '/members'
+      }
+      return `/play-demo?characterId=${encodeURIComponent(characterRecord.id)}&character=${encodeURIComponent(characterRecord.slug)}&storyId=${encodeURIComponent(storyId)}`
+    },
+    [characterRecord, sessionUser]
+  )
 
   useLayoutEffect(() => {
     if (!isThreePreviewOpen || !canOpenThreePreview || !characterRecord?.vroidFileUrl) {
@@ -724,8 +778,9 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
           ) : null}
 
           {!isLoading && !errorMessage && characterRecord ? (
-            <div className="mt-10 grid gap-5 lg:grid-cols-[1.3fr_1fr]">
-              <div>
+            <>
+            <div className="mt-10 grid gap-8 lg:grid-cols-[minmax(390px,480px)_minmax(0,1fr)] lg:items-start">
+              <div className="min-w-0">
                 <div className="relative min-h-[430px] overflow-hidden rounded-md border border-white/10 bg-[linear-gradient(90deg,#5d3b24_0%,#201817_38%,#0b1430_100%)]">
                   <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(255,243,200,0.5),transparent_34%),radial-gradient(circle_at_26%_58%,rgba(255,255,255,0.16),transparent_26%),radial-gradient(circle_at_74%_58%,rgba(255,255,255,0.1),transparent_24%),linear-gradient(180deg,rgba(0,0,0,0)_58%,rgba(0,0,0,0.86)_100%)]" />
                   {canUseCharacterActions ? (
@@ -835,19 +890,47 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                   ) : null}
                 </div>
 
-                <div className="mt-4 flex gap-3 sm:grid sm:grid-cols-3">
-                  {characterStats.map((statItem, statIndex) => (
-                    <div
-                      key={statItem.id}
-                      className={statIndex === 2 ? 'w-full max-w-[130px] sm:max-w-none' : 'flex-1 sm:flex-none'}
-                    >
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  {characterStats.map((statItem) => (
+                    <div key={statItem.id}>
                       <CharacterStatTile icon={statItem.icon} value={statItem.value} label={statItem.label} />
                     </div>
                   ))}
                 </div>
 
+                <div className="mt-4">
+                  {isViewerCharacterOwner ? (
+                    <Link
+                      href={`/characters/${encodeURIComponent(characterRecord.slug || characterRecord.id)}/write-scenario`}
+                      className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-lg border border-ember-500/60 bg-[#2b160f]/85 px-5 py-3 text-sm font-semibold uppercase tracking-[0.1em] text-ember-100 transition hover:bg-[#3a1d13]"
+                    >
+                      Write scenario
+                    </Link>
+                  ) : !sessionUser ? (
+                    <Link
+                      href="/?openSignIn=1"
+                      className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/[0.06] px-5 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white/85 transition hover:border-white/30 hover:bg-white/[0.09]"
+                    >
+                      Sign in to comment and favorite
+                    </Link>
+                  ) : (
+                    <div className="rounded-lg border border-white/10 bg-[#121010] px-4 py-4 text-center">
+                      <p className="text-[11px] leading-relaxed text-white/50">
+                        Only the character owner can add community scenarios for this page.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
                 <section className="mt-4 rounded-md border border-white/10 bg-[#121010] p-5">
-                  <h3 className="font-[family-name:var(--font-heading)] text-[20px] font-semibold italic uppercase text-white">Comments</h3>
+                  <h3 className="font-[family-name:var(--font-heading)] text-[18px] font-semibold italic uppercase tracking-wide text-white">
+                    Character discussion
+                  </h3>
+                  {!isReviewsLoading && !reviewsErrorMessage ? (
+                    <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40">
+                      {reviewList.length} comment{reviewList.length === 1 ? '' : 's'}
+                    </p>
+                  ) : null}
                   {isReviewsLoading ? <p className="mt-3 text-xs text-white/70">Loading reviews...</p> : null}
                   {reviewsErrorMessage ? (
                     <p className="mt-3 rounded-md border border-white/10 bg-[#0e0b0b] px-3 py-2 text-xs text-white/60">
@@ -895,7 +978,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                     <textarea
                       value={reviewInputBody}
                       onChange={(event) => setReviewInputBody(event.target.value)}
-                      placeholder="Write your review..."
+                      placeholder="Discuss this character..."
                       disabled={!canPostReview}
                       className="mt-2 h-24 w-full resize-none rounded border border-white/20 bg-black px-3 py-2 text-xs text-white outline-none focus:border-ember-300 disabled:opacity-50"
                       aria-label="Review text"
@@ -908,7 +991,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                         className="rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-black disabled:opacity-70"
                         aria-label={ownReview ? 'Update comment' : 'Post comment'}
                       >
-                        {isReviewSubmitting ? 'Saving...' : ownReview ? 'Update Comment' : 'Post Comment'}
+                        {isReviewSubmitting ? 'Saving...' : ownReview ? 'Update' : 'Post'}
                       </button>
                       {ownReview ? (
                         <button
@@ -929,91 +1012,50 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                 </section>
               </div>
 
-              <div className="rounded-md border border-white/10 bg-[#1a1213] p-5 md:p-6">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h2 className="font-[family-name:var(--font-heading)] text-[36px] font-semibold italic uppercase leading-none text-white">
-                      {characterRecord.name}
-                    </h2>
-                    <p className="mt-2 text-[9px] font-semibold uppercase tracking-[0.09em] text-white/45">
-                      {(characterRecord.tagline ?? 'VRoid Character').toUpperCase()}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleToggleHeart}
-                    disabled={isHeartSubmitting || isViewerCharacterOwner}
-                    className={`inline-flex size-[30px] items-center justify-center rounded-full border text-xs transition disabled:cursor-not-allowed ${isViewerCharacterOwner
-                        ? 'border-[#5c4a42]/45 bg-[#1f1815] text-white/30'
-                        : characterRecord.hasHearted
-                          ? 'border-[#ff74d8] bg-[#3a102c] text-[#ffd8f4] shadow-[0_0_0_1px_rgba(255,255,255,0.12)_inset,0_0_18px_rgba(247,93,232,0.45)] scale-110'
-                          : 'border-[#775844] bg-[#261c17] text-white/95 hover:border-[#8f6447] hover:bg-[#2c201a]'
-                      }`}
-                    aria-label={
-                      isViewerCharacterOwner
-                        ? 'Favorites are not available for your own character'
-                        : characterRecord.hasHearted
-                          ? 'Remove from favorites'
-                          : 'Add to favorites'
-                    }
-                  >
-                    <DescriptionHeartIcon className={`size-[16px] ${characterRecord.hasHearted ? 'drop-shadow-[0_0_6px_rgba(247,93,232,0.8)]' : ''}`} />
-                  </button>
-                </div>
-                {isPatreonGated ? (
-                  <p className="mt-4 rounded-md border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-[8px] font-semibold uppercase tracking-[0.08em] text-amber-100">
-                    {canAccessGatedContent ? 'Patreon content unlocked' : `Locked | ${formatTierLabel(characterRecord.gatedAccess.requiredTierCents)}`}
-                  </p>
-                ) : null}
-
-                <div className="mt-6">
-                  <p className="text-[8px] font-bold uppercase tracking-[0.11em] text-[#f59e0b]">Description</p>
-                  <p className="mt-3 whitespace-pre-line text-[11px] leading-[1.75] text-white/75">{descriptionText}</p>
-                </div>
-
-                <div className="mt-6">
-                  <FirstMessagePreviewBox showHeader firstMessage={characterRecord?.firstMessage} />
-                </div>
-
+              <div className="min-w-0">
                 {isPatreonGated && !canAccessGatedContent ? (
-                  <Link
-                    href="/members"
-                    className="mt-8 inline-flex h-14 w-full items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 font-[family-name:var(--font-heading)] text-[30px] font-semibold italic leading-none text-white transition hover:brightness-110"
-                    aria-label="Connect Patreon and upgrade tier"
-                  >
-                    Unlock with Patreon
-                  </Link>
-                ) : (
-                  <Link
-                    href={startChatHref}
-                    onClick={() => {
-                      if (!sessionUser) {
-                        return
-                      }
-
-                      if (!characterRecord) {
-                        return
-                      }
-
-                      void recordCharacterChatStart(characterRecord.id)
-                        .then((payload) => {
-                          setCharacterRecord((previous) =>
-                            previous ? { ...previous, viewsCount: payload.data.viewsCount } : previous
-                          )
-                        })
-                        .catch(() => { })
-                    }}
-                    className="mt-8 inline-flex h-14 w-full items-center justify-center gap-3 rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-5 font-[family-name:var(--font-heading)] text-[20px] font-semibold italic uppercase leading-none text-white transition hover:brightness-110"
-                    aria-label={sessionUser ? 'Start chat in the WebGL demo with this character' : 'Open sign in modal to start chat'}
-                  >
-                    Start Chat
-                    <span className="text-white/95">
-                      <StartChatIcon className="size-8" />
-                    </span>
-                  </Link>
-                )}
+                  <div className="mb-6 rounded-lg border border-amber-300/30 bg-amber-300/10 px-4 py-3 text-center">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-amber-100">
+                      {`Locked | ${formatTierLabel(characterRecord.gatedAccess.requiredTierCents)}`}
+                    </p>
+                    <Link
+                      href="/members"
+                      className="mt-3 inline-flex text-xs font-semibold text-amber-200 underline-offset-2 hover:text-amber-100"
+                    >
+                      Unlock with Patreon
+                    </Link>
+                  </div>
+                ) : null}
+                <CharacterCommunityStories
+                  character={characterRecord}
+                  stories={communityStories}
+                  storiesLoadError={communityStoriesError}
+                  isLoading={communityLoading}
+                  sortMode={communitySort}
+                  onSortChange={setCommunitySort}
+                  officialPlayHref={officialScenarioPlayHref}
+                  buildScenarioPlayHref={buildScenarioPlayHref}
+                  viewerUserId={sessionUser?.id ?? null}
+                  writeStoryHref={
+                    isViewerCharacterOwner
+                      ? `/characters/${encodeURIComponent(characterRecord.slug || characterRecord.id)}/write-scenario`
+                      : null
+                  }
+                  onPlayIntent={() => {
+                    void recordCharacterChatStart(characterRecord.id)
+                      .then((payload) => {
+                        setCharacterRecord((previous) =>
+                          previous ? { ...previous, viewsCount: payload.data.viewsCount } : previous
+                        )
+                      })
+                      .catch(() => {})
+                  }}
+                  onOfficialHeartClick={() => void handleToggleHeart()}
+                  officialHeartDisabled={isHeartSubmitting || isViewerCharacterOwner}
+                />
               </div>
             </div>
+            </>
           ) : null}
         </div>
       </section>

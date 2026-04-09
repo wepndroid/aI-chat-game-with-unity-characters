@@ -84,7 +84,12 @@ const buildOverlayDropSpecs = (count: number): OverlayDropSpec[] => {
  * Appends character context from /play-demo?characterId=&character= (slug) onto the Unity embed URL
  * so the WebGL build can read the same query string (legacy flow used ?character= for lookups).
  */
-const buildWebglEmbedUrlWithCharacterContext = (baseUrl: string, characterId: string | null, characterSlug: string | null) => {
+const buildWebglEmbedUrlWithCharacterContext = (
+  baseUrl: string,
+  characterId: string | null,
+  characterSlug: string | null,
+  storyId: string | null
+) => {
   try {
     const url = new URL(baseUrl)
     if (characterId) {
@@ -92,6 +97,9 @@ const buildWebglEmbedUrlWithCharacterContext = (baseUrl: string, characterId: st
     }
     if (characterSlug) {
       url.searchParams.set('character', characterSlug)
+    }
+    if (storyId) {
+      url.searchParams.set('storyId', storyId)
     }
     return url.toString()
   } catch {
@@ -105,6 +113,7 @@ const PlayDemoClient = () => {
   const searchParams = useSearchParams()
   const characterId = searchParams.get('characterId')
   const characterSlug = searchParams.get('character')
+  const storyId = searchParams.get('storyId')
 
   useEffect(() => {
     if (isAuthLoading) {
@@ -127,11 +136,11 @@ const PlayDemoClient = () => {
     if (!webglEmbedUrl) {
       return null
     }
-    if (!characterId && !characterSlug) {
+    if (!characterId && !characterSlug && !storyId) {
       return webglEmbedUrl
     }
-    return buildWebglEmbedUrlWithCharacterContext(webglEmbedUrl, characterId, characterSlug)
-  }, [webglEmbedUrl, characterId, characterSlug])
+    return buildWebglEmbedUrlWithCharacterContext(webglEmbedUrl, characterId, characterSlug, storyId)
+  }, [webglEmbedUrl, characterId, characterSlug, storyId])
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -256,7 +265,7 @@ const PlayDemoClient = () => {
     [hasUnityProgressFeed, iframeLoaded, progressPercent]
   )
 
-  const hasCharacterContext = Boolean(characterId || characterSlug)
+  const hasCharacterContext = Boolean(characterId || characterSlug || storyId)
 
   if (isAuthLoading || !sessionUser) {
     return <PlayDemoAuthGateFallback />
@@ -278,6 +287,11 @@ const PlayDemoClient = () => {
               {characterId ? (
                 <span className="text-white/50">
                   {characterSlug ? ' · ' : ''}id {characterId}
+                </span>
+              ) : null}
+              {storyId ? (
+                <span className="text-white/50">
+                  {characterId || characterSlug ? ' · ' : ''}story {storyId}
                 </span>
               ) : null}
               . These values are appended to the game embed URL for the Unity build to read (same idea as the legacy{' '}

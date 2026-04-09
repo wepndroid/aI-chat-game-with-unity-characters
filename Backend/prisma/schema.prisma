@@ -121,7 +121,7 @@ model Character {
   legacyTier       Int?
   legacyHeyWaifu   Int?
   status           CharacterStatus       @default(DRAFT)
-  visibility       CharacterVisibility   @default(PRIVATE)
+  visibility       CharacterVisibility   @default(PUBLIC)
   /// True when the owning account is an admin (admin-uploaded VRMs); mirrored for API compatibility.
   officialListing  Boolean               @default(false)
   isPatreonGated   Boolean               @default(false)
@@ -375,8 +375,15 @@ model StoryPost {
   id                  String                  @id @default(cuid())
   authorId            String
   title               String
+  /// Setting / narrative shown on the left of scenario cards (plain text).
+  scenarioStory       String                  @default("")
+  /// Dialogue and stage direction on the right; supports mini-markup (`"…"`, `**…**`, `*…*`).
+  scenarioChat        String                  @default("")
+  /// Denormalized: `scenarioStory` + blank lines + `scenarioChat` for search and legacy readers.
   body                String
   characterId         String?
+  /// Story category / badge (e.g. CYBERPUNK, ROMANCE). Required when published; shown on feeds and character cards.
+  scenarioType        String?
   publicationStatus   StoryPublicationStatus @default(PUBLISHED)
   /// NONE = draft / not submitted; PENDING = submitted for review; APPROVED = public; REJECTED = author must revise.
   moderationStatus    StoryModerationStatus   @default(NONE)

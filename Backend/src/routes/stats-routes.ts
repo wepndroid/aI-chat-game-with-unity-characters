@@ -295,8 +295,7 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
       prisma.character.count(),
       prisma.character.count({
         where: {
-          status: 'APPROVED',
-          visibility: 'PUBLIC'
+          status: 'APPROVED'
         }
       }),
       prisma.character.count({
@@ -413,8 +412,7 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
 
     const topCharacters = await prisma.character.findMany({
       where: {
-        status: 'APPROVED',
-        visibility: 'PUBLIC'
+        status: 'APPROVED'
       },
       take: 8,
       orderBy: [{ viewsCount: 'desc' }, { heartsCount: 'desc' }],

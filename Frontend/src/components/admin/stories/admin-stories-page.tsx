@@ -150,7 +150,11 @@ const AdminStoryRowActions = ({
   return (
     <div className="inline-flex items-center gap-0.5">
       <Link
-        href={`/stories/${storyRow.id}`}
+        href={
+          storyRow.character
+            ? `/characters/${encodeURIComponent(storyRow.character.slug || storyRow.character.id)}`
+            : '/characters'
+        }
         target="_blank"
         rel="noreferrer"
         className={storyActionLinkClassName}
@@ -550,6 +554,11 @@ const AdminStoriesPage = () => {
                     <tr key={row.id} className="border-t border-white/10">
                       <td className="max-w-[min(380px,40vw)] px-4 py-4 align-top">
                         <p className="font-[family-name:var(--font-heading)] text-[17px] font-normal leading-snug text-white">{row.title}</p>
+                        {!row.characterId ? (
+                          <p className="mt-1.5 rounded border border-amber-500/35 bg-amber-500/10 px-2 py-1 text-[11px] leading-snug text-amber-100/95">
+                            No character linked — this will not appear on any character’s community list (only global discovery).
+                          </p>
+                        ) : null}
                         <p className="mt-1 line-clamp-2 text-sm leading-snug text-[#6f809d]">{row.bodyPreview}</p>
                       </td>
                       <td className="whitespace-nowrap px-4 py-4 align-middle text-[15px] font-[family-name:var(--font-heading)] font-normal text-[#9ca9c2]">

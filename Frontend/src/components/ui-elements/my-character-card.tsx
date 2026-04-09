@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import ModerationStatusChip, { type CharacterModerationStatus } from '@/components/ui-elements/moderation-status-chip'
 
-type CharacterVisibility = 'public' | 'unlisted' | 'private'
 type CharacterNsfwLevel = 'none' | 'mild'
 
 type MyCharacterCardRecord = {
@@ -11,7 +10,6 @@ type MyCharacterCardRecord = {
   summary: string
   moderationStatus: CharacterModerationStatus
   moderationRejectReason?: string | null
-  visibility: CharacterVisibility
   nsfwLevel: CharacterNsfwLevel
   updatedAtLabel: string
   views: number
@@ -59,7 +57,6 @@ const MyCharacterCard = ({ characterRecord, onSubmitForReview, adminMode = false
       ) : null}
 
       <div className="mt-4 grid grid-cols-2 gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-white/70">
-        <p>Visibility: {characterRecord.visibility}</p>
         <p>NSFW: {characterRecord.nsfwLevel}</p>
         <p>Views: {characterRecord.views.toLocaleString()}</p>
         <p>Hearts: {characterRecord.hearts.toLocaleString()}</p>

@@ -1,7 +1,6 @@
-import StoriesPage from '@/components/stories/stories-page'
+import { redirect } from 'next/navigation'
 
-const StoriesRootPage = () => {
-  return <StoriesPage />
+/** Stories are surfaced on each character page; the old hub URL forwards here. */
+export default function StoriesIndexPage() {
+  redirect('/characters')
 }
-
-export default StoriesRootPage

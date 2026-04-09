@@ -4,7 +4,7 @@ import AdminPageShell from '@/components/shared/admin-page-shell'
 import AdminReviewQueueCard, { type AdminReviewQueueCardRecord } from '@/components/ui-elements/admin-review-queue-card'
 import AdminReviewRejectDialog from '@/components/ui-elements/admin-review-reject-dialog'
 import AdminScanReportDialog from '@/components/ui-elements/admin-scan-report-dialog'
-import { listAdminReviewQueue, updateCharacterStatus, updateCharacterVisibility, type AdminReviewQueueRecord } from '@/lib/character-api'
+import { listAdminReviewQueue, updateCharacterStatus, type AdminReviewQueueRecord } from '@/lib/character-api'
 import { ADMIN_OVERVIEW_REFRESH_EVENT } from '@/lib/admin-overview-events'
 import { apiGet } from '@/lib/api-client'
 import { useCallback, useEffect, useState } from 'react'
@@ -171,7 +171,6 @@ const ReviewQueuePage = () => {
       setBusyRecordId(recordId)
       setErrorMessage(null)
       await updateCharacterStatus(recordId, 'REJECTED', reason)
-      await updateCharacterVisibility(recordId, 'PRIVATE')
       setRejectModalTarget(null)
       await loadReviewQueue({ withSpinner: false })
       dispatchAdminOverviewRefresh()

@@ -25,6 +25,10 @@ const ensureStoryModerationColumns = async () => {
       await prisma.$executeRawUnsafe(`ALTER TABLE "StoryPost" ADD COLUMN "moderationRejectReason" TEXT`)
     }
 
+    if (!names.has('scenarioType')) {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "StoryPost" ADD COLUMN "scenarioType" TEXT`)
+    }
+
     await prisma.$executeRawUnsafe(
       `UPDATE "StoryPost" SET "moderationStatus" = 'APPROVED' WHERE "publicationStatus" = 'PUBLISHED' AND "moderationStatus" = 'NONE'`
     )
