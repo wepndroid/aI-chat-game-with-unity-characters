@@ -78,7 +78,8 @@ const AdminStoryRowActions = ({
   const menuAnchorRef = useRef<HTMLDivElement>(null)
   const menuPortalRef = useRef<HTMLDivElement>(null)
 
-  const showModerationMenu = storyRow.moderationStatus === 'PENDING'
+  /** Gear + moderation menu: pending (approve/reject) or approved (reject only — revoke approval). */
+  const showSettingsGear = storyRow.moderationStatus === 'PENDING' || storyRow.moderationStatus === 'APPROVED'
 
   useLayoutEffect(() => {
     if (!settingsMenuOpen) {
@@ -163,7 +164,7 @@ const AdminStoryRowActions = ({
         <StoryEyeIcon />
       </Link>
 
-      {showModerationMenu ? (
+      {showSettingsGear ? (
         <div className="inline-flex" ref={menuAnchorRef}>
           <button
             type="button"
@@ -179,7 +180,7 @@ const AdminStoryRowActions = ({
         </div>
       ) : null}
 
-      {settingsMenuOpen && menuPosition && showModerationMenu && typeof document !== 'undefined'
+      {settingsMenuOpen && menuPosition && showSettingsGear && typeof document !== 'undefined'
         ? createPortal(
           <div
             ref={menuPortalRef}
@@ -193,18 +194,20 @@ const AdminStoryRowActions = ({
             }}
             className="rounded-lg border border-white/15 bg-[#12161c] py-1 shadow-lg shadow-black/40"
           >
-            <button
-              type="button"
-              role="menuitem"
-              disabled={rowBusy}
-              className="flex w-full items-center px-3 py-2 text-left text-sm text-emerald-200/95 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-45"
-              onClick={() => {
-                setSettingsMenuOpen(false)
-                onApprove(storyRow.id)
-              }}
-            >
-              Approve
-            </button>
+            {storyRow.moderationStatus === 'PENDING' ? (
+              <button
+                type="button"
+                role="menuitem"
+                disabled={rowBusy}
+                className="flex w-full items-center px-3 py-2 text-left text-sm text-emerald-200/95 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-45"
+                onClick={() => {
+                  setSettingsMenuOpen(false)
+                  onApprove(storyRow.id)
+                }}
+              >
+                Approve
+              </button>
+            ) : null}
             <button
               type="button"
               role="menuitem"
@@ -215,7 +218,7 @@ const AdminStoryRowActions = ({
                 onOpenReject(storyRow)
               }}
             >
-              Reject
+              {storyRow.moderationStatus === 'APPROVED' ? 'Reject (unpublish)' : 'Reject'}
             </button>
           </div>,
           document.body
