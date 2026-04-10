@@ -934,22 +934,14 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                   ))}
                 </div>
 
-                {!isViewerCharacterOwner ? (
+                {!isViewerCharacterOwner && !sessionUser ? (
                   <div className="mt-4">
-                    {!sessionUser ? (
-                      <Link
-                        href="/?openSignIn=1"
-                        className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/[0.06] px-5 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white/85 transition hover:border-white/30 hover:bg-white/[0.09]"
-                      >
-                        Sign in to comment and favorite
-                      </Link>
-                    ) : (
-                      <div className="rounded-lg border border-white/10 bg-[#121010] px-4 py-4 text-center">
-                        <p className="text-[11px] leading-relaxed text-white/50">
-                          Only the character owner can add community scenarios for this page.
-                        </p>
-                      </div>
-                    )}
+                    <Link
+                      href="/?openSignIn=1"
+                      className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/[0.06] px-5 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white/85 transition hover:border-white/30 hover:bg-white/[0.09]"
+                    >
+                      Sign in to comment and favorite
+                    </Link>
                   </div>
                 ) : null}
 

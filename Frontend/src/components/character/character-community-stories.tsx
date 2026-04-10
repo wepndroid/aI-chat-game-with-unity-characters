@@ -20,7 +20,7 @@ type CharacterCommunityStoriesProps = {
   onSortChange: (mode: CommunitySortMode) => void
   officialPlayHref: string
   buildScenarioPlayHref: (storyId: string) => string
-  /** Only the character owner gets a link; others see a short notice instead. */
+  /** Only the character owner gets a Write scenario link. */
   writeStoryHref: string | null
   /** When set, the author of a community scenario sees an edit link (character-scoped route only). */
   viewerUserId?: string | null
@@ -168,11 +168,7 @@ const CharacterCommunityStories = ({
             >
               Write scenario
             </Link>
-          ) : (
-            <p className="max-w-sm text-right text-[11px] leading-snug text-white/45 sm:text-left">
-              Only the character owner can add community scenarios for this page.
-            </p>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -267,21 +263,14 @@ const CharacterCommunityStories = ({
             <p className="mx-auto mt-3 max-w-md text-xs leading-relaxed text-white/40">
               Scenarios show here only when they are published with this character linked.
               {writeStoryHref
-                ? ' If you already published one, edit it and choose this character, or create a new scenario from this page.'
+                ? ' If you already published one, edit it and choose this character.'
                 : ' Only the character owner can add scenarios for this page.'}
             </p>
-            {writeStoryHref ? (
-              <Link
-                href={writeStoryHref}
-                className="mt-4 inline-flex rounded-lg border border-ember-500/50 bg-[#2b160f]/70 px-5 py-2.5 text-sm font-semibold text-ember-100 transition hover:bg-[#3a1d13]"
-              >
-                Write a scenario
-              </Link>
-            ) : (
+            {!writeStoryHref ? (
               <p className="mt-4 text-xs text-white/40">
                 Only the character owner can add the first community scenario.
               </p>
-            )}
+            ) : null}
           </div>
         ) : (
           stories.map((story) => {
