@@ -22,7 +22,7 @@ type CharacterCommunityStoriesProps = {
   buildScenarioPlayHref: (storyId: string) => string
   /** Only the character owner gets a Write scenario link. */
   writeStoryHref: string | null
-  /** When set, the author of a community scenario sees an edit link (character-scoped route only). */
+  /** Used for heart rules (e.g. authors and character owner cannot like). */
   viewerUserId?: string | null
   onPlayIntent: () => void
   onOfficialHeartClick: () => void
@@ -383,14 +383,6 @@ const CharacterCommunityStories = ({
                 </div>
 
                 <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
-                  {viewerUserId && story.author.id === viewerUserId ? (
-                    <Link
-                      href={`/characters/${encodeURIComponent(character.slug || character.id)}/edit-scenario/${encodeURIComponent(story.id)}`}
-                      className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-white/20 bg-white/[0.06] px-6 py-2.5 text-sm font-semibold uppercase tracking-[0.1em] text-white/85 transition hover:border-white/30 hover:bg-white/[0.09]"
-                    >
-                      Edit scenario
-                    </Link>
-                  ) : null}
                   <Link
                     href={buildScenarioPlayHref(story.id)}
                     onClick={() => {
