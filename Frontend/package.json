@@ -21,6 +21,7 @@
     "next": "latest",
     "react": "latest",
     "react-dom": "latest",
+    "react-easy-crop": "^5.5.7",
     "three": "^0.183.2"
   },
   "devDependencies": {

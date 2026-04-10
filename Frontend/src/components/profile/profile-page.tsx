@@ -1,12 +1,13 @@
 'use client'
 
 import { useAuth } from '@/components/providers/auth-provider'
+import { ProfileAvatarCropDialog } from '@/components/profile/profile-avatar-crop-dialog'
 import AccountSideMenu from '@/components/shared/account-side-menu'
 import { resendVerificationCode, verifyEmailCode } from '@/lib/auth-api'
 import { removeUserAvatar, uploadUserAvatar } from '@/lib/user-api'
 import Image from 'next/image'
 import Link from 'next/link'
-import { useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 const ProfilePage = () => {
   const { sessionUser, isAuthLoading, refreshSessionUser } = useAuth()
@@ -15,7 +16,25 @@ const ProfilePage = () => {
   const [isVerificationBusy, setIsVerificationBusy] = useState(false)
   const [avatarBusy, setAvatarBusy] = useState(false)
   const [avatarMessage, setAvatarMessage] = useState<{ text: string; variant: 'success' | 'error' } | null>(null)
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null)
+  const [avatarCropSrc, setAvatarCropSrc] = useState<string | null>(null)
   const avatarFileInputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (avatarPreviewUrl) {
+        URL.revokeObjectURL(avatarPreviewUrl)
+      }
+    }
+  }, [avatarPreviewUrl])
+
+  useEffect(() => {
+    return () => {
+      if (avatarCropSrc?.startsWith('blob:')) {
+        URL.revokeObjectURL(avatarCropSrc)
+      }
+    }
+  }, [avatarCropSrc])
 
   const memberSinceLabel = (() => {
     if (!sessionUser?.createdAt) {
@@ -97,7 +116,43 @@ const ProfilePage = () => {
     }
   }
 
-  const handleAvatarFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const uploadCroppedAvatarBlob = useCallback(
+    async (blob: Blob) => {
+      const previewUrl = URL.createObjectURL(blob)
+      setAvatarPreviewUrl(previewUrl)
+      setAvatarMessage(null)
+      setAvatarBusy(true)
+      try {
+        await uploadUserAvatar(new File([blob], 'profile-avatar.jpg', { type: 'image/jpeg' }))
+        await refreshSessionUser()
+        setAvatarMessage({ text: 'Profile photo updated.', variant: 'success' })
+        setAvatarPreviewUrl(null)
+      } catch (error) {
+        setAvatarMessage({
+          text: error instanceof Error ? error.message : 'Upload failed.',
+          variant: 'error'
+        })
+        setAvatarPreviewUrl(null)
+      } finally {
+        setAvatarBusy(false)
+      }
+    },
+    [refreshSessionUser]
+  )
+
+  const handleAvatarCropConfirm = useCallback(
+    (blob: Blob) => {
+      setAvatarCropSrc(null)
+      void uploadCroppedAvatarBlob(blob)
+    },
+    [uploadCroppedAvatarBlob]
+  )
+
+  const handleAvatarCropCancel = useCallback(() => {
+    setAvatarCropSrc(null)
+  }, [])
+
+  const handleAvatarFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ''
 
@@ -111,21 +166,20 @@ const ProfilePage = () => {
     }
 
     setAvatarMessage(null)
-    setAvatarBusy(true)
-
-    try {
-      await uploadUserAvatar(file)
-      await refreshSessionUser()
-      setAvatarMessage({ text: 'Profile photo updated.', variant: 'success' })
-    } catch (error) {
-      setAvatarMessage({
-        text: error instanceof Error ? error.message : 'Upload failed.',
-        variant: 'error'
-      })
-    } finally {
-      setAvatarBusy(false)
-    }
+    setAvatarCropSrc(URL.createObjectURL(file))
   }
+
+  const handleOpenCropCurrentAvatar = useCallback(() => {
+    if (!sessionUser?.isEmailVerified || avatarBusy) {
+      return
+    }
+    const src = avatarPreviewUrl ?? sessionUser.avatarUrl
+    if (!src) {
+      return
+    }
+    setAvatarMessage(null)
+    setAvatarCropSrc(src)
+  }, [avatarBusy, avatarPreviewUrl, sessionUser?.avatarUrl, sessionUser?.isEmailVerified])
 
   const handleRemoveAvatar = async () => {
     if (!sessionUser?.avatarUrl) {
@@ -137,6 +191,7 @@ const ProfilePage = () => {
 
     try {
       await removeUserAvatar()
+      setAvatarPreviewUrl(null)
       await refreshSessionUser()
       setAvatarMessage({ text: 'Profile photo removed.', variant: 'success' })
     } catch (error) {
@@ -180,7 +235,7 @@ const ProfilePage = () => {
                 <div className="mt-6 rounded-md border border-white/10 bg-black/20 p-4 md:p-5">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-white/70">Profile photo</p>
                   <p className="mt-1.5 text-xs leading-relaxed text-white/55">
-                    Used in the site header. JPEG, PNG, WebP, or GIF — up to 3MB.
+                    Used in the site header. Choose a photo, then drag and zoom to fit the circle. JPEG, PNG, WebP, or GIF — up to 3MB.
                   </p>
                   <input
                     ref={avatarFileInputRef}
@@ -193,19 +248,50 @@ const ProfilePage = () => {
                   />
                   <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-6">
                     <div className="relative size-[104px] shrink-0">
-                      <div className="relative flex size-[104px] items-center justify-center overflow-hidden rounded-full border border-white/15 bg-gradient-to-br from-ember-500/35 to-black text-3xl font-bold uppercase text-white">
-                        {sessionUser.avatarUrl ? (
+                      <div className="group relative flex size-[104px] items-center justify-center overflow-hidden rounded-full border border-white/15 bg-gradient-to-br from-ember-500/35 to-black text-3xl font-bold uppercase text-white">
+                        {avatarPreviewUrl ? (
+                          <Image
+                            src={avatarPreviewUrl}
+                            alt=""
+                            width={104}
+                            height={104}
+                            unoptimized
+                            className="size-[104px] object-cover object-center"
+                          />
+                        ) : sessionUser.avatarUrl ? (
                           <Image
                             src={sessionUser.avatarUrl}
                             alt=""
                             width={104}
                             height={104}
                             unoptimized
-                            className="size-[104px] object-cover"
+                            className="size-[104px] object-cover object-center"
                           />
                         ) : (
                           <span aria-hidden>{sessionUser.username.slice(0, 1)}</span>
                         )}
+                        {sessionUser.isEmailVerified && (avatarPreviewUrl || sessionUser.avatarUrl) ? (
+                          <div className="pointer-events-none absolute inset-0 z-[2] overflow-hidden">
+                            <div className="absolute inset-x-0 bottom-0 flex h-[46%] min-h-[40px] translate-y-full transform-gpu items-end justify-center bg-gradient-to-t from-black/80 via-black/45 to-transparent pb-2 backdrop-blur-[3px] transition-transform duration-300 ease-out will-change-transform motion-reduce:transition-none group-hover:translate-y-0 group-focus-within:translate-y-0">
+                              <button
+                                type="button"
+                                className="pointer-events-auto flex size-9 items-center justify-center rounded-full border border-white/25 bg-black/55 text-white shadow-md transition hover:bg-black/70 hover:text-ember-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember-400 disabled:cursor-not-allowed disabled:opacity-40"
+                                disabled={avatarBusy}
+                                aria-label="Crop profile photo"
+                                title="Crop photo"
+                                onClick={() => handleOpenCropCurrentAvatar()}
+                              >
+                                <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M4 8V4h4M20 16v4h-4M16 4h4v4M8 20H4v-4M9 9h6v6H9V9z"
+                                  />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                       <button
                         type="button"
@@ -226,7 +312,7 @@ const ProfilePage = () => {
                           />
                         </svg>
                       </button>
-                      {sessionUser.avatarUrl ? (
+                      {sessionUser.avatarUrl && !avatarPreviewUrl ? (
                         <button
                           type="button"
                           className="absolute bottom-0 right-0 z-10 flex size-8 items-center justify-center rounded-full border border-rose-400/45 bg-[#1a0f0c]/95 text-rose-200 shadow-md backdrop-blur-sm transition hover:bg-rose-950/50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -322,6 +408,14 @@ const ProfilePage = () => {
           </div>
         </div>
       </section>
+      {avatarCropSrc ? (
+        <ProfileAvatarCropDialog
+          imageSrc={avatarCropSrc}
+          onCancel={handleAvatarCropCancel}
+          onConfirm={handleAvatarCropConfirm}
+          isBusy={false}
+        />
+      ) : null}
     </main>
   )
 }
