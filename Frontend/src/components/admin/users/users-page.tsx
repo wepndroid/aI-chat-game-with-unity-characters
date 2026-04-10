@@ -23,6 +23,7 @@ type UsersListResponse = {
       id: string
       email: string
       username: string
+      avatarUrl: string | null
       role: UserRoleApi
       isEmailVerified: boolean
       isBanned: boolean
@@ -78,6 +79,7 @@ const mapRecordToTable = (record: UsersListResponse['data']['records'][number]):
     id: record.id,
     username: record.username,
     email: record.email,
+    avatarUrl: record.avatarUrl,
     role: roleApiToUiMap[record.role],
     status,
     isEmailVerified: record.isEmailVerified,

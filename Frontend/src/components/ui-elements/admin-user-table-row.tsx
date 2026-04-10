@@ -1,5 +1,6 @@
 import AdminUserRolePill, { type AdminUserRole } from '@/components/ui-elements/admin-user-role-pill'
 import AdminUserStatusPill, { type AdminUserStatus } from '@/components/ui-elements/admin-user-status-pill'
+import Image from 'next/image'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -9,6 +10,8 @@ type AdminUserTableRecord = {
   id: string
   username: string
   email: string
+  /** Profile image URL from API; shown as circle or initial fallback. */
+  avatarUrl: string | null
   role: AdminUserRole
   status: AdminUserStatus
   /** Used when toggling ban so status can return to active vs unverified. */
@@ -219,8 +222,26 @@ const AdminUserTableRow = ({
   return (
     <tr className="border-t border-white/10">
       <td className="px-3 py-3 align-middle sm:px-4 sm:py-4">
-        <p className="font-[family-name:var(--font-heading)] text-[17px] font-normal leading-none text-white">{userRecord.username}</p>
-        <p className="mt-1 break-words text-sm text-[#6f809d]">{userRecord.email}</p>
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="relative flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-gradient-to-br from-ember-500/35 to-[#1a1414] text-sm font-bold uppercase text-white">
+            {userRecord.avatarUrl ? (
+              <Image
+                src={userRecord.avatarUrl}
+                alt=""
+                width={44}
+                height={44}
+                unoptimized
+                className="size-11 object-cover"
+              />
+            ) : (
+              <span aria-hidden>{userRecord.username.slice(0, 1)}</span>
+            )}
+          </span>
+          <div className="min-w-0">
+            <p className="font-[family-name:var(--font-heading)] text-[17px] font-normal leading-none text-white">{userRecord.username}</p>
+            <p className="mt-1 break-words text-sm text-[#6f809d]">{userRecord.email}</p>
+          </div>
+        </div>
       </td>
       <td className="px-3 py-3 align-middle sm:px-4 sm:py-4">
         <AdminUserRolePill role={userRecord.role} />
