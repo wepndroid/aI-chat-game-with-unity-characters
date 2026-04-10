@@ -1,3 +1,5 @@
+import { tokenizeStoryBodyMarkup } from '@/lib/story-body-markup-tokenize'
+
 /** Matches backend `firstMessage` max length (HTML from rich editor needs more room than plain text). */
 export const FIRST_MESSAGE_MAX_LENGTH = 50_000
 
@@ -10,7 +12,37 @@ export function isRichFirstMessageHtml(raw: string | null | undefined): boolean 
   return t.startsWith('<') && /<\/[a-z][\s\S]*/i.test(t)
 }
 
-/** Legacy plain-text first messages → minimal HTML for the rich editor. */
+const escapeHtmlText = (value: string) =>
+  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+/**
+ * Upload form plain text uses the same mini-markup as story preview: *pink*, "dialogue", **action**.
+ * Emits sanitized-friendly spans (inline styles) so the read-only Tiptap preview shows correct colors.
+ */
+function plainFirstMessageBlockToHtml(block: string): string {
+  const tokens = tokenizeStoryBodyMarkup(block)
+  return tokens
+    .map((token) => {
+      switch (token.kind) {
+        case 'plain':
+        case 'action': {
+          const inner = escapeHtmlText(token.text).replace(/\n/g, '<br>')
+          return `<span style="color:#9ca3af;font-style:italic">${inner}</span>`
+        }
+        case 'pink': {
+          const inner = escapeHtmlText(token.text).replace(/\n/g, '<br>')
+          return `<span style="color:#f472b6;font-style:italic">${inner}</span>`
+        }
+        case 'quoted': {
+          const inner = escapeHtmlText(`"${token.text}"`).replace(/\n/g, '<br>')
+          return `<span style="color:rgba(243,244,246,0.95);font-style:normal">${inner}</span>`
+        }
+      }
+    })
+    .join('')
+}
+
+/** Legacy plain-text first messages → HTML for the rich editor (mini-markup → colored spans). */
 export function firstMessageToEditorHtml(raw: string | null | undefined): string {
   const rawValue = raw ?? ''
   if (!rawValue.trim()) {
@@ -19,10 +51,10 @@ export function firstMessageToEditorHtml(raw: string | null | undefined): string
   if (isRichFirstMessageHtml(rawValue)) {
     return rawValue.trim()
   }
-  const escaped = rawValue.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  return escaped
+  const normalized = rawValue.replace(/\r\n/g, '\n')
+  return normalized
     .split(/\n\n+/)
-    .map((block) => `<p>${block.replace(/\n/g, '<br>')}</p>`)
+    .map((block) => `<p>${plainFirstMessageBlockToHtml(block)}</p>`)
     .join('')
 }
 
