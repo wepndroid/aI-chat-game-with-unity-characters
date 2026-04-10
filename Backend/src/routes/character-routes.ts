@@ -1059,6 +1059,18 @@ characterRoutes.post('/characters', requireVerifiedEmail, async (request, respon
         }
       })
 
+      if (nextStatus === 'PENDING') {
+        await transactionClient.userNotification.create({
+          data: {
+            userId: actor.userId,
+            kind: 'character_submitted',
+            title: 'VRM submitted for review',
+            body: `"${payload.name.trim()}" is awaiting moderation.`,
+            href: `/characters/${nextCharacter.slug}`
+          }
+        })
+      }
+
       return nextCharacter
     })
 
@@ -1196,6 +1208,18 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
         }
       })
 
+      if (shouldResetStatusToPending && nextCharacter.status === 'PENDING') {
+        await transactionClient.userNotification.create({
+          data: {
+            userId: existingCharacter.ownerId,
+            kind: 'character_resubmitted',
+            title: 'VRM resubmitted for review',
+            body: `"${nextCharacter.name.trim()}" was sent back to moderation.`,
+            href: `/characters/${nextCharacter.slug}`
+          }
+        })
+      }
+
       return nextCharacter
     })
 
@@ -1265,8 +1289,20 @@ characterRoutes.post('/characters/:characterId/submit', requireVerifiedEmail, as
       },
       select: {
         id: true,
+        slug: true,
+        name: true,
         status: true,
         updatedAt: true
+      }
+    })
+
+    await prisma.userNotification.create({
+      data: {
+        userId: existingCharacter.ownerId,
+        kind: 'character_submitted',
+        title: 'VRM submitted for review',
+        body: `"${updatedCharacter.name.trim()}" is awaiting moderation.`,
+        href: `/characters/${updatedCharacter.slug}`
       }
     })
 
@@ -1406,7 +1442,10 @@ characterRoutes.patch('/characters/:characterId/status', requireAdmin, async (re
       },
       select: {
         id: true,
-        publishedAt: true
+        publishedAt: true,
+        ownerId: true,
+        name: true,
+        slug: true
       }
     })
 
@@ -1435,6 +1474,7 @@ characterRoutes.patch('/characters/:characterId/status', requireAdmin, async (re
       },
       select: {
         id: true,
+        slug: true,
         name: true,
         status: true,
         visibility: true,
@@ -1443,6 +1483,31 @@ characterRoutes.patch('/characters/:characterId/status', requireAdmin, async (re
         moderationRejectReason: true
       }
     })
+
+    if (payload.status === 'APPROVED') {
+      await prisma.userNotification.create({
+        data: {
+          userId: currentCharacter.ownerId,
+          kind: 'character_approved',
+          title: 'Character approved',
+          body: `"${updatedCharacter.name}" is now live.`,
+          href: `/characters/${updatedCharacter.slug}`
+        }
+      })
+    } else if (payload.status === 'REJECTED') {
+      await prisma.userNotification.create({
+        data: {
+          userId: currentCharacter.ownerId,
+          kind: 'character_rejected',
+          title: 'Character not approved',
+          body:
+            rejectReasonTrimmed.length > 0
+              ? rejectReasonTrimmed
+              : `"${updatedCharacter.name}" was not approved. You can revise and resubmit.`,
+          href: `/characters/${updatedCharacter.slug}`
+        }
+      })
+    }
 
     response.json({
       data: updatedCharacter

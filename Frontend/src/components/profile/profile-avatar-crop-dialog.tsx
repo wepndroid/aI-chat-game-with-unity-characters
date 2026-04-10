@@ -76,9 +76,6 @@ const ProfileAvatarCropDialog = ({ imageSrc, onCancel, onConfirm, isBusy }: Prof
         <h2 id={titleId} className="text-center font-[family-name:var(--font-heading)] text-xl font-normal italic text-white md:text-2xl">
           Adjust photo
         </h2>
-        <p className="mt-1.5 text-center text-xs text-white/55">
-          Drag to reposition. Use the slider to zoom. The circle matches your profile picture.
-        </p>
 
         <div className="relative mt-4 h-[min(52vh,320px)] w-full overflow-hidden rounded-md bg-black/40">
           <Cropper

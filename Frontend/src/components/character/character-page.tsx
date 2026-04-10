@@ -1005,7 +1005,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                       <p className="mt-2 text-[11px] leading-relaxed text-white/60">
                         Please verify your email before commenting.{' '}
                         <Link href="/profile" className="font-semibold text-ember-200 underline-offset-2 hover:text-ember-100">
-                          Profile
+                          Account
                         </Link>
                       </p>
                     ) : isViewerCharacterOwner ? (

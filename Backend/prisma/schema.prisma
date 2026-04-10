@@ -94,6 +94,23 @@ model User {
   storyPostLikes          StoryPostLike[]
   characterCardsCreated   CharacterCard[]
   chatSessions            ChatSession[]
+  userNotifications       UserNotification[]
+}
+
+/// In-app notifications (VRM moderation, etc.). Story rejections use StoryPost + merge in API until read.
+model UserNotification {
+  id        String    @id @default(cuid())
+  userId    String
+  kind      String
+  title     String
+  body      String?
+  href      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
 }
 
 /// Append-only entries for admin dashboard “System Activity” (bans, etc.).

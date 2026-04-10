@@ -8,6 +8,7 @@ import { oauthConfig } from '../lib/oauth-config'
 import { hashPassword, verifyPassword } from '../lib/password-hash'
 import { optionalAuth, requireAuth } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
+import { getUnreadNotificationCount } from '../lib/user-notification-count'
 import {
   findActiveEmailVerificationToken,
   findActivePasswordResetToken,
@@ -462,7 +463,7 @@ authRoutes.post('/auth/register', async (request, response, next) => {
         user: {
           ...createdUser,
           role: getEffectiveUserRoleForTesting(createdUser.role),
-          unreadRejectedStoryCount: 0
+          unreadNotificationCount: 0
         },
         requiresEmailVerification: true,
         verificationEmailSent
@@ -751,14 +752,7 @@ authRoutes.post('/auth/login', async (request, response, next) => {
     const rawSessionToken = await createOpaqueSessionForUser(existingUser.id, extractSessionClientMeta(request))
     setAuthCookie(response, rawSessionToken)
 
-    const unreadRejectedStoryCount = await prisma.storyPost.count({
-      where: {
-        authorId: existingUser.id,
-        publicationStatus: 'PUBLISHED',
-        moderationStatus: 'REJECTED',
-        authorReadRejectionAt: null
-      }
-    })
+    const unreadNotificationCount = await getUnreadNotificationCount(existingUser.id)
 
     response.json({
       data: {
@@ -769,7 +763,7 @@ authRoutes.post('/auth/login', async (request, response, next) => {
           role: getEffectiveUserRoleForTesting(existingUser.role),
           isEmailVerified: existingUser.isEmailVerified,
           avatarUrl: existingUser.avatarUrl,
-          unreadRejectedStoryCount
+          unreadNotificationCount
         }
       }
     })
@@ -906,7 +900,7 @@ authRoutes.get('/auth/me', requireAuth, async (request, response, next) => {
       return
     }
 
-    const [existingUser, unreadRejectedStoryCount] = await Promise.all([
+    const [existingUser, unreadNotificationCount] = await Promise.all([
       prisma.user.findUnique({
         where: {
           id: authUser.userId
@@ -931,14 +925,7 @@ authRoutes.get('/auth/me', requireAuth, async (request, response, next) => {
           }
         }
       }),
-      prisma.storyPost.count({
-        where: {
-          authorId: authUser.userId,
-          publicationStatus: 'PUBLISHED',
-          moderationStatus: 'REJECTED',
-          authorReadRejectionAt: null
-        }
-      })
+      getUnreadNotificationCount(authUser.userId)
     ])
 
     if (!existingUser) {
@@ -954,7 +941,7 @@ authRoutes.get('/auth/me', requireAuth, async (request, response, next) => {
         user: {
           ...existingUser,
           role: getEffectiveUserRoleForTesting(existingUser.role),
-          unreadRejectedStoryCount
+          unreadNotificationCount
         }
       }
     })

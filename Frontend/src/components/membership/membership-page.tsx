@@ -148,7 +148,7 @@ const mapMembershipActionErrorMessage = (rawMessage: string | null): string | nu
   }
 
   if (normalized.includes('email verification required')) {
-    return 'Please verify your email on the Profile page, then connect Patreon.'
+    return 'Please verify your email on the Account page, then connect Patreon.'
   }
 
   if (normalized.includes('patreon oauth is not enabled')) {
@@ -236,7 +236,7 @@ const MembershipPage = () => {
     }
 
     if (!sessionUser.isEmailVerified) {
-      setMembershipMessage('Please verify your email on the Profile page before connecting Patreon.')
+      setMembershipMessage('Please verify your email on the Account page before connecting Patreon.')
       return
     }
 
@@ -499,7 +499,7 @@ const MembershipPage = () => {
                 ) : null}
                 {sessionUser && !sessionUser.isEmailVerified ? (
                   <p className="mt-3 text-[11px] uppercase tracking-[0.08em] text-amber-100">
-                    Verify your email on the Profile page before connecting Patreon.
+                    Verify your email on the Account page before connecting Patreon.
                   </p>
                 ) : null}
               </article>

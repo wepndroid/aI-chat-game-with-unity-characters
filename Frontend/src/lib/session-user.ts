@@ -15,8 +15,8 @@ type SessionUser = {
   isEmailVerified: boolean
   /** Self-hosted profile image URL (`/uploads/...`) when set. */
   avatarUrl?: string | null
-  /** Published scenarios rejected by moderation that the author has not yet acknowledged / viewed. */
-  unreadRejectedStoryCount?: number
+  /** Unread in-app notifications (scenario rejections + VRM moderation events, etc.). */
+  unreadNotificationCount?: number
   createdAt?: string
   updatedAt?: string
   /** Optional override — maps to Tier table (PDF schema). */

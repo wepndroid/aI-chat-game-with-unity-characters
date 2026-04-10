@@ -125,7 +125,6 @@ const ProfilePage = () => {
       try {
         await uploadUserAvatar(new File([blob], 'profile-avatar.jpg', { type: 'image/jpeg' }))
         await refreshSessionUser()
-        setAvatarMessage({ text: 'Profile photo updated.', variant: 'success' })
         setAvatarPreviewUrl(null)
       } catch (error) {
         setAvatarMessage({
@@ -212,7 +211,7 @@ const ProfilePage = () => {
 
         <div className="relative z-10 mx-auto w-full max-w-[1150px] pt-24">
           <h1 className="text-center font-[family-name:var(--font-heading)] text-4xl font-normal italic leading-none text-white md:text-5xl">
-            Profile
+            Account
           </h1>
 
           <div className="mt-10 grid min-w-0 gap-8 lg:grid-cols-[380px_1fr]">

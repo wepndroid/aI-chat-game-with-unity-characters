@@ -73,8 +73,8 @@ const VerifyEmailPage = () => {
                 verificationStatus === 'success' ? 'justify-start' : 'justify-between'
               }`}
             >
-              <Link href="/profile" className="font-semibold text-ember-300 transition hover:text-ember-200" aria-label="Go to profile page">
-                Open Profile
+              <Link href="/profile" className="font-semibold text-ember-300 transition hover:text-ember-200" aria-label="Go to account page">
+                Open Account
               </Link>
               {verificationStatus !== 'success' ? (
                 <Link href="/sign-up" className="font-semibold text-ember-300 transition hover:text-ember-200" aria-label="Go to sign in/sign up">

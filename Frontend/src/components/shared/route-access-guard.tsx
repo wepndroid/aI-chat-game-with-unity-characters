@@ -101,9 +101,9 @@ const RouteAccessGuard = ({ children, requiredRole, requireVerifiedEmail = false
                 <Link
                   href="/profile"
                   className="inline-flex h-10 items-center justify-center rounded-md border border-white/20 px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-white transition hover:border-ember-300 hover:text-ember-200"
-                  aria-label="Open profile page"
+                  aria-label="Open account page"
                 >
-                  Open Profile
+                  Open Account
                 </Link>
               </div>
             </div>
@@ -131,9 +131,9 @@ const RouteAccessGuard = ({ children, requiredRole, requireVerifiedEmail = false
                 <Link
                   href="/profile"
                   className="inline-flex h-10 items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 text-[11px] font-bold uppercase tracking-[0.08em] text-black transition hover:brightness-110"
-                  aria-label="Open profile and verify email"
+                  aria-label="Open account page to verify email"
                 >
-                  Verify on Profile
+                  Go to Account
                 </Link>
                 <Link
                   href="/"

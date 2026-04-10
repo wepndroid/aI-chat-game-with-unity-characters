@@ -3,6 +3,7 @@
 import AuthInputField from '@/components/ui-elements/auth-input-field'
 import { useAuth } from '@/components/providers/auth-provider'
 import MaintenanceBanner from '@/components/shared/maintenance-banner'
+import { HeaderNotificationsBell } from '@/components/shared/header-notifications-bell'
 import { getGoogleOauthStartUrl, isGoogleOauthEnabled } from '@/lib/auth-api'
 import { AUTH_OPEN_SIGN_IN_MODAL_EVENT } from '@/lib/auth-events'
 import Image from 'next/image'
@@ -339,8 +340,8 @@ const Header = () => {
                 Characters
               </Link>
               {sessionUser ? (
-                <Link href="/profile" className="transition hover:text-ember-300" aria-label="Go to profile">
-                  Profile
+                <Link href="/profile" className="transition hover:text-ember-300" aria-label="Go to account">
+                  Account
                 </Link>
               ) : null}
               {sessionUser?.role === 'ADMIN' ? (
@@ -351,17 +352,8 @@ const Header = () => {
             </nav>
 
             {sessionUser ? (
-              <div className="flex shrink-0 items-center gap-2 md:gap-3">
-                {sessionUser.unreadRejectedStoryCount && sessionUser.unreadRejectedStoryCount > 0 ? (
-                  <Link
-                    href="/your-scenarios"
-                    className="relative flex h-9 min-w-[2.25rem] items-center justify-center rounded-full border border-amber-400/40 bg-amber-500/20 px-2 text-[11px] font-bold tabular-nums text-amber-50 shadow-[0_0_12px_rgba(251,191,36,0.25)] transition hover:border-amber-300/70 hover:bg-amber-500/30"
-                    aria-label={`${sessionUser.unreadRejectedStoryCount} rejected scenario updates — open Your scenarios`}
-                    title="Rejected scenario updates"
-                  >
-                    {sessionUser.unreadRejectedStoryCount > 99 ? '99+' : sessionUser.unreadRejectedStoryCount}
-                  </Link>
-                ) : null}
+              <div className="flex shrink-0 items-center gap-1.5 md:gap-2">
+                <HeaderNotificationsBell />
                 <div className="relative" ref={accountMenuRef}>
                   <button
                     type="button"
@@ -450,8 +442,8 @@ const Header = () => {
               Characters
             </Link>
             {sessionUser ? (
-              <Link href="/profile" className="transition hover:text-ember-300" aria-label="Go to profile">
-                Profile
+              <Link href="/profile" className="transition hover:text-ember-300" aria-label="Go to account">
+                Account
               </Link>
             ) : null}
             {sessionUser?.role === 'ADMIN' ? (
@@ -563,7 +555,7 @@ const Header = () => {
             <h2 className="font-[family-name:var(--font-heading)] text-4xl font-extrabold uppercase tracking-wider text-white">
               Create Account
             </h2>
-            <p className="mt-3 text-sm text-white/70">Register a new account to access your profile and character management.</p>
+            <p className="mt-3 text-sm text-white/70">Register a new account to access your account and character management.</p>
 
             <form className="mt-5 space-y-4" aria-label="Sign up form" onSubmit={handleSignUpSubmit}>
               <AuthInputField

@@ -20,6 +20,7 @@ import userRoutes from './routes/user-routes'
 import chatQuotaRoutes from './routes/chat-quota-routes'
 import storyRoutes from './routes/story-routes'
 import userAvatarRoutes from './routes/user-avatar-routes'
+import userNotificationRoutes from './routes/user-notification-routes'
 
 const app = express()
 
@@ -122,6 +123,7 @@ app.use('/uploads', express.static(uploadsRoot))
 app.use('/api', healthRoutes)
 app.use('/api', authRoutes)
 app.use('/api', userRoutes)
+app.use('/api', userNotificationRoutes)
 app.use('/api', userAvatarRoutes)
 app.use('/api', characterAssetUploadRoutes)
 app.use('/api', characterRoutes)

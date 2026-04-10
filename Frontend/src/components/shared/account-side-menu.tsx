@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { useAuth } from '@/components/providers/auth-provider'
 
-type AccountMenuKey = 'profile' | 'upload-vrm' | 'your-characters' | 'your-scenarios' | 'membership' | 'sign-out'
+type AccountMenuKey = 'profile' | 'upload-vrm' | 'your-characters' | 'your-scenarios' | 'membership'
 
 type AccountMenuEntry = {
   key: AccountMenuKey
@@ -10,12 +10,11 @@ type AccountMenuEntry = {
 }
 
 const accountMenuEntries: AccountMenuEntry[] = [
-  { key: 'profile', label: 'PROFILE', href: '/profile' },
+  { key: 'profile', label: 'ACCOUNT', href: '/profile' },
   { key: 'upload-vrm', label: 'UPLOAD VRM', href: '/upload-vrm' },
   { key: 'your-characters', label: 'YOUR CHARACTERS', href: '/your-characters' },
   { key: 'your-scenarios', label: 'YOUR SCENARIOS', href: '/your-scenarios' },
-  { key: 'membership', label: 'MEMBERSHIP', href: '/members' },
-  { key: 'sign-out', label: 'SIGN OUT', href: '/sign-out' }
+  { key: 'membership', label: 'MEMBERSHIP', href: '/members' }
 ]
 
 type AccountSideMenuProps = {
