@@ -27,6 +27,8 @@ type CharacterCommunityStoriesProps = {
   onPlayIntent: () => void
   onOfficialHeartClick: () => void
   officialHeartDisabled: boolean
+  onStoryHeartClick: (storyId: string) => void
+  storyHeartSubmittingId: string | null
 }
 
 const formatCompactNumber = (value: number) => {
@@ -123,8 +125,11 @@ const CharacterCommunityStories = ({
   viewerUserId,
   onPlayIntent,
   onOfficialHeartClick,
-  officialHeartDisabled
+  officialHeartDisabled,
+  onStoryHeartClick,
+  storyHeartSubmittingId
 }: CharacterCommunityStoriesProps) => {
+  const viewerIsCharacterOwner = Boolean(viewerUserId && character.owner.id === viewerUserId)
   const displayName = (character.fullName?.trim() || character.name).trim()
   const scenarioText = (character.scenario?.trim() || character.description?.trim() || 'No scenario text yet.') ?? ''
   const firstMsg = character.firstMessage?.trim() || ''
@@ -171,11 +176,11 @@ const CharacterCommunityStories = ({
         </div>
       </div>
 
-      <article className="mt-6 rounded-md border border-white/10 bg-[#1a1213] p-5 md:p-6">
+      <article className="mt-6 min-w-0 overflow-x-hidden rounded-md border border-white/10 bg-[#1a1213] p-5 md:p-6">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-[family-name:var(--font-heading)] text-[36px] font-semibold italic uppercase leading-none text-white">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h3 className="min-w-0 max-w-full font-[family-name:var(--font-heading)] text-[36px] font-semibold italic uppercase leading-none text-white [overflow-wrap:anywhere]">
                 {displayName}
               </h3>
               <span className="rounded-full border border-amber-500/35 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-amber-200/90">
@@ -219,11 +224,13 @@ const CharacterCommunityStories = ({
           </button>
         </div>
 
-        <div className="mt-6 grid gap-5 md:grid-cols-[1fr_minmax(200px,0.9fr)] md:items-start">
-          <p className="whitespace-pre-line text-[11px] leading-[1.75] text-white/75">{scenarioText}</p>
-          <div className="rounded-md border border-white/10 bg-[#121010] p-4">
+        <div className="mt-6 grid min-w-0 grid-cols-1 gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:items-start">
+          <p className="min-w-0 max-w-full whitespace-pre-line text-[11px] leading-[1.75] text-white/75 [overflow-wrap:anywhere]">{scenarioText}</p>
+          <div className="min-w-0 rounded-md border border-white/10 bg-[#121010] p-4">
             <p className="text-[8px] font-bold uppercase tracking-[0.11em] text-[#f59e0b]">First message</p>
-            <p className="mt-3 whitespace-pre-wrap text-[11px] italic leading-relaxed text-white/75">{firstMsg || '—'}</p>
+            <p className="mt-3 min-w-0 max-w-full whitespace-pre-wrap text-[11px] italic leading-relaxed text-white/75 [overflow-wrap:anywhere]">
+              {firstMsg || '—'}
+            </p>
           </div>
         </div>
 
@@ -306,12 +313,16 @@ const CharacterCommunityStories = ({
 
             const showNarrationBlock = Boolean(narrativeForPreview && narrativeForPreview !== dialogueForPreview)
             const sampleDialogueText = dialogueForPreview.trim() || fallbackRaw
+            const isStoryAuthor = Boolean(viewerUserId && story.author.id === viewerUserId)
+            const storyHeartDisabled =
+              viewerIsCharacterOwner || isStoryAuthor || storyHeartSubmittingId === story.id
+            const storyHasLiked = Boolean(story.hasLiked)
             return (
-              <article key={story.id} className="rounded-md border border-white/10 bg-[#1a1213] p-5 md:p-6">
+              <article key={story.id} className="min-w-0 overflow-x-hidden rounded-md border border-white/10 bg-[#1a1213] p-5 md:p-6">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-[family-name:var(--font-heading)] text-[36px] font-semibold italic uppercase leading-none text-white">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <h3 className="min-w-0 max-w-full font-[family-name:var(--font-heading)] text-[36px] font-semibold italic uppercase leading-none text-white [overflow-wrap:anywhere]">
                         {story.title}
                       </h3>
                       <span
@@ -336,7 +347,19 @@ const CharacterCommunityStories = ({
                       </span>
                     </div>
                   </div>
-                  <span className="inline-flex size-[30px] shrink-0 items-center justify-center rounded-full border border-[#775844] bg-[#261c17] text-white/35" aria-hidden>
+                  <button
+                    type="button"
+                    onClick={() => onStoryHeartClick(story.id)}
+                    disabled={storyHeartDisabled}
+                    className={`inline-flex size-[30px] shrink-0 items-center justify-center rounded-full border text-xs transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                      storyHeartDisabled
+                        ? 'border-[#5c4a42]/45 bg-[#1f1815] text-white/30'
+                        : storyHasLiked
+                          ? 'border-[#ff74d8] bg-[#3a102c] text-[#ffd8f4] shadow-[0_0_0_1px_rgba(255,255,255,0.12)_inset,0_0_18px_rgba(247,93,232,0.45)]'
+                          : 'border-[#775844] bg-[#261c17] text-white/95 hover:border-[#8f6447] hover:bg-[#2c201a]'
+                    }`}
+                    aria-label={storyHasLiked ? 'Unlike scenario' : 'Like scenario'}
+                  >
                     <svg viewBox="0 0 24 24" className="size-[16px]" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
                       <path
                         d="m12 20.2-.78-.7C6.46 15.21 3.5 12.53 3.5 9.23 3.5 6.55 5.6 4.5 8.25 4.5c1.5 0 2.95.7 3.75 1.82A4.83 4.83 0 0 1 15.75 4.5c2.66 0 4.75 2.05 4.75 4.73 0 3.3-2.96 5.98-7.72 10.27l-.78.7Z"
@@ -344,16 +367,16 @@ const CharacterCommunityStories = ({
                         strokeLinejoin="round"
                       />
                     </svg>
-                  </span>
+                  </button>
                 </div>
 
-                <div className="mt-4 grid gap-4 md:grid-cols-[1fr_minmax(200px,0.9fr)] md:items-start">
-                  <p className="whitespace-pre-line text-[11px] leading-[1.75] text-white/75">{setupText}</p>
-                  <div className="rounded-md border border-white/10 bg-[#121010] p-4">
+                <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:items-start">
+                  <p className="min-w-0 max-w-full whitespace-pre-line text-[11px] leading-[1.75] text-white/75 [overflow-wrap:anywhere]">{setupText}</p>
+                  <div className="min-w-0 overflow-hidden rounded-md border border-white/10 bg-[#121010] p-4">
                     <p className="text-[8px] font-bold uppercase tracking-[0.11em] text-[#f59e0b]">Preview</p>
-                    <div className="mt-3 space-y-2">
+                    <div className="mt-3 min-w-0 space-y-2">
                       {showNarrationBlock ? (
-                        <div className="italic text-white/50">
+                        <div className="min-w-0 italic text-white/50">
                           <StoryBodyMarkupPreview
                             text={narrativeForPreview}
                             scenarioType={story.scenarioType}

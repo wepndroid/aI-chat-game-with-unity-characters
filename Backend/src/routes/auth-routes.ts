@@ -440,7 +440,8 @@ authRoutes.post('/auth/register', async (request, response, next) => {
         email: true,
         username: true,
         role: true,
-        isEmailVerified: true
+        isEmailVerified: true,
+        avatarUrl: true
       }
     })
 
@@ -460,7 +461,8 @@ authRoutes.post('/auth/register', async (request, response, next) => {
       data: {
         user: {
           ...createdUser,
-          role: getEffectiveUserRoleForTesting(createdUser.role)
+          role: getEffectiveUserRoleForTesting(createdUser.role),
+          unreadRejectedStoryCount: 0
         },
         requiresEmailVerification: true,
         verificationEmailSent
@@ -715,7 +717,8 @@ authRoutes.post('/auth/login', async (request, response, next) => {
         role: true,
         isEmailVerified: true,
         isBanned: true,
-        passwordHash: true
+        passwordHash: true,
+        avatarUrl: true
       }
     })
 
@@ -748,6 +751,15 @@ authRoutes.post('/auth/login', async (request, response, next) => {
     const rawSessionToken = await createOpaqueSessionForUser(existingUser.id, extractSessionClientMeta(request))
     setAuthCookie(response, rawSessionToken)
 
+    const unreadRejectedStoryCount = await prisma.storyPost.count({
+      where: {
+        authorId: existingUser.id,
+        publicationStatus: 'PUBLISHED',
+        moderationStatus: 'REJECTED',
+        authorReadRejectionAt: null
+      }
+    })
+
     response.json({
       data: {
         user: {
@@ -755,7 +767,9 @@ authRoutes.post('/auth/login', async (request, response, next) => {
           email: existingUser.email,
           username: existingUser.username,
           role: getEffectiveUserRoleForTesting(existingUser.role),
-          isEmailVerified: existingUser.isEmailVerified
+          isEmailVerified: existingUser.isEmailVerified,
+          avatarUrl: existingUser.avatarUrl,
+          unreadRejectedStoryCount
         }
       }
     })
@@ -892,29 +906,40 @@ authRoutes.get('/auth/me', requireAuth, async (request, response, next) => {
       return
     }
 
-    const existingUser = await prisma.user.findUnique({
-      where: {
-        id: authUser.userId
-      },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        role: true,
-        isEmailVerified: true,
-        createdAt: true,
-        updatedAt: true,
-        tierCode: true,
-        tier: {
-          select: {
-            code: true,
-            messageLimit: true,
-            periodDays: true,
-            label: true
+    const [existingUser, unreadRejectedStoryCount] = await Promise.all([
+      prisma.user.findUnique({
+        where: {
+          id: authUser.userId
+        },
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          role: true,
+          isEmailVerified: true,
+          avatarUrl: true,
+          createdAt: true,
+          updatedAt: true,
+          tierCode: true,
+          tier: {
+            select: {
+              code: true,
+              messageLimit: true,
+              periodDays: true,
+              label: true
+            }
           }
         }
-      }
-    })
+      }),
+      prisma.storyPost.count({
+        where: {
+          authorId: authUser.userId,
+          publicationStatus: 'PUBLISHED',
+          moderationStatus: 'REJECTED',
+          authorReadRejectionAt: null
+        }
+      })
+    ])
 
     if (!existingUser) {
       clearAuthCookie(response)
@@ -928,7 +953,8 @@ authRoutes.get('/auth/me', requireAuth, async (request, response, next) => {
       data: {
         user: {
           ...existingUser,
-          role: getEffectiveUserRoleForTesting(existingUser.role)
+          role: getEffectiveUserRoleForTesting(existingUser.role),
+          unreadRejectedStoryCount
         }
       }
     })

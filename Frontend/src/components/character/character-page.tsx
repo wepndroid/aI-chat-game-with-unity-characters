@@ -9,7 +9,7 @@ import {
   toggleCharacterHeart,
   type CharacterDetailRecord
 } from '@/lib/character-api'
-import { listStories, type StoryListRecord } from '@/lib/story-api'
+import { listStories, toggleStoryLike, type StoryListRecord } from '@/lib/story-api'
 import {
   createCharacterReview,
   deleteCharacterReview,
@@ -139,6 +139,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
   const [threePreviewErrorMessage, setThreePreviewErrorMessage] = useState<string | null>(null)
   const [isThreePreviewExpanded, setIsThreePreviewExpanded] = useState(false)
   const [isHeartSubmitting, setIsHeartSubmitting] = useState(false)
+  const [storyHeartSubmittingId, setStoryHeartSubmittingId] = useState<string | null>(null)
   const [heartToast, setHeartToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null)
   const heartToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [reviewList, setReviewList] = useState<CharacterReviewRecord[]>([])
@@ -307,7 +308,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     } finally {
       setCommunityLoading(false)
     }
-  }, [storiesCharacterKey, communitySort])
+  }, [storiesCharacterKey, communitySort, sessionUser?.id])
 
   /** Initial load + when sort or route segment changes (e.g. returning from write-scenario). */
   useEffect(() => {
@@ -425,6 +426,41 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
       setIsHeartSubmitting(false)
     }
   }
+
+  const handleToggleStoryLike = useCallback(
+    async (storyId: string) => {
+      if (!sessionUser) {
+        showHeartToast('Please sign in before liking scenarios.', 'error')
+        return
+      }
+
+      if (isViewerCharacterOwner) {
+        return
+      }
+
+      if (storyHeartSubmittingId !== null) {
+        return
+      }
+
+      setStoryHeartSubmittingId(storyId)
+
+      try {
+        const payload = await toggleStoryLike(storyId)
+        setCommunityStories((previous) =>
+          previous.map((row) =>
+            row.id === storyId
+              ? { ...row, likesCount: payload.data.likesCount, hasLiked: payload.data.liked }
+              : row
+          )
+        )
+      } catch (error) {
+        showHeartToast(error instanceof Error ? error.message : 'Failed to update likes.', 'error')
+      } finally {
+        setStoryHeartSubmittingId(null)
+      }
+    },
+    [isViewerCharacterOwner, sessionUser, showHeartToast, storyHeartSubmittingId]
+  )
 
   const handleSubmitReview = async () => {
     if (!characterRecord) {
@@ -1052,6 +1088,8 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                   }}
                   onOfficialHeartClick={() => void handleToggleHeart()}
                   officialHeartDisabled={isHeartSubmitting || isViewerCharacterOwner}
+                  onStoryHeartClick={(storyId) => void handleToggleStoryLike(storyId)}
+                  storyHeartSubmittingId={storyHeartSubmittingId}
                 />
               </div>
             </div>

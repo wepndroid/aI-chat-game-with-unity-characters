@@ -1,7 +1,12 @@
 'use client'
 
 import { useAuth } from '@/components/providers/auth-provider'
-import { getStory, updateStory, type StoryPublicationStatus } from '@/lib/story-api'
+import {
+  getStory,
+  updateStory,
+  type StoryModerationStatus,
+  type StoryPublicationStatus
+} from '@/lib/story-api'
 import { listCharacters, type CharacterListRecord } from '@/lib/character-api'
 import { STORY_BODY_FIELD_TEXTAREA_CLASS, StoryBodyMarkupPreview } from '@/lib/story-body-markup-preview'
 import { STORY_SCENARIO_TYPE_LABELS, STORY_SCENARIO_TYPES, type StoryScenarioType } from '@/lib/story-scenario-types'
@@ -26,6 +31,8 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
   const [scenarioType, setScenarioType] = useState<StoryScenarioType | ''>('')
   const [characters, setCharacters] = useState<CharacterListRecord[]>([])
   const [publicationStatus, setPublicationStatus] = useState<StoryPublicationStatus>('PUBLISHED')
+  const [storyModerationStatus, setStoryModerationStatus] = useState<StoryModerationStatus | null>(null)
+  const [storyRejectReason, setStoryRejectReason] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -72,6 +79,8 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
             : ''
         )
         setPublicationStatus(story.publicationStatus)
+        setStoryModerationStatus(story.moderationStatus)
+        setStoryRejectReason(story.moderationRejectReason)
 
         const isAdminEditingOther =
           sessionUser.role === 'ADMIN' && story.author.id !== sessionUser.id
@@ -249,6 +258,27 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
             Edit Story
           </h1>
 
+          {publicationStatus === 'PUBLISHED' && storyModerationStatus === 'REJECTED' ? (
+            <div className="mt-6 rounded-lg border border-rose-400/35 bg-rose-950/30 px-4 py-3 md:px-5 md:py-4">
+              <p className="font-[family-name:var(--font-heading)] text-base font-semibold italic text-rose-100/95 md:text-lg">
+                This scenario was rejected
+              </p>
+              {storyRejectReason?.trim() ? (
+                <div className="mt-2 rounded-md border border-white/10 bg-black/30 px-3 py-2">
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-white/45">Reason</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-white/85">{storyRejectReason.trim()}</p>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-white/55">No rejection reason was recorded.</p>
+              )}
+              <p className="mt-3 text-[13px] leading-relaxed text-white/70">
+                You can edit the scenario below. When you save, your updated version is{' '}
+                <span className="font-semibold text-ember-200/95">submitted for review again</span> (status becomes
+                pending until an admin approves it).
+              </p>
+            </div>
+          ) : null}
+
           <form
             onSubmit={(e) => {
               e.preventDefault()
@@ -402,7 +432,11 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
                 disabled={!canSavePublished}
                 className="flex w-full items-center justify-center rounded-lg border border-ember-500/60 bg-[#2b160f]/85 px-6 py-3.5 text-sm font-semibold uppercase tracking-[0.1em] text-ember-100 transition hover:border-ember-400/55 hover:bg-[#3a1d13] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-ember-500/60 disabled:hover:bg-[#2b160f]/85"
               >
-                {isSubmitting ? 'Saving...' : 'Save changes'}
+                {isSubmitting
+                  ? 'Saving...'
+                  : storyModerationStatus === 'REJECTED'
+                    ? 'Save & submit for review'
+                    : 'Save changes'}
               </button>
             )}
           </form>

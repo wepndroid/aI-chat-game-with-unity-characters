@@ -34,6 +34,8 @@ type StoryListRecord = {
   moderationRejectReason?: string | null
   publishedAt: string | null
   likesCount: number
+  /** Present on public catalog rows when the viewer is signed in. */
+  hasLiked?: boolean
   characterId: string | null
   scenarioType: string | null
   author: StoryAuthor
@@ -172,7 +174,12 @@ const moderateStory = async (storyId: string, payload: ModerateStoryPayload) => 
   return apiPost<{ data: StoryDetailRecord }>(`/admin/stories/${encodeURIComponent(storyId)}/moderate`, payload)
 }
 
+const acknowledgeStoryRejections = async () => {
+  return apiPost<{ data: { updatedCount: number } }>('/stories/acknowledge-rejections', {})
+}
+
 export {
+  acknowledgeStoryRejections,
   createStory,
   deleteStory,
   getStory,

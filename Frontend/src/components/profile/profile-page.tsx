@@ -3,14 +3,19 @@
 import { useAuth } from '@/components/providers/auth-provider'
 import AccountSideMenu from '@/components/shared/account-side-menu'
 import { resendVerificationCode, verifyEmailCode } from '@/lib/auth-api'
+import { removeUserAvatar, uploadUserAvatar } from '@/lib/user-api'
+import Image from 'next/image'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 const ProfilePage = () => {
   const { sessionUser, isAuthLoading, refreshSessionUser } = useAuth()
   const [verificationCodeInputValue, setVerificationCodeInputValue] = useState('')
   const [verificationMessage, setVerificationMessage] = useState<string | null>(null)
   const [isVerificationBusy, setIsVerificationBusy] = useState(false)
+  const [avatarBusy, setAvatarBusy] = useState(false)
+  const [avatarMessage, setAvatarMessage] = useState<{ text: string; variant: 'success' | 'error' } | null>(null)
+  const avatarFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const memberSinceLabel = (() => {
     if (!sessionUser?.createdAt) {
@@ -92,6 +97,58 @@ const ProfilePage = () => {
     }
   }
 
+  const handleAvatarFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+
+    if (!file || !sessionUser) {
+      return
+    }
+
+    if (!sessionUser.isEmailVerified) {
+      setAvatarMessage({ text: 'Verify your email before uploading a profile photo.', variant: 'error' })
+      return
+    }
+
+    setAvatarMessage(null)
+    setAvatarBusy(true)
+
+    try {
+      await uploadUserAvatar(file)
+      await refreshSessionUser()
+      setAvatarMessage({ text: 'Profile photo updated.', variant: 'success' })
+    } catch (error) {
+      setAvatarMessage({
+        text: error instanceof Error ? error.message : 'Upload failed.',
+        variant: 'error'
+      })
+    } finally {
+      setAvatarBusy(false)
+    }
+  }
+
+  const handleRemoveAvatar = async () => {
+    if (!sessionUser?.avatarUrl) {
+      return
+    }
+
+    setAvatarMessage(null)
+    setAvatarBusy(true)
+
+    try {
+      await removeUserAvatar()
+      await refreshSessionUser()
+      setAvatarMessage({ text: 'Profile photo removed.', variant: 'success' })
+    } catch (error) {
+      setAvatarMessage({
+        text: error instanceof Error ? error.message : 'Could not remove photo.',
+        variant: 'error'
+      })
+    } finally {
+      setAvatarBusy(false)
+    }
+  }
+
   return (
     <main className="relative overflow-x-hidden bg-[#030303] text-white">
       <section className="relative min-h-[calc(100vh-150px)] border-b border-white/10 px-5 py-10 md:px-8">
@@ -118,6 +175,81 @@ const ProfilePage = () => {
               ) : (
                 <p className="mt-2 text-[11px] uppercase tracking-[0.08em] text-rose-300">Sign in to access account details</p>
               )}
+
+              {sessionUser ? (
+                <div className="mt-6 rounded-md border border-white/10 bg-black/20 p-4 md:p-5">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-white/70">Profile photo</p>
+                  <p className="mt-1.5 text-xs leading-relaxed text-white/55">
+                    Used in the site header. JPEG, PNG, WebP, or GIF — up to 3MB.
+                  </p>
+                  <input
+                    ref={avatarFileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="sr-only"
+                    aria-hidden
+                    tabIndex={-1}
+                    onChange={handleAvatarFileChange}
+                  />
+                  <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
+                    <div className="relative flex size-[104px] shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-gradient-to-br from-ember-500/35 to-black text-3xl font-bold uppercase text-white">
+                      {sessionUser.avatarUrl ? (
+                        <Image
+                          src={sessionUser.avatarUrl}
+                          alt=""
+                          width={104}
+                          height={104}
+                          unoptimized
+                          className="size-[104px] object-cover"
+                        />
+                      ) : (
+                        <span aria-hidden>{sessionUser.username.slice(0, 1)}</span>
+                      )}
+                    </div>
+                    <div className="flex min-w-0 flex-1 flex-col gap-2">
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="inline-flex h-10 items-center justify-center rounded-md border border-ember-500/55 bg-[#2b160f]/85 px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-ember-100 transition hover:bg-[#3a1d13] disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={avatarBusy || !sessionUser.isEmailVerified}
+                          onClick={() => {
+                            setAvatarMessage(null)
+                            avatarFileInputRef.current?.click()
+                          }}
+                        >
+                          {avatarBusy ? 'Uploading…' : 'Upload new photo'}
+                        </button>
+                        {sessionUser.avatarUrl ? (
+                          <button
+                            type="button"
+                            className="inline-flex h-10 items-center justify-center rounded-md border border-rose-400/35 bg-transparent px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-rose-200/95 transition hover:bg-rose-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={avatarBusy}
+                            onClick={() => void handleRemoveAvatar()}
+                          >
+                            Remove photo
+                          </button>
+                        ) : null}
+                      </div>
+                      {!sessionUser.isEmailVerified ? (
+                        <p className="text-[11px] leading-relaxed text-amber-200/85">
+                          Verify your email to upload a profile photo.
+                        </p>
+                      ) : null}
+                      {avatarMessage ? (
+                        <p
+                          className={`text-xs font-medium ${
+                            avatarMessage.variant === 'success' ? 'text-emerald-200/95' : 'text-rose-200'
+                          }`}
+                          role={avatarMessage.variant === 'error' ? 'alert' : 'status'}
+                        >
+                          {avatarMessage.text}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               {sessionUser && !sessionUser.isEmailVerified ? (
                 <div className="mt-5 rounded-md border border-amber-300/25 bg-amber-300/10 p-4">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-amber-100">

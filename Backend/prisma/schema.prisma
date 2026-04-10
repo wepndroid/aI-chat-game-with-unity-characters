@@ -70,6 +70,8 @@ model User {
   tierCode                String?
   tier                    Tier?                    @relation(fields: [tierCode], references: [code], onDelete: SetNull, onUpdate: Cascade)
   isEmailVerified         Boolean                  @default(false)
+  /// Optional profile image (same-origin `/uploads/...` URL from avatar upload).
+  avatarUrl               String?
   isBanned                Boolean                  @default(false)
   /// When this admin last opened Official VRMs; used for sidebar “new official” badge (per admin).
   officialVrmsListSeenAt  DateTime?
@@ -389,6 +391,8 @@ model StoryPost {
   moderationStatus    StoryModerationStatus   @default(NONE)
   /// Shown to the author when moderationStatus is REJECTED (and to admins).
   moderationRejectReason String?
+  /// When the author has seen the rejection (clears header notification); set by acknowledge or viewing story/edit.
+  authorReadRejectionAt DateTime?
   /// Set when the story is or was published; kept if moved back to draft for ordering/history.
   publishedAt         DateTime?
   likesCount          Int                     @default(0)

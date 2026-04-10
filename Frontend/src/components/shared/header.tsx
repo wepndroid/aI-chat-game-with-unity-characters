@@ -8,7 +8,7 @@ import { AUTH_OPEN_SIGN_IN_MODAL_EVENT } from '@/lib/auth-events'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const signInQueryFlagKey = 'openSignIn'
 const signUpQueryFlagKey = 'openSignUp'
@@ -54,7 +54,8 @@ const normalizeOAuthErrorMessage = (rawMessage: string | null) => {
 const Header = () => {
   const pathname = usePathname()
   const googleOauthEnabled = isGoogleOauthEnabled()
-  const { sessionUser, isAuthLoading, registerUser, loginUser, logoutUser, clearAuthError } = useAuth()
+  const { sessionUser, isAuthLoading, registerUser, loginUser, logoutUser, clearAuthError, refreshSessionUser } =
+    useAuth()
   /** Closed on first paint so SSR and client match; open from URL in useEffect after hydrate. */
   const [isSignInModalOpen, setIsSignInModalOpen] = useState(false)
   const [isSignUpModalOpen, setIsSignUpModalOpen] = useState(false)
@@ -67,6 +68,8 @@ const Header = () => {
   const [isSigningIn, setIsSigningIn] = useState(false)
   const [isSigningUp, setIsSigningUp] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const accountMenuRef = useRef<HTMLDivElement | null>(null)
   const [signInErrorMessage, setSignInErrorMessage] = useState<string | null>(null)
   const [signUpErrorMessage, setSignUpErrorMessage] = useState<string | null>(null)
 
@@ -127,10 +130,42 @@ const Header = () => {
   }
 
   const handleSignOut = async () => {
+    setAccountMenuOpen(false)
     setIsSigningOut(true)
     await logoutUser()
     setIsSigningOut(false)
   }
+
+  useEffect(() => {
+    if (!sessionUser) {
+      return
+    }
+
+    void refreshSessionUser()
+  }, [pathname, sessionUser?.id, refreshSessionUser])
+
+  useEffect(() => {
+    if (!accountMenuOpen) {
+      return
+    }
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const node = accountMenuRef.current
+      if (!node || node.contains(event.target as Node)) {
+        return
+      }
+
+      setAccountMenuOpen(false)
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('touchstart', handlePointerDown)
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('touchstart', handlePointerDown)
+    }
+  }, [accountMenuOpen])
 
   const handleSignInSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -282,7 +317,15 @@ const Header = () => {
         <div className="mx-auto w-full max-w-[1150px] px-5 py-4 md:px-8 md:py-5">
           <div className="flex items-center justify-between gap-3">
             <Link href="/" className="inline-flex shrink-0 items-center text-white" aria-label="SecretWaifu home">
-              <Image src="/images/SecretWaifu Logo White.svg" alt="SecretWaifu logo" width={164} height={44} className="h-9 w-auto" priority />
+              <Image
+                src="/images/SecretWaifu Logo White.svg"
+                alt="SecretWaifu logo"
+                width={164}
+                height={44}
+                className="h-9 w-auto"
+                priority
+                suppressHydrationWarning
+              />
             </Link>
 
             <nav className="hidden items-center gap-9 text-xs font-semibold uppercase tracking-[0.2em] text-white/85 md:flex">
@@ -295,11 +338,6 @@ const Header = () => {
               <Link href="/characters" className="transition hover:text-ember-300" aria-label="Go to characters">
                 Characters
               </Link>
-              {sessionUser ? (
-                <Link href="/profile" className="transition hover:text-ember-300" aria-label="Go to profile">
-                  Profile
-                </Link>
-              ) : null}
               {sessionUser?.role === 'ADMIN' ? (
                 <Link href="/admin/dashboard" className="transition hover:text-ember-300" aria-label="Go to admin dashboard">
                   Admin
@@ -308,19 +346,85 @@ const Header = () => {
             </nav>
 
             {sessionUser ? (
-              <div className="flex shrink-0 items-center gap-3">
-                <p className="hidden text-[11px] font-semibold uppercase tracking-[0.08em] text-white/80 md:block">
-                  {sessionUser.username} ({sessionUser.role.toLowerCase()})
-                </p>
-                <button
-                  type="button"
-                  className="rounded-md border border-white/30 bg-transparent px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:border-ember-300 hover:text-ember-200"
-                  aria-label="Sign out"
-                  onClick={handleSignOut}
-                  disabled={isSigningOut}
-                >
-                  {isSigningOut ? 'Signing Out...' : 'Sign Out'}
-                </button>
+              <div className="flex shrink-0 items-center gap-2 md:gap-3">
+                {sessionUser.unreadRejectedStoryCount && sessionUser.unreadRejectedStoryCount > 0 ? (
+                  <Link
+                    href="/your-scenarios"
+                    className="relative flex h-9 min-w-[2.25rem] items-center justify-center rounded-full border border-amber-400/40 bg-amber-500/20 px-2 text-[11px] font-bold tabular-nums text-amber-50 shadow-[0_0_12px_rgba(251,191,36,0.25)] transition hover:border-amber-300/70 hover:bg-amber-500/30"
+                    aria-label={`${sessionUser.unreadRejectedStoryCount} rejected scenario updates — open Your scenarios`}
+                    title="Rejected scenario updates"
+                  >
+                    {sessionUser.unreadRejectedStoryCount > 99 ? '99+' : sessionUser.unreadRejectedStoryCount}
+                  </Link>
+                ) : null}
+                <div className="relative" ref={accountMenuRef}>
+                  <button
+                    type="button"
+                    className="flex items-center gap-2 rounded-full border border-white/20 bg-black/30 py-1 pl-1 pr-2 transition hover:border-white/35 hover:bg-black/45 md:pr-3"
+                    aria-expanded={accountMenuOpen}
+                    aria-haspopup="menu"
+                    aria-label="Account menu"
+                    onClick={() => setAccountMenuOpen((open) => !open)}
+                  >
+                    <span className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-gradient-to-br from-ember-500/40 to-black text-sm font-bold uppercase text-white">
+                      {sessionUser.avatarUrl ? (
+                        <Image
+                          src={sessionUser.avatarUrl}
+                          alt=""
+                          width={36}
+                          height={36}
+                          unoptimized
+                          className="size-9 object-cover"
+                        />
+                      ) : (
+                        sessionUser.username.slice(0, 1)
+                      )}
+                    </span>
+                    <span className="hidden max-w-[140px] truncate text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-white/85 md:inline">
+                      {sessionUser.username}
+                    </span>
+                    <svg
+                      viewBox="0 0 24 24"
+                      className={`hidden size-4 shrink-0 text-white/55 md:block ${accountMenuOpen ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      aria-hidden
+                    >
+                      <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                  {accountMenuOpen ? (
+                    <div
+                      className="absolute right-0 z-50 mt-2 w-[min(calc(100vw-2rem),16rem)] rounded-lg border border-white/10 bg-[#020202] py-1 shadow-[0_16px_48px_rgba(0,0,0,0.65)] backdrop-blur-md"
+                      role="menu"
+                    >
+                      <div className="border-b border-white/10 px-3 py-2 md:hidden">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/90">
+                          {sessionUser.username}
+                        </p>
+                        <p className="mt-0.5 text-[10px] uppercase tracking-[0.06em] text-white/45">{sessionUser.role}</p>
+                      </div>
+                      <Link
+                        href="/profile"
+                        role="menuitem"
+                        className="block px-3 py-2.5 text-sm font-semibold text-white/90 transition hover:bg-white/[0.06]"
+                        onClick={() => setAccountMenuOpen(false)}
+                      >
+                        Profile
+                      </Link>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="w-full border-t border-white/10 px-3 py-2.5 text-left text-sm font-semibold uppercase tracking-[0.08em] text-white/75 transition hover:bg-white/[0.06]"
+                        onClick={() => void handleSignOut()}
+                        disabled={isSigningOut}
+                      >
+                        {isSigningOut ? 'Signing out…' : 'Sign out'}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             ) : (
               <button
@@ -348,11 +452,6 @@ const Header = () => {
             <Link href="/characters" className="transition hover:text-ember-300" aria-label="Go to characters">
               Characters
             </Link>
-            {sessionUser ? (
-              <Link href="/profile" className="transition hover:text-ember-300" aria-label="Go to profile">
-                Profile
-              </Link>
-            ) : null}
             {sessionUser?.role === 'ADMIN' ? (
               <Link href="/admin/dashboard" className="transition hover:text-ember-300" aria-label="Go to admin dashboard">
                 Admin

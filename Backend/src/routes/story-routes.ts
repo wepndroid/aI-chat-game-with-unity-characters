@@ -331,6 +331,19 @@ storyRoutes.get('/stories', optionalAuth, async (request, response, next) => {
       select: storyListSelectFields
     })
 
+    let likedStoryIds = new Set<string>()
+    if (authUser && stories.length > 0 && query.scope !== 'mine') {
+      const storyIds = stories.map((row) => row.id)
+      const existingLikes = await prisma.storyPostLike.findMany({
+        where: {
+          userId: authUser.userId,
+          storyId: { in: storyIds }
+        },
+        select: { storyId: true }
+      })
+      likedStoryIds = new Set(existingLikes.map((row) => row.storyId))
+    }
+
     const listPayload = stories.map((story) => {
       const combined =
         combineScenarioFields(story.scenarioStory ?? '', story.scenarioChat ?? '').trim() || story.body
@@ -348,7 +361,10 @@ storyRoutes.get('/stories', optionalAuth, async (request, response, next) => {
 
       const { moderationRejectReason: _drop, ...publicRow } = withPreview
 
-      return publicRow
+      return {
+        ...publicRow,
+        hasLiked: likedStoryIds.has(story.id)
+      }
     })
 
     response.json({ data: listPayload })
@@ -434,6 +450,38 @@ storyRoutes.get('/admin/stories', requireAdmin, async (request, response, next) 
   }
 })
 
+/** Marks rejection notices as read for the author (e.g. after visiting “Your scenarios”). */
+storyRoutes.post('/stories/acknowledge-rejections', requireAuth, async (request, response, next) => {
+  try {
+    const authUser = request.authUser
+
+    if (!authUser) {
+      response.status(401).json({ message: 'Authentication required.' })
+      return
+    }
+
+    const result = await prisma.storyPost.updateMany({
+      where: {
+        authorId: authUser.userId,
+        publicationStatus: 'PUBLISHED',
+        moderationStatus: 'REJECTED',
+        authorReadRejectionAt: null
+      },
+      data: {
+        authorReadRejectionAt: new Date()
+      }
+    })
+
+    response.json({
+      data: {
+        updatedCount: result.count
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 storyRoutes.get('/stories/:storyId', optionalAuth, async (request, response, next) => {
   try {
     const { storyId } = storyParamsSchema.parse(request.params)
@@ -462,6 +510,22 @@ storyRoutes.get('/stories/:storyId', optionalAuth, async (request, response, nex
         response.status(404).json({ message: 'Story not found.' })
         return
       }
+    }
+
+    if (
+      isAuthor &&
+      story.publicationStatus === 'PUBLISHED' &&
+      story.moderationStatus === 'REJECTED'
+    ) {
+      await prisma.storyPost.updateMany({
+        where: {
+          id: story.id,
+          authorReadRejectionAt: null
+        },
+        data: {
+          authorReadRejectionAt: new Date()
+        }
+      })
     }
 
     const showModerationMeta = Boolean(isAuthor || isAdminViewer)
@@ -784,7 +848,8 @@ storyRoutes.post('/admin/stories/:storyId/moderate', requireAdmin, async (reques
       where: { id: storyId },
       data: {
         moderationStatus: 'REJECTED',
-        moderationRejectReason: reason
+        moderationRejectReason: reason,
+        authorReadRejectionAt: null
       },
       select: storySelectFields
     })
