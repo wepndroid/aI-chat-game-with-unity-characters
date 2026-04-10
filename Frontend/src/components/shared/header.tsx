@@ -338,6 +338,11 @@ const Header = () => {
               <Link href="/characters" className="transition hover:text-ember-300" aria-label="Go to characters">
                 Characters
               </Link>
+              {sessionUser ? (
+                <Link href="/profile" className="transition hover:text-ember-300" aria-label="Go to profile">
+                  Profile
+                </Link>
+              ) : null}
               {sessionUser?.role === 'ADMIN' ? (
                 <Link href="/admin/dashboard" className="transition hover:text-ember-300" aria-label="Go to admin dashboard">
                   Admin
@@ -396,7 +401,7 @@ const Header = () => {
                   </button>
                   {accountMenuOpen ? (
                     <div
-                      className="absolute right-0 z-50 mt-2 w-[min(calc(100vw-2rem),16rem)] rounded-lg border border-white/10 bg-[#020202] py-1 shadow-[0_16px_48px_rgba(0,0,0,0.65)] backdrop-blur-md"
+                      className="absolute right-0 z-50 mt-2 w-[min(calc(100vw-2rem),16rem)] rounded-lg border border-ember-500/50 bg-[#020202] py-1 shadow-[0_16px_48px_rgba(0,0,0,0.65),0_0_0_1px_rgba(244,99,19,0.12)_inset] backdrop-blur-md"
                       role="menu"
                     >
                       <div className="border-b border-white/10 px-3 py-2 md:hidden">
@@ -405,18 +410,10 @@ const Header = () => {
                         </p>
                         <p className="mt-0.5 text-[10px] uppercase tracking-[0.06em] text-white/45">{sessionUser.role}</p>
                       </div>
-                      <Link
-                        href="/profile"
-                        role="menuitem"
-                        className="block px-3 py-2.5 text-sm font-semibold text-white/90 transition hover:bg-white/[0.06]"
-                        onClick={() => setAccountMenuOpen(false)}
-                      >
-                        Profile
-                      </Link>
                       <button
                         type="button"
                         role="menuitem"
-                        className="w-full border-t border-white/10 px-3 py-2.5 text-left text-sm font-semibold uppercase tracking-[0.08em] text-white/75 transition hover:bg-white/[0.06]"
+                        className="w-full border-t border-white/10 px-3 py-2.5 text-left text-sm font-semibold uppercase tracking-[0.08em] text-white/75 transition hover:bg-white/[0.06] md:border-t-0"
                         onClick={() => void handleSignOut()}
                         disabled={isSigningOut}
                       >
@@ -452,6 +449,11 @@ const Header = () => {
             <Link href="/characters" className="transition hover:text-ember-300" aria-label="Go to characters">
               Characters
             </Link>
+            {sessionUser ? (
+              <Link href="/profile" className="transition hover:text-ember-300" aria-label="Go to profile">
+                Profile
+              </Link>
+            ) : null}
             {sessionUser?.role === 'ADMIN' ? (
               <Link href="/admin/dashboard" className="transition hover:text-ember-300" aria-label="Go to admin dashboard">
                 Admin

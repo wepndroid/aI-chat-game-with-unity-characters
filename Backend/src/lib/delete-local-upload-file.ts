@@ -1,12 +1,17 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
-import { isTrustedSelfHostedAssetUrl } from './character-asset-url'
+import { isDevLoopbackSelfHostedUpload, isTrustedSelfHostedAssetUrl } from './character-asset-url'
 
 const uploadsRoot = path.join(process.cwd(), 'uploads')
 
+const isDeletableSelfHostedUploadUrl = (rawUrl: string) => {
+  return isTrustedSelfHostedAssetUrl(rawUrl) || isDevLoopbackSelfHostedUpload(rawUrl)
+}
+
 /**
  * Deletes a file under `uploads/` when the URL is a trusted self-hosted asset (same origin + /uploads/).
+ * In development, loopback URLs under `/uploads/` are also accepted (same rules as asset validation).
  * No-ops for external URLs or missing files. Rejects path traversal.
  */
 const tryDeleteTrustedUploadFile = async (rawUrl: string | null | undefined) => {
@@ -15,7 +20,7 @@ const tryDeleteTrustedUploadFile = async (rawUrl: string | null | undefined) => 
     return
   }
 
-  if (!isTrustedSelfHostedAssetUrl(trimmed)) {
+  if (!isDeletableSelfHostedUploadUrl(trimmed)) {
     return
   }
 
