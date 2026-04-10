@@ -13,7 +13,7 @@ import { SCENARIO_EDIT_RETURN_TO_YOUR_SCENARIOS } from '@/components/your-charac
 import { STORY_SCENARIO_TYPE_LABELS, STORY_SCENARIO_TYPES, type StoryScenarioType } from '@/lib/story-scenario-types'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 type EditStoryPageProps = {
   storyId: string
@@ -41,6 +41,14 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isLoadingStory, setIsLoadingStory] = useState(true)
+  /** Snapshot after load — resubmit for review only when current fields differ. */
+  const [contentBaseline, setContentBaseline] = useState<{
+    title: string
+    scenarioStory: string
+    scenarioChat: string
+    characterId: string
+    scenarioType: string
+  } | null>(null)
 
   useEffect(() => {
     if (isAuthLoading) return
@@ -86,6 +94,18 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
         setStoryModerationStatus(story.moderationStatus)
         setStoryRejectReason(story.moderationRejectReason)
 
+        const initialTitle = story.title.trim()
+        const initialScenarioStory = hasSplit ? (story.scenarioStory ?? '').trim() : (story.body ?? '').trim()
+        const initialScenarioChat = hasSplit ? (story.scenarioChat ?? '').trim() : ''
+        setContentBaseline({
+          title: initialTitle,
+          scenarioStory: initialScenarioStory,
+          scenarioChat: initialScenarioChat,
+          characterId: story.characterId ?? '',
+          scenarioType:
+            story.scenarioType && story.scenarioType in STORY_SCENARIO_TYPE_LABELS ? (story.scenarioType as StoryScenarioType) : ''
+        })
+
         const isAdminEditingOther =
           sessionUser.role === 'ADMIN' && story.author.id !== sessionUser.id
 
@@ -106,6 +126,7 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
       } catch (error) {
         if (!isCancelled) {
           setLoadError(error instanceof Error ? error.message : 'Could not load story.')
+          setContentBaseline(null)
         }
       } finally {
         if (!isCancelled) {
@@ -129,6 +150,25 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
     characterId: selectedCharacterId || null,
     scenarioType: scenarioType || null
   }
+  const hasContentChanged = useMemo(() => {
+    if (!contentBaseline) {
+      return false
+    }
+    return (
+      t !== contentBaseline.title ||
+      st !== contentBaseline.scenarioStory ||
+      ch !== contentBaseline.scenarioChat ||
+      (selectedCharacterId || '') !== contentBaseline.characterId ||
+      (scenarioType || '') !== contentBaseline.scenarioType
+    )
+  }, [contentBaseline, t, st, ch, selectedCharacterId, scenarioType])
+
+  /** Live / pending / rejected published edits must change something before resubmitting for review. */
+  const mustChangeBeforeReviewSubmit =
+    publicationStatus === 'PUBLISHED' &&
+    storyModerationStatus !== null &&
+    ['APPROVED', 'REJECTED', 'PENDING'].includes(storyModerationStatus)
+
   const mustLinkCharacterWhenPublished = characters.length > 0
   const canSavePublished =
     publicationStatus === 'PUBLISHED' &&
@@ -139,7 +179,8 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
     !isSubmitting &&
     !loadError &&
     Boolean(scenarioType) &&
-    (!mustLinkCharacterWhenPublished || Boolean(selectedCharacterId.trim()))
+    (!mustLinkCharacterWhenPublished || Boolean(selectedCharacterId.trim())) &&
+    (!mustChangeBeforeReviewSubmit || hasContentChanged)
   const canSaveDraftEdit =
     publicationStatus === 'DRAFT' &&
     t.length >= 1 &&
@@ -280,9 +321,33 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
                 <p className="mt-2 text-sm text-white/55">No rejection reason was recorded.</p>
               )}
               <p className="mt-3 text-[13px] leading-relaxed text-white/70">
-                You can edit the scenario below. When you save, your updated version is{' '}
-                <span className="font-semibold text-ember-200/95">submitted for review again</span> (status becomes
-                pending until an admin approves it).
+                Edit the scenario below, then save — <span className="font-semibold text-ember-200/95">Submit for review</span>{' '}
+                is available only after you change the title, category, character link, or scenario text.
+              </p>
+            </div>
+          ) : null}
+
+          {publicationStatus === 'PUBLISHED' && storyModerationStatus === 'APPROVED' ? (
+            <div className="mt-6 rounded-lg border border-emerald-400/30 bg-emerald-950/20 px-4 py-3 md:px-5 md:py-4">
+              <p className="font-[family-name:var(--font-heading)] text-base font-semibold italic text-emerald-100/95 md:text-lg">
+                This scenario is live
+              </p>
+              <p className="mt-3 text-[13px] leading-relaxed text-white/70">
+                If you change the title, category, character link, or scenario text and save, the scenario is{' '}
+                <span className="font-semibold text-ember-200/95">sent for moderation again</span> and stays hidden from the
+                public listing until an admin approves it.
+              </p>
+            </div>
+          ) : null}
+
+          {publicationStatus === 'PUBLISHED' && storyModerationStatus === 'PENDING' ? (
+            <div className="mt-6 rounded-lg border border-amber-400/35 bg-amber-950/20 px-4 py-3 md:px-5 md:py-4">
+              <p className="font-[family-name:var(--font-heading)] text-base font-semibold italic text-amber-100/95 md:text-lg">
+                Awaiting moderation
+              </p>
+              <p className="mt-3 text-[13px] leading-relaxed text-white/70">
+                You can update the scenario below; <span className="font-semibold text-ember-200/95">Save</span> is enabled
+                only when something changes.
               </p>
             </div>
           ) : null}
@@ -435,17 +500,26 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
                 </button>
               </div>
             ) : (
-              <button
-                type="submit"
-                disabled={!canSavePublished}
-                className="flex w-full items-center justify-center rounded-lg border border-ember-500/60 bg-[#2b160f]/85 px-6 py-3.5 text-sm font-semibold uppercase tracking-[0.1em] text-ember-100 transition hover:border-ember-400/55 hover:bg-[#3a1d13] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-ember-500/60 disabled:hover:bg-[#2b160f]/85"
-              >
-                {isSubmitting
-                  ? 'Saving...'
-                  : storyModerationStatus === 'REJECTED'
-                    ? 'Save & submit for review'
-                    : 'Save changes'}
-              </button>
+              <div className="space-y-2">
+                <button
+                  type="submit"
+                  disabled={!canSavePublished}
+                  className="flex w-full items-center justify-center rounded-lg border border-ember-500/60 bg-[#2b160f]/85 px-6 py-3.5 text-sm font-semibold uppercase tracking-[0.1em] text-ember-100 transition hover:border-ember-400/55 hover:bg-[#3a1d13] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-ember-500/60 disabled:hover:bg-[#2b160f]/85"
+                >
+                  {isSubmitting
+                    ? 'Saving...'
+                    : storyModerationStatus === 'REJECTED'
+                      ? 'Save & submit for review'
+                      : storyModerationStatus === 'APPROVED' || storyModerationStatus === 'PENDING'
+                        ? 'Submit for review'
+                        : 'Save changes'}
+                </button>
+                {mustChangeBeforeReviewSubmit && !hasContentChanged ? (
+                  <p className="text-center text-[11px] leading-relaxed text-white/40">
+                    Change the scenario above to enable submit.
+                  </p>
+                ) : null}
+              </div>
             )}
           </form>
         </div>
