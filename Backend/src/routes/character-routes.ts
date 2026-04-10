@@ -1060,15 +1060,12 @@ characterRoutes.post('/characters', requireVerifiedEmail, async (request, respon
         }
       })
 
-      if (nextStatus === 'PENDING') {
-        await transactionClient.userNotification.create({
-          data: {
-            userId: actor.userId,
-            kind: 'character_submitted',
-            title: 'VRM submitted for review',
-            body: `"${payload.name.trim()}" is awaiting moderation.`,
-            href: `/characters/${nextCharacter.slug}`
-          }
+      if (nextStatus === 'PENDING' && !isAdmin) {
+        await notifyAdminsReviewQueue(transactionClient, {
+          kind: 'character_submitted',
+          title: 'New VRM submitted for review',
+          body: `${payload.name.trim()} — submitted by a creator and awaiting moderation.`,
+          href: '/admin/review-queue'
         })
       }
 
@@ -1209,15 +1206,16 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
         }
       })
 
-      if (shouldResetStatusToPending && nextCharacter.status === 'PENDING') {
-        await transactionClient.userNotification.create({
-          data: {
-            userId: existingCharacter.ownerId,
-            kind: 'character_resubmitted',
-            title: 'VRM resubmitted for review',
-            body: `"${nextCharacter.name.trim()}" was sent back to moderation.`,
-            href: `/characters/${nextCharacter.slug}`
-          }
+      if (
+        shouldResetStatusToPending &&
+        nextCharacter.status === 'PENDING' &&
+        existingCharacter.owner.role !== 'ADMIN'
+      ) {
+        await notifyAdminsReviewQueue(transactionClient, {
+          kind: 'character_resubmitted',
+          title: 'VRM resubmitted for review',
+          body: `${nextCharacter.name.trim()} was resubmitted by the creator and needs review.`,
+          href: '/admin/review-queue'
         })
       }
 
@@ -1251,7 +1249,12 @@ characterRoutes.post('/characters/:characterId/submit', requireVerifiedEmail, as
       select: {
         id: true,
         ownerId: true,
-        status: true
+        status: true,
+        owner: {
+          select: {
+            role: true
+          }
+        }
       }
     })
 
@@ -1297,15 +1300,14 @@ characterRoutes.post('/characters/:characterId/submit', requireVerifiedEmail, as
       }
     })
 
-    await prisma.userNotification.create({
-      data: {
-        userId: existingCharacter.ownerId,
+    if (existingCharacter.owner.role !== 'ADMIN') {
+      await notifyAdminsReviewQueue(prisma, {
         kind: 'character_submitted',
-        title: 'VRM submitted for review',
-        body: `"${updatedCharacter.name.trim()}" is awaiting moderation.`,
-        href: `/characters/${updatedCharacter.slug}`
-      }
-    })
+        title: 'New VRM submitted for review',
+        body: `${updatedCharacter.name.trim()} — submitted for moderation.`,
+        href: '/admin/review-queue'
+      })
+    }
 
     response.json({
       data: {
