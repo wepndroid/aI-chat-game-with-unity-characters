@@ -934,29 +934,24 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                   ))}
                 </div>
 
-                <div className="mt-4">
-                  {isViewerCharacterOwner ? (
-                    <Link
-                      href={`/characters/${encodeURIComponent(characterRecord.slug || characterRecord.id)}/write-scenario`}
-                      className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-lg border border-ember-500/60 bg-[#2b160f]/85 px-5 py-3 text-sm font-semibold uppercase tracking-[0.1em] text-ember-100 transition hover:bg-[#3a1d13]"
-                    >
-                      Write scenario
-                    </Link>
-                  ) : !sessionUser ? (
-                    <Link
-                      href="/?openSignIn=1"
-                      className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/[0.06] px-5 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white/85 transition hover:border-white/30 hover:bg-white/[0.09]"
-                    >
-                      Sign in to comment and favorite
-                    </Link>
-                  ) : (
-                    <div className="rounded-lg border border-white/10 bg-[#121010] px-4 py-4 text-center">
-                      <p className="text-[11px] leading-relaxed text-white/50">
-                        Only the character owner can add community scenarios for this page.
-                      </p>
-                    </div>
-                  )}
-                </div>
+                {!isViewerCharacterOwner ? (
+                  <div className="mt-4">
+                    {!sessionUser ? (
+                      <Link
+                        href="/?openSignIn=1"
+                        className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/[0.06] px-5 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white/85 transition hover:border-white/30 hover:bg-white/[0.09]"
+                      >
+                        Sign in to comment and favorite
+                      </Link>
+                    ) : (
+                      <div className="rounded-lg border border-white/10 bg-[#121010] px-4 py-4 text-center">
+                        <p className="text-[11px] leading-relaxed text-white/50">
+                          Only the character owner can add community scenarios for this page.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
 
                 <section className="mt-4 rounded-md border border-white/10 bg-[#121010] p-5">
                   <h3 className="font-[family-name:var(--font-heading)] text-[18px] font-semibold italic uppercase tracking-wide text-white">
