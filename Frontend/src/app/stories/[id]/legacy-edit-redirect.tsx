@@ -1,13 +1,15 @@
 'use client'
 
+import { SCENARIO_EDIT_RETURN_TO_YOUR_SCENARIOS } from '@/components/your-characters/your-scenarios-helpers'
 import { getStory } from '@/lib/story-api'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 /** Old `/stories/[id]/edit` → `/characters/.../edit-scenario/...`. */
 const LegacyEditRedirect = () => {
   const router = useRouter()
   const params = useParams()
+  const searchParams = useSearchParams()
   const [label, setLabel] = useState('Redirecting…')
 
   useEffect(() => {
@@ -18,6 +20,12 @@ const LegacyEditRedirect = () => {
       router.replace('/characters')
       return
     }
+
+    const returnTo = searchParams.get('returnTo')
+    const returnToQuery =
+      returnTo === SCENARIO_EDIT_RETURN_TO_YOUR_SCENARIOS
+        ? `?returnTo=${encodeURIComponent(SCENARIO_EDIT_RETURN_TO_YOUR_SCENARIOS)}`
+        : ''
 
     let isCancelled = false
 
@@ -31,7 +39,9 @@ const LegacyEditRedirect = () => {
         const key = ch?.slug ?? ch?.id ?? payload.data.characterId
 
         if (key) {
-          router.replace(`/characters/${encodeURIComponent(key)}/edit-scenario/${encodeURIComponent(storyId)}`)
+          router.replace(
+            `/characters/${encodeURIComponent(key)}/edit-scenario/${encodeURIComponent(storyId)}${returnToQuery}`
+          )
         } else {
           setLabel('This scenario has no character link.')
           router.replace('/characters')
@@ -47,7 +57,7 @@ const LegacyEditRedirect = () => {
     return () => {
       isCancelled = true
     }
-  }, [params.id, router])
+  }, [params.id, router, searchParams])
 
   return (
     <main className="relative min-h-[calc(100vh-140px)] bg-[#030303] text-white">

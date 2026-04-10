@@ -2,6 +2,7 @@
 
 import {
   buildScenarioEditHref,
+  SCENARIO_EDIT_RETURN_TO_YOUR_SCENARIOS,
   scenarioStatusLabel,
   scenarioStatusPillClass,
   scenarioTypeLabel
@@ -187,7 +188,9 @@ const YourScenariosPage = () => {
                       return (
                         <li key={story.id}>
                           <Link
-                            href={buildScenarioEditHref(story)}
+                            href={buildScenarioEditHref(story, {
+                              returnTo: SCENARIO_EDIT_RETURN_TO_YOUR_SCENARIOS
+                            })}
                             className="flex gap-3 rounded-lg border border-white/[0.07] bg-[#0a0a0a]/90 px-3 py-2.5 transition hover:border-ember-500/35 hover:bg-[#141212]"
                           >
                             <ScenarioCharacterThumb

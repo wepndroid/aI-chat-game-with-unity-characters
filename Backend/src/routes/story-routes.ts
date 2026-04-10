@@ -707,6 +707,22 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
     const mergedScenarioType =
       payload.scenarioType !== undefined ? payload.scenarioType : existing.scenarioType ?? null
 
+    const existingTitleTrim = existing.title.trim()
+    const existingStoryTrim = (existing.scenarioStory ?? '').trim()
+    const existingChatTrim = (existing.scenarioChat ?? '').trim()
+    const existingCharacterId = existing.characterId ?? null
+    const existingScenarioType = existing.scenarioType ?? null
+
+    const contentChanged =
+      nextTitle !== existingTitleTrim ||
+      mergedStory !== existingStoryTrim ||
+      mergedChat !== existingChatTrim ||
+      (mergedCharacterId ?? null) !== existingCharacterId ||
+      (mergedScenarioType ?? null) !== existingScenarioType
+
+    const isOwnStory = existing.authorId === authUser.userId
+    const adminEditsForeignStory = authUser.role === 'ADMIN' && !isOwnStory
+
     if (nextPublication === 'PUBLISHED' && !mergedScenarioType) {
       response.status(400).json({
         message: 'Story category is required to publish.'
@@ -742,10 +758,28 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
     }
 
     if (
-      existing.authorId === authUser.userId &&
+      isOwnStory &&
       existing.moderationStatus === 'REJECTED' &&
       existing.publicationStatus === 'PUBLISHED' &&
       payload.publicationStatus === undefined
+    ) {
+      if (!contentChanged) {
+        response.status(400).json({
+          message: 'Change your scenario before submitting for review again.'
+        })
+        return
+      }
+      updateData.moderationStatus = 'PENDING'
+      updateData.moderationRejectReason = null
+    }
+
+    if (
+      existing.publicationStatus === 'PUBLISHED' &&
+      existing.moderationStatus === 'APPROVED' &&
+      isOwnStory &&
+      !adminEditsForeignStory &&
+      payload.publicationStatus === undefined &&
+      contentChanged
     ) {
       updateData.moderationStatus = 'PENDING'
       updateData.moderationRejectReason = null

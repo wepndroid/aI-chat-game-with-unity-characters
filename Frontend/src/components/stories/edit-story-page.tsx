@@ -9,9 +9,10 @@ import {
 } from '@/lib/story-api'
 import { listCharacters, type CharacterListRecord } from '@/lib/character-api'
 import { STORY_BODY_FIELD_TEXTAREA_CLASS, StoryBodyMarkupPreview } from '@/lib/story-body-markup-preview'
+import { SCENARIO_EDIT_RETURN_TO_YOUR_SCENARIOS } from '@/components/your-characters/your-scenarios-helpers'
 import { STORY_SCENARIO_TYPE_LABELS, STORY_SCENARIO_TYPES, type StoryScenarioType } from '@/lib/story-scenario-types'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 
 type EditStoryPageProps = {
@@ -22,6 +23,9 @@ type EditStoryPageProps = {
 
 const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps) => {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const returnToPath =
+    searchParams.get('returnTo') === SCENARIO_EDIT_RETURN_TO_YOUR_SCENARIOS ? '/your-scenarios' : null
   const { sessionUser, isAuthLoading } = useAuth()
 
   const [title, setTitle] = useState('')
@@ -162,6 +166,10 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
     return seg ? `/characters/${encodeURIComponent(seg)}` : '/characters'
   }, [characters, selectedCharacterId, characterRouteKey])
 
+  const resolveExitPath = useCallback(() => {
+    return returnToPath ?? characterPagePath()
+  }, [returnToPath, characterPagePath])
+
   const handleSaveDraftOnly = async () => {
     if (!canSaveDraftEdit) return
 
@@ -171,7 +179,7 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
     try {
       await updateStory(storyId, { ...storyBodyFields })
 
-      router.push(characterPagePath())
+      router.push(resolveExitPath())
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not save story.'
       setErrorMessage(message)
@@ -191,7 +199,7 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
         publicationStatus: 'PUBLISHED'
       })
 
-      router.push(characterPagePath())
+      router.push(resolveExitPath())
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not publish story.'
       setErrorMessage(message)
@@ -208,7 +216,7 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
     try {
       await updateStory(storyId, { ...storyBodyFields })
 
-      router.push(characterPagePath())
+      router.push(resolveExitPath())
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not save story.'
       setErrorMessage(message)
@@ -229,8 +237,8 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
       <main className="relative min-h-[calc(100vh-140px)] bg-[#030303] text-white">
         <div className="mx-auto max-w-[720px] px-5 pt-24">
           <p className="rounded-md border border-rose-300/20 bg-rose-300/10 px-4 py-3 text-sm text-rose-100">{loadError}</p>
-          <Link href={characterPagePath()} className="mt-4 inline-block text-sm text-ember-300 hover:underline">
-            Back to character
+          <Link href={resolveExitPath()} className="mt-4 inline-block text-sm text-ember-300 hover:underline">
+            {returnToPath ? 'Back to your scenarios' : 'Back to character'}
           </Link>
         </div>
       </main>
@@ -245,13 +253,13 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
 
         <div className="relative z-10 mx-auto min-w-0 w-full max-w-[960px] pt-24">
           <Link
-            href={characterPagePath()}
+            href={resolveExitPath()}
             className="mb-6 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-white/45 transition hover:text-white/70"
           >
             <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5">
               <path d="M19 12H5M12 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            Back to character
+            {returnToPath ? 'Back to your scenarios' : 'Back to character'}
           </Link>
 
           <h1 className="font-[family-name:var(--font-heading)] text-4xl font-semibold italic text-white md:text-5xl">

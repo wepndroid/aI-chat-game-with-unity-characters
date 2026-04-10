@@ -1,14 +1,27 @@
 import type { StoryListRecord } from '@/lib/story-api'
 import { scenarioTypeDisplayLabel } from '@/lib/story-scenario-types'
 
-export const buildScenarioEditHref = (story: StoryListRecord) => {
+/** Token for `returnTo` query — edit page maps this to `/your-scenarios`. */
+export const SCENARIO_EDIT_RETURN_TO_YOUR_SCENARIOS = 'your-scenarios'
+
+type BuildScenarioEditHrefOptions = {
+  /** When set, edit screen back/save exit goes to Your Scenarios instead of the character page. */
+  returnTo?: typeof SCENARIO_EDIT_RETURN_TO_YOUR_SCENARIOS
+}
+
+export const buildScenarioEditHref = (story: StoryListRecord, options?: BuildScenarioEditHrefOptions) => {
+  const query =
+    options?.returnTo === SCENARIO_EDIT_RETURN_TO_YOUR_SCENARIOS
+      ? `?returnTo=${encodeURIComponent(SCENARIO_EDIT_RETURN_TO_YOUR_SCENARIOS)}`
+      : ''
+
   const ch = story.character
   if (ch) {
     const seg = ch.slug || ch.id
-    return `/characters/${encodeURIComponent(seg)}/edit-scenario/${encodeURIComponent(story.id)}`
+    return `/characters/${encodeURIComponent(seg)}/edit-scenario/${encodeURIComponent(story.id)}${query}`
   }
 
-  return `/stories/${encodeURIComponent(story.id)}/edit`
+  return `/stories/${encodeURIComponent(story.id)}/edit${query}`
 }
 
 export const scenarioStatusPillClass = (story: StoryListRecord) => {
