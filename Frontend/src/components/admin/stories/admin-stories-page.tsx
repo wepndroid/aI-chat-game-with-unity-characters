@@ -3,6 +3,8 @@
 import AdminPageShell from '@/components/shared/admin-page-shell'
 import AdminModalDialog from '@/components/ui-elements/admin-modal-dialog'
 import { AdminVrmMetricHeartIcon } from '@/components/ui-elements/admin-vrm-metric-icons'
+import { StoryBodyMarkupPreview } from '@/lib/story-body-markup-preview'
+import { scenarioTypeBadgeClass, scenarioTypeDisplayLabel } from '@/lib/story-scenario-types'
 import { deleteStory, listAdminStories, moderateStory, type StoryListRecord } from '@/lib/story-api'
 import Link from 'next/link'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -58,12 +60,128 @@ const StorySettingsGearIcon = () => (
 
 const STORY_SETTINGS_MENU_MIN_WIDTH_PX = 200
 
+const AdminStoryPreviewModal = ({ story, onClose }: { story: StoryListRecord; onClose: () => void }) => {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  const setupRaw = story.scenarioStory?.trim() ?? ''
+  const chatRaw = story.scenarioChat?.trim() ?? ''
+  const hasSplitContent = setupRaw.length > 0 || chatRaw.length > 0
+  const fallbackPreview = story.bodyPreview.replace(/\.\.\.$/, '').trim()
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto overscroll-contain p-4 py-8 sm:items-center sm:py-10"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose()
+        }
+      }}
+    >
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" aria-hidden="true" />
+      <div
+        className="relative z-10 flex max-h-[min(90vh,880px)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-white/15 bg-[#0f1218] shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="admin-story-preview-title"
+      >
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-white/10 px-5 py-4">
+          <div className="min-w-0">
+            <h2 id="admin-story-preview-title" className="font-[family-name:var(--font-heading)] text-lg font-normal leading-snug text-white">
+              {story.title}
+            </h2>
+            <p className="mt-1 text-sm text-[#8ea0bf]">
+              {story.author.username}
+              {story.character ? (
+                <>
+                  {' '}
+                  ·{' '}
+                  <span className="text-[#a8b6d0]">{story.character.name}</span>
+                </>
+              ) : (
+                <span className="text-amber-200/80"> · No character linked</span>
+              )}
+            </p>
+            {story.scenarioType ? (
+              <span
+                className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] ${scenarioTypeBadgeClass(story.scenarioType)}`}
+              >
+                {scenarioTypeDisplayLabel(story.scenarioType)}
+              </span>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="shrink-0 rounded-lg border border-white/15 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-[#c8d4e8] transition hover:bg-white/5"
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          {hasSplitContent ? (
+            <div className="grid min-w-0 gap-5 md:grid-cols-2 md:items-start">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.11em] text-[#f59e0b]">Story (setting)</p>
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-white/85 [overflow-wrap:anywhere]">
+                  {setupRaw || '—'}
+                </p>
+              </div>
+              <div className="min-w-0 rounded-md border border-white/10 bg-[#121010] p-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.11em] text-[#f59e0b]">Chat &amp; explanation</p>
+                <div className="mt-3 min-w-0">
+                  <StoryBodyMarkupPreview
+                    text={chatRaw || '—'}
+                    scenarioType={story.scenarioType}
+                    className="text-sm leading-relaxed"
+                  />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.11em] text-white/45">Preview</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-white/80 [overflow-wrap:anywhere]">
+                {fallbackPreview.length > 0 ? fallbackPreview : 'No scenario text on file.'}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {story.character ? (
+          <div className="shrink-0 border-t border-white/10 px-5 py-3">
+            <Link
+              href={`/characters/${encodeURIComponent(story.character.slug || story.character.id)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm text-ember-300 underline-offset-2 transition hover:text-ember-200 hover:underline"
+            >
+              Open character page in new tab
+            </Link>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 type AdminStoryRowActionsProps = {
   storyRow: StoryListRecord
   rowBusy: boolean
   onApprove: (storyId: string) => void
   onOpenReject: (row: StoryListRecord) => void
   onRequestDelete: (storyId: string, title: string) => void
+  onOpenPreview: (row: StoryListRecord) => void
 }
 
 const AdminStoryRowActions = ({
@@ -71,7 +189,8 @@ const AdminStoryRowActions = ({
   rowBusy,
   onApprove,
   onOpenReject,
-  onRequestDelete
+  onRequestDelete,
+  onOpenPreview
 }: AdminStoryRowActionsProps) => {
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false)
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null)
@@ -150,19 +269,14 @@ const AdminStoryRowActions = ({
 
   return (
     <div className="inline-flex items-center gap-0.5">
-      <Link
-        href={
-          storyRow.character
-            ? `/characters/${encodeURIComponent(storyRow.character.slug || storyRow.character.id)}`
-            : '/characters'
-        }
-        target="_blank"
-        rel="noreferrer"
+      <button
+        type="button"
         className={storyActionLinkClassName}
-        aria-label={`Open story ${storyRow.title}`}
+        aria-label={`Preview scenario: ${storyRow.title}`}
+        onClick={() => onOpenPreview(storyRow)}
       >
         <StoryEyeIcon />
-      </Link>
+      </button>
 
       {showSettingsGear ? (
         <div className="inline-flex" ref={menuAnchorRef}>
@@ -267,6 +381,7 @@ const AdminStoriesPage = () => {
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{ id: string; title: string } | null>(null)
   const [rejectModal, setRejectModal] = useState<{ id: string; title: string } | null>(null)
   const [rejectReasonInput, setRejectReasonInput] = useState('')
+  const [previewStory, setPreviewStory] = useState<StoryListRecord | null>(null)
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -463,6 +578,10 @@ const AdminStoriesPage = () => {
         confirmVariant="danger"
       />
 
+      {previewStory && typeof document !== 'undefined'
+        ? createPortal(<AdminStoryPreviewModal story={previewStory} onClose={() => setPreviewStory(null)} />, document.body)
+        : null}
+
       {rejectModal && typeof document !== 'undefined'
         ? createPortal(
           <div
@@ -591,6 +710,7 @@ const AdminStoriesPage = () => {
                           onApprove={handleApprove}
                           onOpenReject={openRejectModal}
                           onRequestDelete={requestDeleteStory}
+                          onOpenPreview={setPreviewStory}
                         />
                       </td>
                     </tr>
