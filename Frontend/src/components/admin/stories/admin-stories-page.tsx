@@ -5,6 +5,7 @@ import AdminModalDialog from '@/components/ui-elements/admin-modal-dialog'
 import { AdminVrmMetricHeartIcon } from '@/components/ui-elements/admin-vrm-metric-icons'
 import { StoryBodyMarkupPreview } from '@/lib/story-body-markup-preview'
 import { scenarioTypeBadgeClass, scenarioTypeDisplayLabel } from '@/lib/story-scenario-types'
+import { ADMIN_OVERVIEW_REFRESH_EVENT } from '@/lib/admin-overview-events'
 import { deleteStory, listAdminStories, moderateStory, type StoryListRecord } from '@/lib/story-api'
 import Link from 'next/link'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -449,6 +450,7 @@ const AdminStoriesPage = () => {
       try {
         await deleteStory(storyId)
         await loadStories()
+        window.dispatchEvent(new Event(ADMIN_OVERVIEW_REFRESH_EVENT))
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Failed to delete story.')
       } finally {
@@ -464,6 +466,7 @@ const AdminStoriesPage = () => {
       try {
         await moderateStory(storyId, { decision: 'approve' })
         await loadStories()
+        window.dispatchEvent(new Event(ADMIN_OVERVIEW_REFRESH_EVENT))
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Failed to approve.')
       } finally {
@@ -499,6 +502,7 @@ const AdminStoriesPage = () => {
         await moderateStory(storyId, { decision: 'reject', rejectReason: reason })
         setRejectModal(null)
         await loadStories()
+        window.dispatchEvent(new Event(ADMIN_OVERVIEW_REFRESH_EVENT))
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Failed to reject.')
       } finally {

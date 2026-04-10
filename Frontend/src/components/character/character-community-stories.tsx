@@ -310,16 +310,19 @@ const CharacterCommunityStories = ({
               <article key={story.id} className="min-w-0 overflow-x-hidden rounded-md border border-white/10 bg-[#1a1213] p-5 md:p-6">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <h3 className="min-w-0 max-w-full font-[family-name:var(--font-heading)] text-[36px] font-semibold italic uppercase leading-none text-white [overflow-wrap:anywhere]">
-                        {story.title}
-                      </h3>
+                    <div className="flex min-w-0 flex-col gap-1.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/50">
+                        {(story.character?.name ?? character.name).trim()}
+                      </p>
                       <span
-                        className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] ${scenarioBadge}`}
+                        className={`inline-flex w-fit rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] ${scenarioBadge}`}
                       >
                         {scenarioLabel}
                       </span>
                     </div>
+                    <h3 className="mt-3 min-w-0 max-w-full font-[family-name:var(--font-heading)] text-[36px] font-semibold italic uppercase leading-none text-white [overflow-wrap:anywhere]">
+                      {story.title}
+                    </h3>
                     <p className="mt-2 text-[9px] font-semibold uppercase tracking-[0.09em] text-white/45">
                       Created by {story.author.username}
                     </p>

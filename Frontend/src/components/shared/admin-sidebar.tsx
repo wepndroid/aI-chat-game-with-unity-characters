@@ -119,6 +119,7 @@ const AdminSidebar = ({ activeKey, className }: AdminSidebarProps) => {
   const { sessionUser, logoutUser } = useAuth()
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [pendingReviewCount, setPendingReviewCount] = useState<number | null>(null)
+  const [pendingStoriesCount, setPendingStoriesCount] = useState<number | null>(null)
   const [newOfficialVrmsCount, setNewOfficialVrmsCount] = useState<number | null>(null)
   const [newCommunityVrmsCount, setNewCommunityVrmsCount] = useState<number | null>(null)
   const [signOutError, setSignOutError] = useState<string | null>(null)
@@ -126,13 +127,20 @@ const AdminSidebar = ({ activeKey, className }: AdminSidebarProps) => {
   const syncOverviewBadges = useCallback(async () => {
     try {
       const payload = await apiGet<{
-        data: { pendingCharacters: number; newOfficialVrmsCount: number; newCommunityVrmsCount: number }
+        data: {
+          pendingCharacters: number
+          pendingStories: number
+          newOfficialVrmsCount: number
+          newCommunityVrmsCount: number
+        }
       }>('/stats/overview')
       setPendingReviewCount(payload.data.pendingCharacters)
+      setPendingStoriesCount(payload.data.pendingStories)
       setNewOfficialVrmsCount(payload.data.newOfficialVrmsCount)
       setNewCommunityVrmsCount(payload.data.newCommunityVrmsCount)
     } catch {
       setPendingReviewCount(null)
+      setPendingStoriesCount(null)
       setNewOfficialVrmsCount(null)
       setNewCommunityVrmsCount(null)
     }
@@ -204,7 +212,8 @@ const AdminSidebar = ({ activeKey, className }: AdminSidebarProps) => {
             id: 'stories',
             label: 'Stories',
             href: '/admin/stories',
-            icon: <BookOpenIcon />
+            icon: <BookOpenIcon />,
+            badgeText: pendingStoriesCount !== null ? String(pendingStoriesCount) : undefined
           }
         ]
       },
@@ -227,7 +236,7 @@ const AdminSidebar = ({ activeKey, className }: AdminSidebarProps) => {
         entryList: [{ id: 'global-settings', label: 'Global Settings', href: '/admin/global-settings', icon: <CogIcon /> }]
       }
     ],
-    [pendingReviewCount, newOfficialVrmsCount, newCommunityVrmsCount]
+    [pendingReviewCount, pendingStoriesCount, newOfficialVrmsCount, newCommunityVrmsCount]
   )
 
   const handleSignOut = async () => {

@@ -275,7 +275,8 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
       activePatrons,
       totalViewsResult,
       dau7dRecords,
-      dau30dRecords
+      dau30dRecords,
+      pendingStories
     ] = await prisma.$transaction([
       prisma.user.count(),
       prisma.user.count({
@@ -348,6 +349,12 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
         distinct: ['userId'],
         select: {
           userId: true
+        }
+      }),
+      prisma.storyPost.count({
+        where: {
+          publicationStatus: 'PUBLISHED',
+          moderationStatus: 'PENDING'
         }
       })
     ])
@@ -471,6 +478,7 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
         totalCharacters,
         approvedCharacters,
         pendingCharacters,
+        pendingStories,
         newOfficialVrmsCount,
         newCommunityVrmsCount,
         totalReviews,
