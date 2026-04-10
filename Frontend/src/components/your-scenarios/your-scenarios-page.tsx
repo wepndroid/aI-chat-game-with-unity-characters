@@ -12,7 +12,7 @@ import { useAuth } from '@/components/providers/auth-provider'
 import { acknowledgeStoryRejections, listStories, type StoryListRecord } from '@/lib/story-api'
 import Image from 'next/image'
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const ScenarioCharacterThumb = ({
   previewImageUrl,
@@ -54,16 +54,23 @@ const ScenarioCharacterThumb = ({
 
 const YourScenariosPage = () => {
   const { sessionUser, isAuthLoading, refreshSessionUser } = useAuth()
+  const sessionUserId = sessionUser?.id
   const [stories, setStories] = useState<StoryListRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  /** One-shot per user session: acknowledging + refreshSessionUser must not re-run on every list refetch (stories dep). */
+  const didAcknowledgeRejectionsRef = useRef(false)
+
+  useEffect(() => {
+    didAcknowledgeRejectionsRef.current = false
+  }, [sessionUserId])
 
   useEffect(() => {
     if (isAuthLoading) {
       return
     }
 
-    if (!sessionUser) {
+    if (!sessionUserId) {
       setIsLoading(false)
       setStories([])
       return
@@ -98,10 +105,10 @@ const YourScenariosPage = () => {
     return () => {
       isCancelled = true
     }
-  }, [sessionUser, isAuthLoading])
+  }, [sessionUserId, isAuthLoading])
 
   useEffect(() => {
-    if (!sessionUser || isLoading) {
+    if (!sessionUserId || isLoading || didAcknowledgeRejectionsRef.current) {
       return
     }
 
@@ -113,20 +120,16 @@ const YourScenariosPage = () => {
       return
     }
 
-    let cancelled = false
+    didAcknowledgeRejectionsRef.current = true
 
     void acknowledgeStoryRejections()
       .then(() => {
-        if (!cancelled) {
-          void refreshSessionUser()
-        }
+        void refreshSessionUser()
       })
-      .catch(() => {})
-
-    return () => {
-      cancelled = true
-    }
-  }, [sessionUser, isLoading, stories, refreshSessionUser])
+      .catch(() => {
+        didAcknowledgeRejectionsRef.current = false
+      })
+  }, [sessionUserId, isLoading, stories, refreshSessionUser])
 
   return (
     <main className="relative overflow-x-hidden bg-[#030303] text-white">
