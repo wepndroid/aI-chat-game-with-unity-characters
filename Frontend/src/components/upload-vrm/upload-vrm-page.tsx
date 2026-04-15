@@ -3,10 +3,10 @@
 import AccountSideMenu from '@/components/shared/account-side-menu'
 import MaintenanceWorkspaceGate from '@/components/shared/maintenance-workspace-gate'
 import { useAuth } from '@/components/providers/auth-provider'
-import PreviewImageDropzone from '@/components/ui-elements/preview-image-dropzone'
 import UploadDropzone from '@/components/ui-elements/upload-dropzone'
 import FirstMessagePreviewBox from '@/components/ui-elements/first-message-preview-box'
 import UploadField from '@/components/ui-elements/upload-field'
+import VrmLivePreview from '@/components/ui-elements/vrm-live-preview'
 import { FIRST_MESSAGE_MAX_LENGTH } from '@/lib/first-message-preview'
 import {
   createCharacter,
@@ -55,8 +55,7 @@ const UploadVrmPage = () => {
   const [vrmFile, setVrmFile] = useState<File | null>(null)
   const [previewImageFile, setPreviewImageFile] = useState<File | null>(null)
   const [selectedVrmFileName, setSelectedVrmFileName] = useState<string | null>(null)
-  /** Preview URL from server (edit) or empty (new upload); used to revert after picking a replacement file. */
-  const [baselinePreviewImageUrl, setBaselinePreviewImageUrl] = useState('')
+  const [localCapturedPreviewUrl, setLocalCapturedPreviewUrl] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isEditLoading, setIsEditLoading] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
@@ -141,7 +140,12 @@ const UploadVrmPage = () => {
       setVrmFile(null)
       setPreviewImageFile(null)
       setSelectedVrmFileName(null)
-      setBaselinePreviewImageUrl('')
+      setLocalCapturedPreviewUrl((previousUrl) => {
+        if (previousUrl) {
+          URL.revokeObjectURL(previousUrl)
+        }
+        return null
+      })
       setErrorMessage(null)
       setStatusMessage(null)
       setIsEditLoading(false)
@@ -165,6 +169,12 @@ const UploadVrmPage = () => {
         setVrmFile(null)
         setPreviewImageFile(null)
         setSelectedVrmFileName(null)
+        setLocalCapturedPreviewUrl((previousUrl) => {
+          if (previousUrl) {
+            URL.revokeObjectURL(previousUrl)
+          }
+          return null
+        })
 
         const loadedPreviewUrl = (payload.data.previewImageUrl ?? '').trim()
 
@@ -179,7 +189,6 @@ const UploadVrmPage = () => {
           exampleDialogs: payload.data.exampleDialogs ?? '',
           firstMessageText: payload.data.firstMessage ?? ''
         })
-        setBaselinePreviewImageUrl(loadedPreviewUrl)
       } catch (error) {
         if (!isCancelled) {
           setErrorMessage(error instanceof Error ? error.message : 'Failed to load character for editing.')
@@ -195,6 +204,14 @@ const UploadVrmPage = () => {
       isCancelled = true
     }
   }, [editCharacterId, isEditing])
+
+  useEffect(() => {
+    return () => {
+      if (localCapturedPreviewUrl) {
+        URL.revokeObjectURL(localCapturedPreviewUrl)
+      }
+    }
+  }, [localCapturedPreviewUrl])
 
   const handleSave = async (event: React.FormEvent<HTMLFormElement> | null, mode: SaveMode) => {
     event?.preventDefault()
@@ -399,6 +416,12 @@ const UploadVrmPage = () => {
       setVrmFile(null)
       setPreviewImageFile(null)
       setSelectedVrmFileName(null)
+      setLocalCapturedPreviewUrl((previousUrl) => {
+        if (previousUrl) {
+          URL.revokeObjectURL(previousUrl)
+        }
+        return null
+      })
       const nextPath = isAdmin ? '/admin/official-vrms' : '/your-characters'
       window.setTimeout(() => {
         router.push(nextPath)
@@ -452,21 +475,24 @@ const UploadVrmPage = () => {
                     openPickerInDialog={isEditing}
                   />
                 </div>
-                <div>
-                  <PreviewImageDropzone
-                    onFileSelect={(file) => {
-                      setPreviewImageFile(file)
-                    }}
-                    pendingImageFile={previewImageFile}
-                    existingImageUrl={formState.previewImageUrl.trim() || null}
-                    baselinePreviewImageUrl={baselinePreviewImageUrl}
-                    onRevertPreview={() => {
-                      setPreviewImageFile(null)
-                      handleFieldChange('previewImageUrl', baselinePreviewImageUrl)
-                    }}
-                  />
-                </div>
               </div>
+
+              <VrmLivePreview
+                selectedFile={vrmFile}
+                existingVrmUrl={formState.vroidFileUrl}
+                existingPreviewImageUrl={formState.previewImageUrl.trim() || null}
+                onThumbnailGenerated={(file) => {
+                  setPreviewImageFile(file)
+                  const nextObjectUrl = URL.createObjectURL(file)
+                  setLocalCapturedPreviewUrl((previousUrl) => {
+                    if (previousUrl) {
+                      URL.revokeObjectURL(previousUrl)
+                    }
+                    return nextObjectUrl
+                  })
+                  handleFieldChange('previewImageUrl', nextObjectUrl)
+                }}
+              />
 
 
               <div className="mt-5 grid gap-6 sm:grid-cols-2">
@@ -544,7 +570,7 @@ const UploadVrmPage = () => {
                       First message <span className="font-normal normal-case text-white/35">(required)</span>
                     </p>
                     <p id="first-message-help" className="mt-1.5 text-[11px] leading-relaxed text-white/40">
-                      Required plain text. Use <span className="text-white/55">*text*</span> for pink, <span className="text-white/55">"text"</span> for
+                      Required plain text. Use <span className="text-white/55">*text*</span> for pink, <span className="text-white/55">&quot;text&quot;</span> for
                       normal white, and <span className="text-white/55">**</span> for actions (same style as chat).
                     </p>
                   </div>

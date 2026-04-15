@@ -9,8 +9,7 @@ import { ADMIN_OVERVIEW_REFRESH_EVENT } from '@/lib/admin-overview-events'
 import { apiPost } from '@/lib/api-client'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useMemo, useState } from 'react'
 
 type CommunityVrmFilterValue = 'all' | 'live' | 'draft' | 'removed'
 
@@ -92,23 +91,11 @@ const CommunityVrmEyeIcon = () => (
   </svg>
 )
 
-const CommunityVrmSettingsGearIcon = () => (
-  <svg
-    viewBox="0 0 24 24"
-    className="size-[18px]"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden
-  >
-    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-    <circle cx="12" cy="12" r="3" />
+const CommunityVrmReviewIcon = () => (
+  <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+    <path d="M12 3v18M3 12h18" strokeLinecap="round" />
   </svg>
 )
-
-const COMMUNITY_VRM_SETTINGS_MENU_MIN_WIDTH_PX = 220
 
 const CommunityVrmTrashIcon = () => (
   <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
@@ -125,77 +112,6 @@ type CommunityVrmRowActionsProps = {
 
 const CommunityVrmRowActions = ({ characterRecord, busyCharacterId, onReview, onMarkRemoved }: CommunityVrmRowActionsProps) => {
   const rowBusy = busyCharacterId === characterRecord.id
-  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false)
-  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null)
-  const menuAnchorRef = useRef<HTMLDivElement>(null)
-  const menuPortalRef = useRef<HTMLDivElement>(null)
-
-  useLayoutEffect(() => {
-    if (!settingsMenuOpen) {
-      setMenuPosition(null)
-      return
-    }
-
-    const updatePosition = () => {
-      const anchor = menuAnchorRef.current
-      if (!anchor) {
-        return
-      }
-
-      const rect = anchor.getBoundingClientRect()
-      const left = Math.min(
-        Math.max(8, rect.right - COMMUNITY_VRM_SETTINGS_MENU_MIN_WIDTH_PX),
-        window.innerWidth - COMMUNITY_VRM_SETTINGS_MENU_MIN_WIDTH_PX - 8
-      )
-
-      setMenuPosition({
-        top: rect.bottom + 4,
-        left
-      })
-    }
-
-    updatePosition()
-    window.addEventListener('scroll', updatePosition, true)
-    window.addEventListener('resize', updatePosition)
-    return () => {
-      window.removeEventListener('scroll', updatePosition, true)
-      window.removeEventListener('resize', updatePosition)
-    }
-  }, [settingsMenuOpen])
-
-  useEffect(() => {
-    if (!settingsMenuOpen) {
-      return
-    }
-
-    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
-      const target = event.target as Node
-      if (menuAnchorRef.current?.contains(target)) {
-        return
-      }
-
-      if (menuPortalRef.current?.contains(target)) {
-        return
-      }
-
-      setSettingsMenuOpen(false)
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setSettingsMenuOpen(false)
-      }
-    }
-
-    document.addEventListener('mousedown', handlePointerDown)
-    document.addEventListener('touchstart', handlePointerDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown)
-      document.removeEventListener('touchstart', handlePointerDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [settingsMenuOpen])
 
   return (
     <div className="inline-flex items-center gap-2">
@@ -207,50 +123,15 @@ const CommunityVrmRowActions = ({ characterRecord, busyCharacterId, onReview, on
         <CommunityVrmEyeIcon />
       </Link>
 
-      <div className="inline-flex" ref={menuAnchorRef}>
-        <button
-          type="button"
-          disabled={rowBusy}
-          className={communityVrmActionButtonClassName}
-          aria-expanded={settingsMenuOpen}
-          aria-haspopup="menu"
-          aria-label={`Actions for ${characterRecord.name}`}
-          onClick={() => setSettingsMenuOpen((open) => !open)}
-        >
-          {rowBusy ? <span className="text-[10px] text-ember-300">…</span> : <CommunityVrmSettingsGearIcon />}
-        </button>
-      </div>
-
-      {settingsMenuOpen && menuPosition && typeof document !== 'undefined'
-        ? createPortal(
-            <div
-              ref={menuPortalRef}
-              role="menu"
-              style={{
-                position: 'fixed',
-                top: menuPosition.top,
-                left: menuPosition.left,
-                zIndex: 100,
-                minWidth: COMMUNITY_VRM_SETTINGS_MENU_MIN_WIDTH_PX
-              }}
-              className="rounded-lg border border-white/15 bg-[#12161c] py-1 shadow-lg shadow-black/40"
-            >
-              <button
-                type="button"
-                role="menuitem"
-                disabled={rowBusy}
-                className="flex w-full items-center px-3 py-2 text-left text-sm text-ember-300 transition hover:bg-white/5 hover:text-ember-200 disabled:cursor-not-allowed disabled:opacity-45"
-                onClick={() => {
-                  setSettingsMenuOpen(false)
-                  onReview(characterRecord.id)
-                }}
-              >
-                Back to review
-              </button>
-            </div>,
-            document.body
-          )
-        : null}
+      <button
+        type="button"
+        disabled={rowBusy}
+        className={communityVrmActionButtonClassName}
+        aria-label={`Send ${characterRecord.name} to review queue`}
+        onClick={() => onReview(characterRecord.id)}
+      >
+        {rowBusy ? <span className="text-[10px] text-ember-300">…</span> : <CommunityVrmReviewIcon />}
+      </button>
 
       <button
         type="button"

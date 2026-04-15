@@ -154,11 +154,11 @@ const HomePage = () => {
 
   return (
     <main className="relative overflow-x-hidden bg-[#030303] text-white">
-      <section className="relative isolate h-screen min-h-[100vh] border-b border-white/10">
-        <div className="absolute inset-0 h-screen bg-[url('/images/BannerBackground.png')] bg-cover bg-center bg-no-repeat" />
-        <div className="absolute inset-0 h-screen bg-[#070605]/52" />
-        <div className="absolute inset-0 h-screen bg-[radial-gradient(circle_at_50%_15%,rgba(244,99,19,0.28),transparent_34%),radial-gradient(circle_at_0%_5%,rgba(114,39,16,0.4),transparent_32%),radial-gradient(circle_at_100%_0%,rgba(212,75,9,0.28),transparent_30%)]" />
-        <div className="absolute inset-0 h-screen bg-[linear-gradient(to_bottom,rgba(3,3,3,0.2),rgba(3,3,3,0.78))]" />
+      <section className="relative isolate h-[70vh] min-h-[460px] max-h-[780px] border-b border-white/10">
+        <div className="absolute inset-0 bg-[url('/images/BannerBackground.png')] bg-cover bg-center bg-no-repeat" />
+        <div className="absolute inset-0 bg-[#070605]/52" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_15%,rgba(244,99,19,0.28),transparent_34%),radial-gradient(circle_at_0%_5%,rgba(114,39,16,0.4),transparent_32%),radial-gradient(circle_at_100%_0%,rgba(212,75,9,0.28),transparent_30%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(3,3,3,0.2),rgba(3,3,3,0.78))]" />
 
         <div className="relative z-10 mx-auto flex h-full w-full max-w-6xl items-start justify-center px-5 pb-14 pt-24 md:px-8 md:pt-28">
           <div className="max-w-3xl text-center">
