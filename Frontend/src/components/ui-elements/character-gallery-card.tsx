@@ -1,6 +1,8 @@
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import type { MouseEvent } from 'react'
+import type { KeyboardEvent, MouseEvent } from 'react'
+import { AI_GIRLFRIEND_ROUTE_BASE } from '@/lib/ai-girlfriend-route'
 
 type CharacterGalleryCardProps = {
   routeId: string
@@ -8,6 +10,8 @@ type CharacterGalleryCardProps = {
   likes: string
   chats: string
   gradientClassName: string
+  className?: string
+  tagline?: string
   description?: string
   previewImageUrl?: string | null
   isPatreonGated?: boolean
@@ -20,14 +24,6 @@ type CharacterGalleryCardProps = {
   suppressPendingModerationBadge?: boolean
 }
 
-const formatTierLabel = (tierCents?: number | null) => {
-  if (!tierCents || tierCents <= 0) {
-    return 'Patreon required'
-  }
-
-  return `EUR ${(tierCents / 100).toFixed(2)}+ tier`
-}
-
 const toTagChipLabel = (value?: string) => {
   if (!value) {
     return 'AI COMPANION'
@@ -38,6 +34,19 @@ const toTagChipLabel = (value?: string) => {
     .replace(/\s+/g, ' ')
     .slice(0, 24)
     .toUpperCase()
+}
+
+const toDescriptionPreview = (value?: string) => {
+  if (!value) {
+    return null
+  }
+
+  const normalized = value.trim().replace(/\s+/g, ' ')
+  if (!normalized) {
+    return null
+  }
+
+  return normalized.length > 96 ? `${normalized.slice(0, 96).trimEnd()}...` : normalized
 }
 
 const ChatBubbleIcon = ({ className = 'size-6' }: { className?: string }) => {
@@ -72,88 +81,118 @@ const CharacterGalleryCard = ({
   likes,
   chats,
   gradientClassName,
+  className = 'mx-auto w-3/4 overflow-hidden rounded-[26px] border border-[#8a4f2b]/80 bg-[#111111] shadow-[0_18px_34px_rgba(0,0,0,0.4)]',
+  tagline,
   description,
   previewImageUrl,
-  isPatreonGated = false,
-  hasGatedAccess = true,
-  requiredTierCents,
   onActionClick,
   moderationStatus,
   showModerationBadge = false,
   suppressPendingModerationBadge = false
 }: CharacterGalleryCardProps) => {
-  const isLocked = isPatreonGated && !hasGatedAccess
-  const actionHref = isLocked ? '/members' : `/characters/${routeId}`
+  const router = useRouter()
+  const actionHref = `${AI_GIRLFRIEND_ROUTE_BASE}/${routeId}`
   const moderationActionLabel =
-    showModerationBadge && moderationStatus === 'PENDING'
+    showModerationBadge && moderationStatus === 'PENDING' && !suppressPendingModerationBadge
       ? 'Waiting Approval'
       : showModerationBadge && moderationStatus === 'REJECTED'
         ? 'Rejected'
         : showModerationBadge && moderationStatus === 'DRAFT'
           ? 'Draft'
           : null
-  const actionLabel = moderationActionLabel ?? (isLocked ? 'Unlock on Patreon' : 'Chat Now')
+  const actionLabel = moderationActionLabel ?? 'Chat Now'
   const isStatusOnlyAction = moderationActionLabel !== null
-  const tagChipLabel = toTagChipLabel(description)
+  const tagChipLabel = toTagChipLabel(tagline)
+  const descriptionPreview = toDescriptionPreview(description)
+  const isCardClickable = !isStatusOnlyAction
+
+  const handleCardClick = () => {
+    if (!isCardClickable) {
+      return
+    }
+
+    router.push(actionHref)
+  }
+
+  const handleCardKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (!isCardClickable) {
+      return
+    }
+
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return
+    }
+
+    event.preventDefault()
+    router.push(actionHref)
+  }
 
   return (
-    <article className="mx-auto w-3/4 overflow-hidden rounded-[26px] border border-[#8a4f2b]/80 bg-[#111111] shadow-[0_18px_34px_rgba(0,0,0,0.4)]">
+    <article
+      className={`group transition duration-200 ease-out ${isCardClickable ? 'cursor-pointer hover:-translate-y-1' : ''} ${className}`}
+      onClick={isCardClickable ? handleCardClick : undefined}
+      onKeyDown={isCardClickable ? handleCardKeyDown : undefined}
+      tabIndex={isCardClickable ? 0 : undefined}
+      role={isCardClickable ? 'link' : undefined}
+      aria-label={isCardClickable ? `${actionLabel} for ${name}` : undefined}
+    >
       <div className={`relative aspect-[5/8.7] w-full ${previewImageUrl ? 'bg-black' : `bg-gradient-to-b ${gradientClassName}`}`}>
         {previewImageUrl ? (
           <>
-            <div className="absolute inset-x-0 top-0 h-[89%]">
+            <div className="absolute inset-0">
               <Image
                 src={previewImageUrl}
                 alt={`${name} preview`}
                 fill
                 unoptimized
                 sizes="(min-width: 1024px) 22vw, (min-width: 640px) 45vw, 92vw"
-                className="object-contain object-center"
+                className="object-cover object-center transition duration-300 ease-out group-hover:scale-[1.04] group-focus-within:scale-[1.04]"
               />
             </div>
             <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-black/10 to-transparent" />
           </>
         ) : null}
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_8%,rgba(255,255,255,0.26),transparent_52%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0)_38%,rgba(255,190,140,0.12)_100%)] opacity-0 transition duration-200 ease-out group-hover:opacity-100 group-focus-within:opacity-100" />
 
-        <div className="absolute right-3 top-3 flex items-center gap-2">
-          <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#b1774b]/70 bg-black/45 px-2 text-[17px] font-semibold text-white">
+        <div className="absolute right-2 top-2 flex items-center gap-1.5 sm:right-3 sm:top-3 sm:gap-2">
+          <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#b1774b]/70 bg-black/45 px-2.5 text-[15px] font-semibold text-white sm:h-7 sm:px-2 sm:text-[17px]">
             <span className="text-[#f6b577]">
-              <ChatBubbleIcon className="size-[18px]" />
+              <ChatBubbleIcon className="size-4 sm:size-[18px]" />
             </span>
             {chats}
           </span>
-          <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#b1774b]/70 bg-black/45 px-2 text-[17px] font-semibold text-white">
+          <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#b1774b]/70 bg-black/45 px-2.5 text-[15px] font-semibold text-white sm:h-7 sm:px-2 sm:text-[17px]">
             <span className="text-[#f6b577]">
-              <HeartOutlineIcon className="size-[18px]" />
+              <HeartOutlineIcon className="size-4 sm:size-[18px]" />
             </span>
             {likes}
           </span>
         </div>
-        {isPatreonGated ? (
-          <div className="absolute left-3 top-3 rounded-full border border-white/20 bg-black/50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-white/90">
-            {isLocked ? `Locked | ${formatTierLabel(requiredTierCents)}` : 'Patreon unlocked'}
-          </div>
-        ) : null}
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#f28b45]/95 via-[#f28b45]/60 to-transparent px-5 pb-6 pt-20">
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#f28b45]/95 via-[#f28b45]/60 to-transparent px-3 pb-4 pt-12 sm:px-4 sm:pb-5 sm:pt-16">
           <div className="flex justify-center">
-            <span className="inline-flex h-6 items-center rounded-md border border-white/30 bg-white/15 px-2 text-[10px] font-bold uppercase tracking-[0.1em] text-white/95">
+            <span className="inline-flex max-w-[min(100%,15rem)] min-h-7 items-center justify-center rounded-lg border border-white/25 bg-white/12 px-2 py-1 text-center text-[11px] font-bold uppercase leading-none tracking-[0.08em] text-white/92 sm:min-h-5 sm:px-1.5 sm:py-0.5 sm:text-[9px]">
               {tagChipLabel}
             </span>
           </div>
-          <p className="mt-2 text-center font-[family-name:var(--font-heading)] text-[16px] font-normal italic leading-none tracking-[-0.01em] text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.5)]">
+          <p className="mt-2 text-center font-[family-name:var(--font-heading)] text-[21px] font-black leading-[0.95] tracking-[-0.03em] text-white drop-shadow-[0_4px_10px_rgba(0,0,0,0.55)] sm:mt-1.5 sm:text-[20px]">
             {name}
           </p>
-          <div className="mt-4 flex justify-center">
+          {descriptionPreview ? (
+            <p className="mt-2 line-clamp-3 text-center text-[15px] leading-5 text-white/86 sm:mt-1.5 sm:line-clamp-2 sm:text-[14px] sm:leading-5">
+              {descriptionPreview}
+            </p>
+          ) : null}
+          <div className="mt-3 flex justify-center sm:mt-3">
             {isStatusOnlyAction ? (
-              <span className="inline-flex h-[37px] min-w-[147px] items-center justify-center rounded-xl border border-black/20 bg-[#201410]/90 px-4 font-[family-name:var(--font-heading)] text-[12px] font-semibold italic uppercase leading-none tracking-[0.02em] text-white/90">
+              <span className="inline-flex h-[40px] min-w-[132px] items-center justify-center rounded-xl border border-black/20 bg-[#201410]/90 px-4 font-[family-name:var(--font-heading)] text-[13px] font-semibold italic uppercase leading-none tracking-[0.03em] text-white/90 sm:h-[32px] sm:min-w-[124px] sm:px-3 sm:text-[12px]">
                 {actionLabel}
               </span>
             ) : (
               <Link
                 href={actionHref}
                 onClick={onActionClick}
-                className="inline-flex h-[37px] min-w-[147px] items-center justify-center rounded-xl border border-black/20 bg-[#201410]/90 px-4 font-[family-name:var(--font-heading)] text-[12px] font-semibold italic uppercase leading-none tracking-[0.02em] text-white transition hover:bg-[#2a1a14]"
+                className="relative z-10 inline-flex h-[42px] min-w-[132px] items-center justify-center rounded-xl border border-[#ffd1a5]/20 bg-[linear-gradient(135deg,rgba(47,23,16,0.96),rgba(28,16,12,0.96))] px-4 font-[family-name:var(--font-heading)] text-[13px] font-semibold uppercase leading-none tracking-[0.08em] text-white shadow-[0_10px_24px_rgba(20,10,8,0.28)] transition duration-200 ease-out hover:-translate-y-0.5 hover:border-[#f6b577]/65 hover:bg-[linear-gradient(135deg,rgba(92,40,20,0.98),rgba(48,23,14,0.98))] hover:text-[#fff4e8] hover:shadow-[0_14px_28px_rgba(54,24,12,0.42)] sm:h-[32px] sm:min-w-[124px] sm:px-3 sm:text-[12px]"
                 aria-label={`${actionLabel} for ${name}`}
               >
                 {actionLabel}

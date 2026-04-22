@@ -11,13 +11,16 @@ type UploadDropzoneProps = {
   existingVrmUrl?: string | null
   /** If true, clicking the zone opens a dialog; file is chosen inside the dialog (edit flow). */
   openPickerInDialog?: boolean
+  /** Optional className override for the tile container. */
+  className?: string
 }
 
 const UploadDropzone = ({
   onFileSelect,
   selectedFileName,
   existingVrmUrl,
-  openPickerInDialog = false
+  openPickerInDialog = false,
+  className
 }: UploadDropzoneProps) => {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const dialogInputRef = useRef<HTMLInputElement>(null)
@@ -41,26 +44,27 @@ const UploadDropzone = ({
           ? selectedFileName
           : showExistingState
             ? 'VRM on file'
-            : 'Drop your .VRM file here'}
+            : 'Upload VRM (.vrm)'}
       </p>
       {showExistingState && !showNewFile ? (
         <p className="mt-1 max-w-full truncate px-2 text-sm font-medium text-ember-200/90" title={existingLabel ?? undefined}>
           {existingLabel}
         </p>
       ) : null}
-      <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-white/45">
+      <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-white/45">Required character model</p>
+      <p className="mt-1 text-[10px] text-white/40">
         {openPickerInDialog
           ? showNewFile
-            ? 'New file selected — click to change'
+            ? 'Click to change the selected .VRM file'
             : showExistingState
-              ? 'Click to choose a different VRM'
+              ? 'Click to choose a different .VRM file'
               : 'Click to select a .VRM file'
-          : 'Max file size: 100MB'}
+          : 'Click to select a .VRM file'}
       </p>
     </>
   )
 
-  const zoneClassName = `${ASSET_PREVIEW_SQUARE_CLASS} flex cursor-pointer flex-col items-center justify-center text-center`
+  const zoneClassName = `${ASSET_PREVIEW_SQUARE_CLASS} flex cursor-pointer flex-col items-center justify-center text-center ${className ?? ''}`
 
   if (openPickerInDialog) {
     return (
@@ -72,7 +76,9 @@ const UploadDropzone = ({
           ref={dialogRef}
           className="w-[min(92vw,420px)] rounded-lg border border-white/15 bg-[#141010] p-6 text-white shadow-xl [&::backdrop]:bg-black/70"
           onClose={() => {
-            dialogInputRef.current && (dialogInputRef.current.value = '')
+            if (dialogInputRef.current) {
+              dialogInputRef.current.value = ''
+            }
           }}
         >
           <p className="font-[family-name:var(--font-heading)] text-xl font-normal italic text-white">Select VRM file</p>

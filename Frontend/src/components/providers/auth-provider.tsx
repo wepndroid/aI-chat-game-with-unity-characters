@@ -2,8 +2,9 @@
 
 import { getCurrentSessionUser, loginWithPassword, logoutSession, registerWithPassword } from '@/lib/auth-api'
 import type { LoginAuthPayload, RegisterAuthPayload } from '@/lib/auth-api'
+import { ApiRequestError } from '@/lib/api-client'
 import type { SessionUser } from '@/lib/session-user'
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 
 type AuthActionResult = {
   success: boolean
@@ -44,31 +45,48 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null)
   const [isAuthLoading, setIsAuthLoading] = useState(true)
   const [authErrorMessage, setAuthErrorMessage] = useState<string | null>(null)
+  const refreshInFlightPromiseRef = useRef<Promise<void> | null>(null)
 
   const refreshSessionUser = useCallback(async () => {
-    try {
-      const payload = await getCurrentSessionUser()
-      setSessionUser(payload.data.user)
-      setAuthErrorMessage(null)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to load session user.'
+    if (refreshInFlightPromiseRef.current) {
+      return refreshInFlightPromiseRef.current
+    }
 
-      if (isAuthMissingSessionError(message)) {
-        setSessionUser(null)
+    const refreshTask = (async () => {
+      try {
+        const payload = await getCurrentSessionUser()
+        setSessionUser(payload.user)
         setAuthErrorMessage(null)
-        return
-      }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to load session user.'
+        const isUnauthorized = error instanceof ApiRequestError && error.status === 401
 
-      setSessionUser(null)
-      setAuthErrorMessage(message)
+        if (isUnauthorized || isAuthMissingSessionError(message)) {
+          setSessionUser(null)
+          setAuthErrorMessage(null)
+          return
+        }
+
+        // Keep current session on transient failures so users are not logged out by network glitches.
+        setAuthErrorMessage(message)
+      } finally {
+        setIsAuthLoading(false)
+      }
+    })()
+
+    refreshInFlightPromiseRef.current = refreshTask
+
+    try {
+      await refreshTask
     } finally {
-      setIsAuthLoading(false)
+      if (refreshInFlightPromiseRef.current === refreshTask) {
+        refreshInFlightPromiseRef.current = null
+      }
     }
   }, [])
 
   useEffect(() => {
     refreshSessionUser().catch(() => {
-      setSessionUser(null)
       setIsAuthLoading(false)
     })
   }, [refreshSessionUser])

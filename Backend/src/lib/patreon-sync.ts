@@ -1,5 +1,6 @@
 import { EntitlementStatus } from '@prisma/client'
 import { decryptSecret, encryptSecret } from './crypto'
+import { markPatreonConversionForUser } from './landing-page-attribution'
 import { fetchPatreonIdentity, refreshPatreonAccessToken } from './patreon-client'
 import type { PatreonIdentityResponse, PatreonTokenPayload } from './patreon-client'
 import { prisma } from './prisma'
@@ -237,6 +238,11 @@ const syncPatreonMembership = async (input: SyncPatreonMembershipInput): Promise
       validFrom: now,
       validUntil: snapshot.nextChargeDate
     }
+  })
+
+  await markPatreonConversionForUser(input.userId, {
+    linked: true,
+    active: entitlementStatus === EntitlementStatus.ACTIVE
   })
 
   return {

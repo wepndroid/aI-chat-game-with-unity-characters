@@ -12,6 +12,7 @@ type VerificationEmailPayload = {
 type PasswordResetEmailPayload = {
   toEmail: string
   username: string
+  resetCode: string
   resetUrl: string
   expiresAt: Date
 }
@@ -138,17 +139,22 @@ class EnvironmentEmailService implements EmailService {
     const text = [
       `Hello ${payload.username},`,
       '',
-      'Use this link to reset your password:',
+      'Your password reset code is:',
+      payload.resetCode,
+      '',
+      'Open this page and paste the code to reset your password:',
       payload.resetUrl,
       '',
-      `This link expires at ${expiryLabel}.`,
+      `This code expires at ${expiryLabel}.`,
       'If you did not request this, you can ignore this message.'
     ].join('\n')
     const html = `
       <p>Hello ${payload.username},</p>
-      <p>Use this link to reset your password:</p>
+      <p>Your password reset code is:</p>
+      <p><strong style="font-size:20px; letter-spacing:2px;">${payload.resetCode}</strong></p>
+      <p>Open this page and paste the code to reset your password:</p>
       <p><a href="${payload.resetUrl}">${payload.resetUrl}</a></p>
-      <p>This link expires at ${expiryLabel}.</p>
+      <p>This code expires at ${expiryLabel}.</p>
       <p>If you did not request this, you can ignore this message.</p>
     `
 

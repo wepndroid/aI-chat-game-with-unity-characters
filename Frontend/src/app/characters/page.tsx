@@ -1,7 +1,18 @@
-import CharactersPage from '@/components/characters/characters-page'
+import type { Metadata } from 'next'
+import { redirect } from 'next/navigation'
 
-const CharactersRootPage = () => {
-  return <CharactersPage />
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: false
+  },
+  alternates: {
+    canonical: '/characters'
+  }
 }
 
-export default CharactersRootPage
+const CharactersLegacyPage = () => {
+  redirect('/ai-girlfriends')
+}
+
+export default CharactersLegacyPage

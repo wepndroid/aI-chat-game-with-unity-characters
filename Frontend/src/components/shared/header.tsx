@@ -2,20 +2,38 @@
 
 import AuthInputField from '@/components/ui-elements/auth-input-field'
 import { useAuth } from '@/components/providers/auth-provider'
+import { useWebglWarm } from '@/components/providers/webgl-warm-provider'
 import MaintenanceBanner from '@/components/shared/maintenance-banner'
 import { HeaderNotificationsBell } from '@/components/shared/header-notifications-bell'
 import { getGoogleOauthStartUrl, isGoogleOauthEnabled } from '@/lib/auth-api'
 import { AUTH_OPEN_SIGN_IN_MODAL_EVENT } from '@/lib/auth-events'
+import { trackLandingSignupClick } from '@/lib/landing-page-api'
+import { AI_GIRLFRIEND_ROUTE_BASE } from '@/lib/ai-girlfriend-route'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 
 const signInQueryFlagKey = 'openSignIn'
 const signUpQueryFlagKey = 'openSignUp'
 const signUpHashFlag = '#sign-up'
 const oauthQueryFlagKey = 'oauth'
 const oauthMessageQueryFlagKey = 'message'
+
+const primaryNavigationItems = [
+  {
+    href: '/',
+    label: 'Home'
+  },
+  {
+    href: AI_GIRLFRIEND_ROUTE_BASE,
+    label: 'AI Girlfriends'
+  },
+  {
+    href: '/play-demo',
+    label: 'Play'
+  }
+] as const
 
 const replaceHomeUrlWithoutQueryKeys = (keysToRemove: string[]) => {
   if (typeof window === 'undefined') {
@@ -55,8 +73,25 @@ const normalizeOAuthErrorMessage = (rawMessage: string | null) => {
 const Header = () => {
   const pathname = usePathname()
   const googleOauthEnabled = isGoogleOauthEnabled()
-  const { sessionUser, isAuthLoading, registerUser, loginUser, logoutUser, clearAuthError, refreshSessionUser } =
-    useAuth()
+  const { sessionUser, isAuthLoading, registerUser, loginUser, logoutUser, clearAuthError } = useAuth()
+  const warm = useWebglWarm()
+
+  const handlePlayNavClick = (event: ReactMouseEvent<HTMLAnchorElement>) => {
+    if (!sessionUser) {
+      return
+    }
+
+    if (
+      warm.tryOpenWarmPlay({
+        characterId: null,
+        characterSlug: null,
+        storyId: null
+      })
+    ) {
+      event.preventDefault()
+    }
+  }
+
   /** Closed on first paint so SSR and client match; open from URL in useEffect after hydrate. */
   const [isSignInModalOpen, setIsSignInModalOpen] = useState(false)
   const [isSignUpModalOpen, setIsSignUpModalOpen] = useState(false)
@@ -69,16 +104,19 @@ const Header = () => {
   const [isSigningIn, setIsSigningIn] = useState(false)
   const [isSigningUp, setIsSigningUp] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
   const [signInErrorMessage, setSignInErrorMessage] = useState<string | null>(null)
   const [signUpErrorMessage, setSignUpErrorMessage] = useState<string | null>(null)
+  const previousSignUpModalOpenRef = useRef(false)
 
   const handleOpenSignInModal = () => {
     clearAuthError()
     setSignInErrorMessage(null)
     setSignUpErrorMessage(null)
     setIsSignUpModalOpen(false)
+    setIsMobileMenuOpen(false)
     setIsSignInModalOpen(true)
 
     if (pathname === '/') {
@@ -98,6 +136,7 @@ const Header = () => {
     setIsSignInModalOpen(false)
     setSignInErrorMessage(null)
     setSignUpErrorMessage(null)
+    setIsMobileMenuOpen(false)
     setIsSignUpModalOpen(true)
 
     if (pathname === '/') {
@@ -122,6 +161,10 @@ const Header = () => {
     replaceHomeUrlWithoutQueryKeys([signUpQueryFlagKey])
   }
 
+  const handleCloseMobileMenu = () => {
+    setIsMobileMenuOpen(false)
+  }
+
   const handleModalContainerClick = (event: React.MouseEvent<HTMLDivElement>) => {
     if (event.currentTarget !== event.target) {
       return
@@ -131,6 +174,7 @@ const Header = () => {
   }
 
   const handleSignOut = async () => {
+    setIsMobileMenuOpen(false)
     setAccountMenuOpen(false)
     setIsSigningOut(true)
     await logoutUser()
@@ -138,12 +182,17 @@ const Header = () => {
   }
 
   useEffect(() => {
-    if (!sessionUser) {
+    if (!isMobileMenuOpen) {
       return
     }
 
-    void refreshSessionUser()
-  }, [pathname, sessionUser?.id, refreshSessionUser])
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [isMobileMenuOpen])
 
   useEffect(() => {
     if (!accountMenuOpen) {
@@ -170,6 +219,10 @@ const Header = () => {
 
   const handleSignInSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
+    if (isSigningIn) {
+      return
+    }
 
     const normalizedEmail = emailInputValue.trim().toLowerCase()
     const normalizedPassword = passwordInputValue.trim()
@@ -245,6 +298,7 @@ const Header = () => {
       setSignInErrorMessage(null)
       setSignUpErrorMessage(null)
       setIsSignUpModalOpen(false)
+      setIsMobileMenuOpen(false)
       setIsSignInModalOpen(true)
       if (pathname === '/') {
         const url = new URL(window.location.href)
@@ -265,6 +319,21 @@ const Header = () => {
 
   useEffect(() => {
     if (pathname !== '/') {
+      previousSignUpModalOpenRef.current = isSignUpModalOpen
+      return
+    }
+
+    if (isSignUpModalOpen && !previousSignUpModalOpenRef.current) {
+      void trackLandingSignupClick().catch(() => {
+        // Signup click analytics should never block opening the modal.
+      })
+    }
+
+    previousSignUpModalOpenRef.current = isSignUpModalOpen
+  }, [isSignUpModalOpen, pathname])
+
+  useEffect(() => {
+    if (pathname !== '/') {
       return
     }
 
@@ -279,17 +348,6 @@ const Header = () => {
 
     if (!shouldOpenSignIn && !shouldOpenSignUp && !shouldOpenSignUpByHash && !shouldHandleOAuthError) {
       return
-    }
-
-    if (shouldOpenSignUp || shouldOpenSignUpByHash) {
-      setIsSignUpModalOpen(true)
-      setIsSignInModalOpen(false)
-    } else {
-      setIsSignInModalOpen(true)
-      setIsSignUpModalOpen(false)
-    }
-    if (shouldHandleOAuthError && !shouldOpenSignUp) {
-      setSignInErrorMessage(normalizeOAuthErrorMessage(oauthMessage))
     }
 
     clearAuthError()
@@ -310,35 +368,77 @@ const Header = () => {
     const query = url.searchParams.toString()
     const next = query ? `${url.pathname}?${query}${url.hash}` : `${url.pathname}${url.hash}`
     window.history.replaceState({}, '', next)
+
+    queueMicrotask(() => {
+      if (shouldOpenSignUp || shouldOpenSignUpByHash) {
+        setIsSignUpModalOpen(true)
+        setIsSignInModalOpen(false)
+      } else {
+        setIsSignInModalOpen(true)
+        setIsSignUpModalOpen(false)
+      }
+
+      if (shouldHandleOAuthError && !shouldOpenSignUp) {
+        setSignInErrorMessage(normalizeOAuthErrorMessage(oauthMessage))
+      }
+    })
   }, [pathname, clearAuthError])
 
   return (
     <>
       <header className="fixed z-40 w-[100%] border-b border-white/10 bg-[#0b0b0b]/35 backdrop-blur-sm">
-        <div className="mx-auto w-full max-w-[1150px] px-5 py-4 md:px-8 md:py-5">
+        <div className="mx-auto w-full max-w-[1150px] px-4 py-3.5 md:px-7 md:py-4">
           <div className="flex items-center justify-between gap-3">
-            <Link href="/" className="inline-flex shrink-0 items-center text-white" aria-label="SecretWaifu home">
-              <Image
-                src="/images/SecretWaifu Logo White.svg"
-                alt="SecretWaifu logo"
-                width={164}
-                height={44}
-                className="h-9 w-auto"
-                priority
-                suppressHydrationWarning
-              />
-            </Link>
+            <div className="flex min-w-0 items-center gap-2.5">
+              <button
+                type="button"
+                className="inline-flex size-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-white transition hover:border-ember-400/50 hover:bg-white/[0.08] md:hidden"
+                aria-label={isMobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+                aria-expanded={isMobileMenuOpen}
+                aria-controls="mobile-site-menu"
+                onClick={() => {
+                  setAccountMenuOpen(false)
+                  setIsMobileMenuOpen((open) => !open)
+                }}
+              >
+                <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                  {isMobileMenuOpen ? (
+                    <path d="M6 6l12 12M18 6 6 18" strokeLinecap="round" strokeLinejoin="round" />
+                  ) : (
+                    <>
+                      <path d="M4 7h16" strokeLinecap="round" />
+                      <path d="M4 12h16" strokeLinecap="round" />
+                      <path d="M4 17h10" strokeLinecap="round" />
+                    </>
+                  )}
+                </svg>
+              </button>
 
-            <nav className="hidden items-center gap-9 text-xs font-semibold uppercase tracking-[0.2em] text-white/85 md:flex">
-              <Link href="/" className="transition hover:text-ember-300" aria-label="Go to home">
-                Home
+              <Link href="/" className="inline-flex min-w-0 shrink items-center text-white" aria-label="SecretWaifu home">
+                <Image
+                  src="/images/SecretWaifu Logo White.svg"
+                  alt="SecretWaifu logo"
+                  width={164}
+                  height={44}
+                  className="h-8 w-auto max-w-[150px] md:h-9 md:max-w-none"
+                  priority
+                  suppressHydrationWarning
+                />
               </Link>
-              <Link href="/play-demo" className="transition hover:text-ember-300" aria-label="Go to play page">
-                Play
-              </Link>
-              <Link href="/characters" className="transition hover:text-ember-300" aria-label="Go to characters">
-                Characters
-              </Link>
+            </div>
+
+            <nav className="hidden items-center gap-7 text-xs font-semibold uppercase tracking-[0.2em] text-white/85 md:flex">
+              {primaryNavigationItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={item.href === '/play-demo' ? handlePlayNavClick : undefined}
+                  className="transition hover:text-ember-300"
+                  aria-label={`Go to ${item.label.toLowerCase()}`}
+                >
+                  {item.label}
+                </Link>
+              ))}
               {sessionUser ? (
                 <Link href="/profile" className="transition hover:text-ember-300" aria-label="Go to account">
                   Account
@@ -352,16 +452,19 @@ const Header = () => {
             </nav>
 
             {sessionUser ? (
-              <div className="flex shrink-0 items-center gap-1.5 md:gap-2">
+              <div className="flex shrink-0 items-center gap-1 md:gap-1.5">
                 <HeaderNotificationsBell />
                 <div className="relative" ref={accountMenuRef}>
                   <button
                     type="button"
-                    className="flex items-center gap-2 rounded-full border border-white/20 bg-black/30 py-1 pl-1 pr-2 transition hover:border-white/35 hover:bg-black/45 md:pr-3"
+                    className="flex items-center gap-1.5 rounded-full border border-white/20 bg-black/30 py-0.5 pl-0.5 pr-1.5 transition hover:border-white/35 hover:bg-black/45 md:pr-2.5"
                     aria-expanded={accountMenuOpen}
                     aria-haspopup="menu"
                     aria-label="Account menu"
-                    onClick={() => setAccountMenuOpen((open) => !open)}
+                    onClick={() => {
+                      setIsMobileMenuOpen(false)
+                      setAccountMenuOpen((open) => !open)
+                    }}
                   >
                     <span className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-gradient-to-br from-ember-500/40 to-black text-sm font-bold uppercase text-white">
                       {sessionUser.avatarUrl ? (
@@ -377,12 +480,12 @@ const Header = () => {
                         sessionUser.username.slice(0, 1)
                       )}
                     </span>
-                    <span className="hidden max-w-[140px] truncate text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-white/85 md:inline">
+                    <span className="hidden max-w-[140px] truncate text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-white/85 md:inline">
                       {sessionUser.username}
                     </span>
                     <svg
                       viewBox="0 0 24 24"
-                      className={`hidden size-4 shrink-0 text-white/55 md:block ${accountMenuOpen ? 'rotate-180' : ''}`}
+                      className={`size-4 shrink-0 text-white/55 transition ${accountMenuOpen ? 'rotate-180' : ''}`}
                       fill="none"
                       stroke="currentColor"
                       strokeWidth="2"
@@ -402,56 +505,157 @@ const Header = () => {
                         </p>
                         <p className="mt-0.5 text-[10px] uppercase tracking-[0.06em] text-white/45">{sessionUser.role}</p>
                       </div>
+                      <Link
+                        href="/profile"
+                        role="menuitem"
+                        className="block px-3 py-2.5 text-left text-sm font-semibold uppercase tracking-[0.08em] text-white/75 transition hover:bg-white/[0.06]"
+                        onClick={() => setAccountMenuOpen(false)}
+                      >
+                        Profile
+                      </Link>
                       <button
                         type="button"
                         role="menuitem"
-                        className="w-full border-t border-white/10 px-3 py-2.5 text-left text-sm font-semibold uppercase tracking-[0.08em] text-white/75 transition hover:bg-white/[0.06] md:border-t-0"
+                        className="w-full border-t border-white/10 px-3 py-2.5 text-left text-sm font-semibold uppercase tracking-[0.08em] text-white/75 transition hover:bg-white/[0.06]"
                         onClick={() => void handleSignOut()}
                         disabled={isSigningOut}
                       >
-                        {isSigningOut ? 'Signing out…' : 'Sign out'}
+                        {isSigningOut ? 'Signing out...' : 'Sign out'}
                       </button>
                     </div>
                   ) : null}
                 </div>
               </div>
             ) : (
-              <button
-                type="button"
-                className="shrink-0 rounded-md border border-ember-500/65 bg-[#2b160f]/85 px-5 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-ember-100 transition hover:bg-[#3a1d13]"
-                aria-label="Open sign in modal"
-                onClick={handleOpenSignInModal}
-                disabled={isAuthLoading}
-              >
-                Sign In
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  className="hidden shrink-0 rounded-md border border-ember-500/65 bg-[#2b160f]/85 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-ember-100 transition hover:bg-[#3a1d13] md:inline-flex"
+                  aria-label="Open sign in modal"
+                  onClick={handleOpenSignInModal}
+                  disabled={isAuthLoading}
+                >
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex shrink-0 items-center rounded-full border border-ember-400/45 bg-ember-500/12 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ember-100 transition hover:bg-ember-500/18 md:hidden"
+                  aria-label="Open sign in modal"
+                  onClick={handleOpenSignInModal}
+                  disabled={isAuthLoading}
+                >
+                  Sign In
+                </button>
+              </div>
             )}
           </div>
 
-          <nav
-            className="mt-3 flex flex-wrap gap-x-5 gap-y-2 border-t border-white/10 pt-3 text-xs font-semibold uppercase tracking-[0.18em] text-white/85 md:hidden"
-            aria-label="Primary navigation"
-          >
-            <Link href="/" className="transition hover:text-ember-300" aria-label="Go to home">
-              Home
-            </Link>
-            <Link href="/play-demo" className="transition hover:text-ember-300" aria-label="Go to play page">
-              Play
-            </Link>
-            <Link href="/characters" className="transition hover:text-ember-300" aria-label="Go to characters">
-              Characters
-            </Link>
-            {sessionUser ? (
-              <Link href="/profile" className="transition hover:text-ember-300" aria-label="Go to account">
-                Account
-              </Link>
-            ) : null}
-            {sessionUser?.role === 'ADMIN' ? (
-              <Link href="/admin/dashboard" className="transition hover:text-ember-300" aria-label="Go to admin dashboard">
-                Admin
-              </Link>
-            ) : null}
-          </nav>
+          {isMobileMenuOpen ? (
+            <div id="mobile-site-menu" className="mt-3 border-t border-white/10 pt-3 md:hidden" aria-label="Mobile navigation">
+              <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] p-3 shadow-[0_18px_60px_rgba(0,0,0,0.35)]">
+                {sessionUser ? (
+                  <div className="mb-3 flex items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
+                    <span className="relative flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-gradient-to-br from-ember-500/40 to-black text-base font-bold uppercase text-white">
+                      {sessionUser.avatarUrl ? (
+                        <Image
+                          src={sessionUser.avatarUrl}
+                          alt=""
+                          width={48}
+                          height={48}
+                          unoptimized
+                          className="size-12 object-cover"
+                        />
+                      ) : (
+                        sessionUser.username.slice(0, 1)
+                      )}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold uppercase tracking-[0.12em] text-white">
+                        {sessionUser.username}
+                      </p>
+                      <p className="mt-1 text-sm text-white/55">Jump between account, stories, and your latest activity.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mb-3 rounded-2xl border border-ember-500/25 bg-ember-500/10 px-4 py-3">
+                    <p className="text-sm font-semibold uppercase tracking-[0.14em] text-white">Start chatting faster</p>
+                    <p className="mt-1 text-sm text-white/62">Sign in or create an account without leaving the page.</p>
+                  </div>
+                )}
+
+                <div className="grid gap-2">
+                  {primaryNavigationItems.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={(event) => {
+                        handleCloseMobileMenu()
+                        if (item.href === '/play-demo') {
+                          handlePlayNavClick(event)
+                        }
+                      }}
+                      className="group rounded-2xl border border-white/10 bg-black/25 px-4 py-3.5 transition hover:border-ember-400/40 hover:bg-black/35"
+                      aria-label={`Go to ${item.label.toLowerCase()}`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white">{item.label}</p>
+                        <svg
+                          viewBox="0 0 24 24"
+                          className="size-5 shrink-0 text-white/45 transition group-hover:translate-x-0.5 group-hover:text-ember-200"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          aria-hidden
+                        >
+                          <path d="M5 12h14" strokeLinecap="round" />
+                          <path d="m13 6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </div>
+                    </Link>
+                  ))}
+
+                  {sessionUser ? (
+                    <Link
+                      href="/profile"
+                      onClick={handleCloseMobileMenu}
+                      className="rounded-2xl border border-ember-500/30 bg-ember-500/10 px-4 py-3.5 transition hover:border-ember-400/50 hover:bg-ember-500/14"
+                      aria-label="Go to account"
+                    >
+                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white">Account</p>
+                    </Link>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <button
+                        type="button"
+                        className="rounded-2xl border border-ember-500/45 bg-ember-500/12 px-4 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-ember-100 transition hover:bg-ember-500/18"
+                        onClick={handleOpenSignInModal}
+                      >
+                        Sign In
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-2xl border border-white/15 bg-white/[0.04] px-4 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-white/[0.08]"
+                        onClick={handleOpenSignUpModal}
+                      >
+                        Sign Up
+                      </button>
+                    </div>
+                  )}
+
+                  {sessionUser?.role === 'ADMIN' ? (
+                    <Link
+                      href="/admin/dashboard"
+                      onClick={handleCloseMobileMenu}
+                      className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3.5 transition hover:border-ember-400/40 hover:bg-black/35"
+                      aria-label="Go to admin dashboard"
+                    >
+                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white">Admin</p>
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
         <MaintenanceBanner />
       </header>

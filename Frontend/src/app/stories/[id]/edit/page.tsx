@@ -1,5 +1,16 @@
+import type { Metadata } from 'next'
 import LegacyEditRedirect from '../legacy-edit-redirect'
 import { Suspense } from 'react'
+
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: false
+  },
+  alternates: {
+    canonical: '/stories'
+  }
+}
 
 const StoryEditLegacyRoute = () => {
   return (

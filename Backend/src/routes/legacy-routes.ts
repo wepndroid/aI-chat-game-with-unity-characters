@@ -233,10 +233,16 @@ legacyRoutes.get('/wp-json/characters/v1/info', async (request, response, next) 
         name: true,
         fullName: true,
         description: true,
-        personality: true,
-        scenario: true,
-        firstMessage: true,
-        exampleDialogs: true
+        characterCard: {
+          select: {
+            fullName: true,
+            description: true,
+            personality: true,
+            scenario: true,
+            firstMessage: true,
+            exampleDialogs: true
+          }
+        }
       }
     })
 
@@ -263,15 +269,17 @@ legacyRoutes.get('/wp-json/characters/v1/info', async (request, response, next) 
       return
     }
 
+    const persona = matchedCharacter.characterCard
+
     response.json({
       id: matchedCharacter.id,
       name: matchedCharacter.name,
-      fullname: matchedCharacter.fullName ?? '',
-      description: matchedCharacter.description ?? '',
-      personality: matchedCharacter.personality ?? '',
-      scenario: matchedCharacter.scenario ?? '',
-      first_message: matchedCharacter.firstMessage ?? '',
-      example_dialogs: matchedCharacter.exampleDialogs ?? ''
+      fullname: persona?.fullName ?? matchedCharacter.fullName ?? '',
+      description: persona?.description ?? matchedCharacter.description ?? '',
+      personality: persona?.personality ?? '',
+      scenario: persona?.scenario ?? '',
+      first_message: persona?.firstMessage ?? '',
+      example_dialogs: persona?.exampleDialogs ?? ''
     })
   } catch (error) {
     next(error)
@@ -280,75 +288,10 @@ legacyRoutes.get('/wp-json/characters/v1/info', async (request, response, next) 
 
 legacyRoutes.get('/wp-json/patreon/v2/verify-code', async (request, response, next) => {
   try {
-    const query = legacyVerifyCodeQuerySchema.parse(request.query)
-    const normalizedCode = query.code.toLowerCase()
-
-    const overrideCodeMap = parseLegacyCodeOverrides()
-    const overriddenTierCents = overrideCodeMap.get(normalizedCode)
-
-    if (overriddenTierCents) {
-      response.json({
-        status: `valid_${overriddenTierCents}`
-      })
-      return
-    }
-
-    const userList = await prisma.user.findMany({
-      include: {
-        patreonAccount: {
-          select: {
-            tierCents: true,
-            membershipStatus: true
-          }
-        },
-        entitlementGrants: {
-          where: {
-            source: 'PATREON',
-            status: EntitlementStatus.ACTIVE
-          },
-          select: {
-            tierCode: true
-          }
-        }
-      }
-    })
-
-    for (const user of userList) {
-      const generatedLegacyCode = buildLegacyAccessCode(user.id).toLowerCase()
-
-      if (generatedLegacyCode !== normalizedCode) {
-        continue
-      }
-
-      const membershipStatus = user.patreonAccount?.membershipStatus ?? ''
-
-      if (membershipStatus !== 'active_patron') {
-        response.json({
-          status: 'invalid'
-        })
-        return
-      }
-
-      const tierCents = resolveBestPatreonTierCents({
-        accountTierCents: user.patreonAccount?.tierCents ?? 0,
-        entitlementTierCodes: user.entitlementGrants.map((entitlement) => entitlement.tierCode)
-      })
-
-      if (tierCents <= 0) {
-        response.json({
-          status: 'invalid'
-        })
-        return
-      }
-
-      response.json({
-        status: `valid_${tierCents}`
-      })
-      return
-    }
-
-    response.json({
-      status: 'invalid'
+    legacyVerifyCodeQuerySchema.parse(request.query)
+    response.status(410).json({
+      status: 'invalid',
+      error: 'legacy_access_codes_disabled'
     })
   } catch (error) {
     next(error)

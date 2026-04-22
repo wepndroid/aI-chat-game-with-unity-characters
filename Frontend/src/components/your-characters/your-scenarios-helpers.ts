@@ -1,4 +1,5 @@
 import type { StoryListRecord } from '@/lib/story-api'
+import { buildAiGirlfriendRouteKey } from '@/lib/ai-girlfriend-route'
 import { scenarioTypeDisplayLabel } from '@/lib/story-scenario-types'
 
 /** Token for `returnTo` query — edit page maps this to `/your-scenarios`. */
@@ -17,8 +18,8 @@ export const buildScenarioEditHref = (story: StoryListRecord, options?: BuildSce
 
   const ch = story.character
   if (ch) {
-    const seg = ch.slug || ch.id
-    return `/characters/${encodeURIComponent(seg)}/edit-scenario/${encodeURIComponent(story.id)}${query}`
+    const seg = buildAiGirlfriendRouteKey(ch.name, ch.id)
+    return `/ai-girlfriends/${encodeURIComponent(seg)}/edit-scenario/${encodeURIComponent(story.id)}${query}`
   }
 
   return `/stories/${encodeURIComponent(story.id)}/edit${query}`

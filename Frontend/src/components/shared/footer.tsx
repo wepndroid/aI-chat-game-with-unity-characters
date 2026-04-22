@@ -3,6 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { AI_GIRLFRIEND_ROUTE_BASE } from '@/lib/ai-girlfriend-route'
 
 const Footer = () => {
   const pathname = usePathname()
@@ -17,7 +18,14 @@ const Footer = () => {
         <div className="flex flex-col gap-10 md:flex-row md:items-start md:justify-between md:gap-8">
           <div className="w-full max-w-[360px]">
             <div className="inline-flex items-center">
-              <Image src="/images/SecretWaifu Logo White.svg" alt="SecretWaifu logo" width={164} height={44} className="h-8 w-auto opacity-95" />
+              <Image
+                src="/images/SecretWaifu Logo White.svg"
+                alt="SecretWaifu logo"
+                width={164}
+                height={44}
+                className="h-8 w-auto opacity-95"
+                suppressHydrationWarning
+              />
             </div>
             <p className="mt-4 text-[14px] leading-[1.45] text-white/45">
               Step into a world, interactive world with your favorite VRoid girl uncensored and completely immersive VR supported
@@ -32,11 +40,8 @@ const Footer = () => {
               <Link href="/chat-faq" className="transition hover:text-white/60" aria-label="Chat FAQ link in footer">
                 Chat FAQ
               </Link>
-              <Link href="/characters" className="transition hover:text-white/60" aria-label="Characters link in footer">
-                Characters
-              </Link>
-              <Link href="/access-code" className="transition hover:text-white/60" aria-label="Access code link in footer">
-                Access Code
+              <Link href={AI_GIRLFRIEND_ROUTE_BASE} className="transition hover:text-white/60" aria-label="AI girlfriends link in footer">
+                AI Girlfriends
               </Link>
               <Link href="/members" className="transition hover:text-white/60" aria-label="Membership link in footer">
                 Membership

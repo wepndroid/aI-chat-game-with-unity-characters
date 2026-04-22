@@ -1,12 +1,23 @@
-import { CharacterStatus, Prisma } from '@prisma/client'
+import { CharacterStatus, Prisma, type CharacterVisibility } from '@prisma/client'
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { Request } from 'express'
+import { Readable } from 'node:stream'
+import type { NextFunction, Request, Response } from 'express'
 import { Router } from 'express'
 import { z } from 'zod'
-import { assertSafeCharacterAssetUrls, isTrustedSelfHostedAssetUrl } from '../lib/character-asset-url'
+import {
+  assertSafeCharacterAssetUrls,
+  CharacterAssetUrlValidationError,
+  isSafeExternalUrl,
+  isTrustedSelfHostedAssetUrl,
+  normalizeTrustedOrigins
+} from '../lib/character-asset-url'
 import { tryDeleteTrustedUploadFile } from '../lib/delete-local-upload-file'
+import {
+  downloadVrmObjectFromStorage,
+  parseObjectStorageVrmRef
+} from '../lib/object-storage'
 import { optionalAuth, requireAdmin, requireAuth, requireVerifiedEmail } from '../middleware/auth-middleware'
 import { notifyAdminsReviewQueue } from '../lib/notify-admins-review-queue'
 import { prisma } from '../lib/prisma'
@@ -19,19 +30,91 @@ import {
   resolveCharacterAccess,
   type CharacterAccessActor
 } from '../services/character-access-service'
+import { decodeOffsetCursor, encodeOffsetCursor, sendApiData, sendApiError } from '../lib/api-contract'
+import { defaultRuntimeAdminSettings, getRuntimeAdminSettings } from '../lib/runtime-admin-settings'
+
+const respondCharacterAssetUrlValidationFailure = (
+  request: Request,
+  response: Response,
+  error: CharacterAssetUrlValidationError,
+  urls: { vroidFileUrl?: string | null; poseFileUrl?: string | null; previewImageUrl?: string | null }
+) => {
+  if (process.env.NODE_ENV !== 'production') {
+    console.warn('[character asset URL validation]', {
+      field: error.fieldKey,
+      message: error.message,
+      code: error.code,
+      route: `${request.method} ${request.path}`,
+      trustedOrigins: normalizeTrustedOrigins(),
+      urls: {
+        vroidFileUrl: urls.vroidFileUrl ?? null,
+        poseFileUrl: urls.poseFileUrl ?? null,
+        previewImageUrl: urls.previewImageUrl ?? null
+      }
+    })
+  }
+
+  response.status(400).json({
+    message: error.message,
+    code: error.code,
+    field: error.fieldKey
+  })
+}
 
 const characterRoutes = Router()
 
+const splitCharacterRouteKey = (value: string) => {
+  const normalized = value.trim()
+  const firstDashIndex = normalized.indexOf('-')
+  if (firstDashIndex <= 0 || firstDashIndex >= normalized.length - 1) {
+    return null
+  }
+
+  return {
+    idCandidate: normalized.slice(0, firstDashIndex)
+  }
+}
+
+characterRoutes.param('characterId', async (request: Request, _response: Response, next: NextFunction, value: string) => {
+  const routeKeyParts = splitCharacterRouteKey(value)
+  if (!routeKeyParts) {
+    next()
+    return
+  }
+
+  try {
+    const [exactIdMatch, idCandidateMatch] = await Promise.all([
+      prisma.character.findUnique({
+        where: { id: value },
+        select: { id: true }
+      }),
+      prisma.character.findUnique({
+        where: { id: routeKeyParts.idCandidate },
+        select: { id: true }
+      })
+    ])
+
+    if (!exactIdMatch && idCandidateMatch) {
+      request.params.characterId = routeKeyParts.idCandidate
+    }
+
+    next()
+  } catch (error) {
+    next(error)
+  }
+})
+
 const createCharacterSchema = z.object({
-  name: z.string().trim().min(2).max(120),
-  fullName: z.string().trim().max(160).optional(),
-  tagline: z.string().trim().max(160).optional(),
-  description: z.string().trim().max(5000).optional(),
-  personality: z.string().trim().max(8000).optional(),
-  scenario: z.string().trim().max(8000).optional(),
+  name: z.string().trim().min(2).max(500),
+  fullName: z.string().trim().max(500).optional(),
+  tagline: z.string().trim().max(1000).optional(),
+  description: z.string().trim().max(50000).optional(),
+  personality: z.string().trim().max(50000).optional(),
+  scenario: z.string().trim().max(50000).optional(),
   firstMessage: z.string().trim().max(50000).optional(),
-  exampleDialogs: z.string().trim().max(12000).optional(),
-  vroidFileUrl: z.string().url().optional(),
+  exampleDialogs: z.string().trim().max(50000).optional(),
+  vroidFileUrl: z.string().trim().min(1).optional(),
+  poseFileUrl: z.string().url().optional(),
   previewImageUrl: z.string().url().optional(),
   legacyFileHash: z.string().trim().regex(/^[a-fA-F0-9]{64}$/).optional(),
   legacyTier: z.number().int().min(0).max(9).optional(),
@@ -45,15 +128,16 @@ const createCharacterSchema = z.object({
 
 const updateCharacterSchema = z
   .object({
-    name: z.string().trim().min(2).max(120).optional(),
-    fullName: z.string().trim().max(160).nullable().optional(),
-    tagline: z.string().trim().max(160).nullable().optional(),
-    description: z.string().trim().max(5000).nullable().optional(),
-    personality: z.string().trim().max(8000).nullable().optional(),
-    scenario: z.string().trim().max(8000).nullable().optional(),
+    name: z.string().trim().min(2).max(500).optional(),
+    fullName: z.string().trim().max(500).nullable().optional(),
+    tagline: z.string().trim().max(1000).nullable().optional(),
+    description: z.string().trim().max(50000).nullable().optional(),
+    personality: z.string().trim().max(50000).nullable().optional(),
+    scenario: z.string().trim().max(50000).nullable().optional(),
     firstMessage: z.string().trim().max(50000).nullable().optional(),
-    exampleDialogs: z.string().trim().max(12000).nullable().optional(),
-    vroidFileUrl: z.string().url().nullable().optional(),
+    exampleDialogs: z.string().trim().max(50000).nullable().optional(),
+    vroidFileUrl: z.string().trim().min(1).nullable().optional(),
+    poseFileUrl: z.string().url().nullable().optional(),
     previewImageUrl: z.string().url().nullable().optional(),
     legacyFileHash: z.string().trim().regex(/^[a-fA-F0-9]{64}$/).nullable().optional(),
     legacyTier: z.number().int().min(0).max(9).nullable().optional(),
@@ -70,8 +154,11 @@ const listCharactersQuerySchema = z.object({
   status: z.nativeEnum(CharacterStatus).optional(),
   search: z.string().trim().max(120).optional(),
   galleryScope: z.enum(['all', 'curated', 'community', 'mine']).optional(),
+  /** `unity` returns a gameplay-focused roster payload (including explicit `unity_asset` metadata). */
+  profile: z.enum(['full', 'unity']).optional().default('full'),
   /** List characters owned by this user (signed-in user may only use their own id; admins may use any). */
   ownerId: z.string().min(1).optional(),
+  cursor: z.string().trim().min(1).optional(),
   sort: z.enum(['name', 'hearts', 'views', 'newest']).optional().default('newest'),
   limit: z.coerce.number().int().min(1).max(200).default(24),
   adminCuratedAll: z.enum(['true', '1']).optional(),
@@ -151,8 +238,11 @@ const vrmSignedUrlTtlSeconds = Math.min(60 * 30, parsePositiveInt(process.env.VR
 
 type VrmSignedTokenPayload = {
   c: string
-  f: string
   e: number
+  m: 'self' | 'external' | 'object'
+  f?: string
+  u?: string
+  k?: string
 }
 
 const toBase64Url = (value: string) => Buffer.from(value, 'utf8').toString('base64url')
@@ -187,21 +277,66 @@ const parseSignedVrmToken = (token: string): VrmSignedTokenPayload | null => {
     const decoded = JSON.parse(fromBase64Url(payloadEncoded)) as Partial<VrmSignedTokenPayload>
     if (
       typeof decoded.c !== 'string' ||
-      typeof decoded.f !== 'string' ||
       typeof decoded.e !== 'number' ||
       !Number.isFinite(decoded.e)
     ) {
       return null
     }
 
-    if (!/^[a-zA-Z0-9._-]+$/.test(decoded.f) || !decoded.f.toLowerCase().endsWith('.vrm')) {
+    const mode = decoded.m ?? 'self'
+
+    if (mode === 'external') {
+      if (typeof decoded.u !== 'string') {
+        return null
+      }
+      const normalizedUrl = decoded.u.trim()
+      if (!isSafeExternalUrl(normalizedUrl)) {
+        return null
+      }
+
+      const parsed = new URL(normalizedUrl)
+      if (!parsed.pathname.toLowerCase().endsWith('.vrm')) {
+        return null
+      }
+
+      return {
+        c: decoded.c,
+        e: decoded.e,
+        m: 'external',
+        u: normalizedUrl
+      }
+    }
+
+    if (mode === 'object') {
+      if (typeof decoded.k !== 'string') {
+        return null
+      }
+      const objectKey = parseObjectStorageVrmRef(`object://vrm/${decoded.k.trim()}`)
+      if (!objectKey) {
+        return null
+      }
+
+      return {
+        c: decoded.c,
+        e: decoded.e,
+        m: 'object',
+        k: objectKey
+      }
+    }
+
+    if (
+      typeof decoded.f !== 'string' ||
+      !/^[a-zA-Z0-9._-]+$/.test(decoded.f) ||
+      !decoded.f.toLowerCase().endsWith('.vrm')
+    ) {
       return null
     }
 
     return {
       c: decoded.c,
-      f: decoded.f,
-      e: decoded.e
+      e: decoded.e,
+      m: 'self',
+      f: decoded.f
     }
   } catch {
     return null
@@ -219,6 +354,64 @@ const buildApiBaseUrl = (request: Request) => {
   const forwardedHost = request.headers['x-forwarded-host']
   const host = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost) || request.get('host')
   return `${proto}://${host}`
+}
+
+const getCharacterFieldLimits = async () => {
+  const runtimeSettings = await getRuntimeAdminSettings().catch(() => null)
+  return runtimeSettings?.characterFieldLimits ?? defaultRuntimeAdminSettings.characterFieldLimits
+}
+
+const validateCharacterFieldLengths = (
+  response: Response,
+  payload: {
+    name?: string | null
+    fullName?: string | null
+    tagline?: string | null
+    description?: string | null
+    personality?: string | null
+    scenario?: string | null
+    exampleDialogs?: string | null
+    firstMessage?: string | null
+  },
+  limits: Awaited<ReturnType<typeof getCharacterFieldLimits>>
+) => {
+  const validations: Array<{ key: keyof typeof payload; label: string; max: number; min?: number }> = [
+    { key: 'name', label: 'name', max: limits.nameMaxLength, min: 2 },
+    { key: 'fullName', label: 'fullName', max: limits.nameMaxLength },
+    { key: 'tagline', label: 'tagline', max: limits.tagLineMaxLength },
+    { key: 'description', label: 'description', max: limits.descriptionMaxLength },
+    { key: 'personality', label: 'personality', max: limits.personalityMaxLength },
+    { key: 'scenario', label: 'scenario', max: limits.scenarioMaxLength },
+    { key: 'exampleDialogs', label: 'exampleDialogs', max: limits.exampleDialogsMaxLength },
+    { key: 'firstMessage', label: 'firstMessage', max: limits.firstMessageMaxLength }
+  ]
+
+  for (const validation of validations) {
+    const value = payload[validation.key]
+    if (typeof value !== 'string') {
+      continue
+    }
+
+    const trimmed = value.trim()
+
+    if (validation.min && trimmed.length > 0 && trimmed.length < validation.min) {
+      response.status(400).json({
+        message: `${validation.label} must be at least ${validation.min} characters.`,
+        field: validation.key
+      })
+      return false
+    }
+
+    if (trimmed.length > validation.max) {
+      response.status(400).json({
+        message: `${validation.label} exceeds the maximum length (${trimmed.length} / ${validation.max}).`,
+        field: validation.key
+      })
+      return false
+    }
+  }
+
+  return true
 }
 
 const extractUploadFilenameFromVrmUrl = (urlValue: string | null) => {
@@ -240,21 +433,204 @@ const extractUploadFilenameFromVrmUrl = (urlValue: string | null) => {
   }
 }
 
-const buildSignedVrmDownloadUrl = (request: Request, characterId: string, vroidFileUrl: string | null) => {
-  const filename = extractUploadFilenameFromVrmUrl(vroidFileUrl)
-
-  if (!filename) {
-    return vroidFileUrl
+const isSafeExternalVrmUrlForProxy = (urlValue: string) => {
+  const normalized = urlValue.trim()
+  if (!isSafeExternalUrl(normalized)) {
+    return false
   }
 
+  try {
+    const parsed = new URL(normalized)
+    return parsed.pathname.toLowerCase().endsWith('.vrm')
+  } catch {
+    return false
+  }
+}
+
+const buildSignedVrmDownloadUrl = (request: Request, characterId: string, vroidFileUrl: string | null) => {
+  if (!vroidFileUrl) {
+    return null
+  }
+
+  const normalizedUrl = vroidFileUrl.trim()
+  const objectStorageKey = parseObjectStorageVrmRef(normalizedUrl)
+  const filename = extractUploadFilenameFromVrmUrl(normalizedUrl)
   const expiresAtMs = Date.now() + vrmSignedUrlTtlSeconds * 1000
-  const token = createSignedVrmToken({
-    c: characterId,
-    f: filename,
-    e: expiresAtMs
-  })
+
+  let token: string | null = null
+  if (objectStorageKey) {
+    token = createSignedVrmToken({
+      c: characterId,
+      e: expiresAtMs,
+      m: 'object',
+      k: objectStorageKey
+    })
+  } else if (filename) {
+    token = createSignedVrmToken({
+      c: characterId,
+      f: filename,
+      e: expiresAtMs,
+      m: 'self'
+    })
+  } else if (isSafeExternalVrmUrlForProxy(normalizedUrl)) {
+    token = createSignedVrmToken({
+      c: characterId,
+      e: expiresAtMs,
+      m: 'external',
+      u: normalizedUrl
+    })
+  }
+
+  if (!token) {
+    return null
+  }
+
   const base = buildApiBaseUrl(request)
   return `${base}/api/characters/assets/vrm/${encodeURIComponent(token)}`
+}
+
+const resolveUnityTierCode = (character: { isPatreonGated: boolean; minimumTierCents: number | null }) => {
+  if (!character.isPatreonGated || !character.minimumTierCents || character.minimumTierCents <= 0) {
+    return 'free'
+  }
+
+  return `patreon_${character.minimumTierCents}`
+}
+
+const toUnityModelHash = (legacyFileHash: string | null) => {
+  if (!legacyFileHash) {
+    return null
+  }
+
+  return `sha256:${legacyFileHash.toLowerCase()}`
+}
+
+const enrichCharacterList = async (
+  characterList: Array<{
+    id: string
+    slug: string
+    name: string
+    tagline: string | null
+    description: string | null
+    status: CharacterStatus
+    visibility: CharacterVisibility
+    officialListing: boolean
+    isPatreonGated: boolean
+    minimumTierCents: number | null
+    heartsCount: number
+    viewsCount: number
+    previewImageUrl: string | null
+    owner: {
+      id: string
+      username: string
+    }
+    createdAt: Date
+    updatedAt: Date
+  }>
+) => {
+  if (characterList.length === 0) {
+    return []
+  }
+
+  const characterIds = characterList.map((character) => character.id)
+  const [storyCountRows, latestStoryRows] = await Promise.all([
+    prisma.storyPost.groupBy({
+      by: ['characterId'],
+      where: {
+        characterId: { in: characterIds },
+        publicationStatus: 'PUBLISHED',
+        moderationStatus: 'APPROVED'
+      },
+      _count: {
+        characterId: true
+      }
+    }),
+    prisma.storyPost.findMany({
+      where: {
+        characterId: { in: characterIds },
+        publicationStatus: 'PUBLISHED',
+        moderationStatus: 'APPROVED'
+      },
+      orderBy: [{ characterId: 'asc' }, { publishedAt: 'desc' }, { createdAt: 'desc' }],
+      select: {
+        id: true,
+        characterId: true
+      }
+    })
+  ])
+
+  const storyCountMap = new Map<string, number>()
+  for (const row of storyCountRows) {
+    storyCountMap.set(row.characterId, row._count.characterId)
+  }
+
+  const defaultStoryIdMap = new Map<string, string>()
+  for (const row of latestStoryRows) {
+    if (!defaultStoryIdMap.has(row.characterId)) {
+      defaultStoryIdMap.set(row.characterId, row.id)
+    }
+  }
+
+  return characterList.map((character) => ({
+    ...character,
+    thumbnailUrl: character.previewImageUrl,
+    tierCode: resolveUnityTierCode(character),
+    storyCount: storyCountMap.get(character.id) ?? 0,
+    defaultStoryId: defaultStoryIdMap.get(character.id) ?? null
+  }))
+}
+
+const toUnityCharacterRoster = (
+  request: Request,
+  characterList: Awaited<ReturnType<typeof enrichCharacterList>>,
+  unityAssetMetadataByCharacterId: Map<string, { vroidFileUrl: string | null; legacyFileHash: string | null }>
+) => {
+  const apiBaseUrl = buildApiBaseUrl(request)
+  return characterList.map((character) => {
+    const unityAssetMetadata = unityAssetMetadataByCharacterId.get(character.id)
+    const canExposeInlineModelUrl = character.tierCode === 'free'
+    const modelUrl = canExposeInlineModelUrl
+      ? buildSignedVrmDownloadUrl(request, character.id, unityAssetMetadata?.vroidFileUrl ?? null)
+      : null
+
+    return {
+      id: character.id,
+      slug: character.slug,
+      name: character.name,
+      preview_image_url: character.previewImageUrl,
+      thumbnail_url: character.thumbnailUrl,
+      tier_code: character.tierCode,
+      story_count: character.storyCount,
+      default_story_id: character.defaultStoryId,
+      unity_asset: {
+        asset_key: character.id,
+        model_url: modelUrl,
+        model_hash: toUnityModelHash(unityAssetMetadata?.legacyFileHash ?? null),
+        model_version: character.updatedAt.toISOString(),
+        icon_url: character.thumbnailUrl ?? character.previewImageUrl,
+        signed_model_url_endpoint: `${apiBaseUrl}/api/characters/${encodeURIComponent(character.id)}/vrm-signed-url`
+      }
+    }
+  })
+}
+
+const loadUnityAssetMetadataByCharacterId = async (characterIds: string[]) => {
+  if (characterIds.length === 0) {
+    return new Map<string, { vroidFileUrl: string | null; legacyFileHash: string | null }>()
+  }
+
+  const rows = await prisma.character.findMany({
+    where: {
+      id: { in: characterIds }
+    },
+    select: {
+      id: true,
+      vroidFileUrl: true,
+      legacyFileHash: true
+    }
+  })
+
+  return new Map(rows.map((row) => [row.id, { vroidFileUrl: row.vroidFileUrl, legacyFileHash: row.legacyFileHash }]))
 }
 
 characterRoutes.get('/characters', optionalAuth, async (request, response, next) => {
@@ -264,20 +640,18 @@ characterRoutes.get('/characters', optionalAuth, async (request, response, next)
     const galleryScope = query.galleryScope ?? 'all'
 
     if (galleryScope === 'mine' && !actor) {
-      response.status(401).json({
-        message: 'Authentication required.'
-      })
+      sendApiError(response, 401, 'AUTH_REQUIRED', 'Authentication required.')
       return
     }
 
     if (query.ownerId) {
       if (!actor) {
-        response.status(401).json({ message: 'Authentication required.' })
+        sendApiError(response, 401, 'AUTH_REQUIRED', 'Authentication required.')
         return
       }
 
       if (actor.userId !== query.ownerId && actor.role !== 'ADMIN') {
-        response.status(403).json({ message: 'You can only list your own characters.' })
+        sendApiError(response, 403, 'FORBIDDEN', 'You can only list your own characters.')
         return
       }
     }
@@ -300,15 +674,18 @@ characterRoutes.get('/characters', optionalAuth, async (request, response, next)
             ? { viewsCount: 'desc' }
             : { createdAt: 'desc' }
 
-    const characterList = await prisma.character.findMany({
+    const offset = decodeOffsetCursor(query.cursor)
+    const characterRows = await prisma.character.findMany({
       where: whereClause,
-      take: query.limit,
+      skip: offset,
+      take: query.limit + 1,
       orderBy,
       select: {
         id: true,
         slug: true,
         name: true,
         tagline: true,
+        description: true,
         status: true,
         visibility: true,
         officialListing: true,
@@ -328,17 +705,27 @@ characterRoutes.get('/characters', optionalAuth, async (request, response, next)
       }
     })
 
-    response.json({
-      data: characterList.map((character) => ({
-        ...character,
-        thumbnailUrl: character.previewImageUrl
-      }))
+    const pageRows = characterRows.slice(0, query.limit)
+    const hasMore = characterRows.length > query.limit
+    const nextCursor = hasMore ? encodeOffsetCursor(offset + pageRows.length) : null
+    const characterList = await enrichCharacterList(pageRows)
+    const responseData =
+      query.profile === 'unity'
+        ? toUnityCharacterRoster(
+          request,
+          characterList,
+          await loadUnityAssetMetadataByCharacterId(pageRows.map((character) => character.id))
+        )
+        : characterList
+
+    sendApiData(response, responseData, {
+      page: {
+        nextCursor
+      }
     })
   } catch (error) {
     if (error instanceof Error && error.message.toLowerCase().includes('url')) {
-      response.status(400).json({
-        message: error.message
-      })
+      sendApiError(response, 400, 'BAD_REQUEST', error.message)
       return
     }
 
@@ -372,15 +759,18 @@ characterRoutes.get('/characters/public', optionalAuth, async (request, response
             ? { viewsCount: 'desc' }
             : { createdAt: 'desc' }
 
-    const characterList = await prisma.character.findMany({
+    const offset = decodeOffsetCursor(query.cursor)
+    const characterRows = await prisma.character.findMany({
       where: whereClause,
-      take: query.limit,
+      skip: offset,
+      take: query.limit + 1,
       orderBy,
       select: {
         id: true,
         slug: true,
         name: true,
         tagline: true,
+        description: true,
         status: true,
         visibility: true,
         officialListing: true,
@@ -400,14 +790,27 @@ characterRoutes.get('/characters/public', optionalAuth, async (request, response
       }
     })
 
-    response.json({
-      data: characterList
+    const pageRows = characterRows.slice(0, query.limit)
+    const hasMore = characterRows.length > query.limit
+    const nextCursor = hasMore ? encodeOffsetCursor(offset + pageRows.length) : null
+    const characterList = await enrichCharacterList(pageRows)
+    const responseData =
+      query.profile === 'unity'
+        ? toUnityCharacterRoster(
+          request,
+          characterList,
+          await loadUnityAssetMetadataByCharacterId(pageRows.map((character) => character.id))
+        )
+        : characterList
+
+    sendApiData(response, responseData, {
+      page: {
+        nextCursor
+      }
     })
   } catch (error) {
     if (error instanceof Error && error.message.toLowerCase().includes('url')) {
-      response.status(400).json({
-        message: error.message
-      })
+      sendApiError(response, 400, 'BAD_REQUEST', error.message)
       return
     }
 
@@ -416,7 +819,7 @@ characterRoutes.get('/characters/public', optionalAuth, async (request, response
 })
 
 /**
- * Integration / Unity: AI persona fields (CharacterCard + legacy fallbacks) without full character payload.
+ * Integration / Unity: AI persona fields from CharacterCard (strict Phase-1 source of truth).
  * Same access rules as GET /characters/:characterId for reading.
  */
 characterRoutes.get('/character-cards/:characterId', optionalAuth, async (request, response, next) => {
@@ -435,10 +838,6 @@ characterRoutes.get('/character-cards/:characterId', optionalAuth, async (reques
         fullName: true,
         tagline: true,
         description: true,
-        personality: true,
-        scenario: true,
-        firstMessage: true,
-        exampleDialogs: true,
         status: true,
         visibility: true,
         ownerId: true,
@@ -525,24 +924,24 @@ characterRoutes.get('/characters/mine', requireAuth, async (request, response, n
         ...(query.status ? { status: query.status } : {}),
         ...(normalizedSearch
           ? {
-              OR: [
-                {
-                  name: {
-                    contains: normalizedSearch
-                  }
-                },
-                {
-                  slug: {
-                    contains: normalizedSearch
-                  }
-                },
-                {
-                  tagline: {
-                    contains: normalizedSearch
-                  }
+            OR: [
+              {
+                name: {
+                  contains: normalizedSearch
                 }
-              ]
-            }
+              },
+              {
+                slug: {
+                  contains: normalizedSearch
+                }
+              },
+              {
+                tagline: {
+                  contains: normalizedSearch
+                }
+              }
+            ]
+          }
           : {})
       },
       take: query.limit,
@@ -606,11 +1005,8 @@ characterRoutes.get('/characters/:characterId', optionalAuth, async (request, re
         fullName: true,
         tagline: true,
         description: true,
-        personality: true,
-        scenario: true,
-        firstMessage: true,
-        exampleDialogs: true,
         vroidFileUrl: true,
+        poseFileUrl: true,
         previewImageUrl: true,
         legacyFileHash: true,
         legacyTier: true,
@@ -674,19 +1070,24 @@ characterRoutes.get('/characters/:characterId', optionalAuth, async (request, re
 
     const hasHearted = actor
       ? Boolean(
-          await prisma.characterHeart.findUnique({
-            where: {
-              userId_characterId: {
-                userId: actor.userId,
-                characterId: character.id
-              }
-            },
-            select: {
-              id: true
+        await prisma.characterHeart.findUnique({
+          where: {
+            userId_characterId: {
+              userId: actor.userId,
+              characterId: character.id
             }
-          })
-        )
+          },
+          select: {
+            id: true
+          }
+        })
+      )
       : false
+
+    const vroidFileUrlForResponse =
+      characterAccess.canAccessPatreonGatedContent
+        ? (buildSignedVrmDownloadUrl(request, character.id, character.vroidFileUrl) ?? null)
+        : null
 
     response.json({
       data: {
@@ -702,9 +1103,8 @@ characterRoutes.get('/characters/:characterId', optionalAuth, async (request, re
         exampleDialogs: persona.exampleDialogs,
         characterCardId: persona.characterCardId,
         characterCardIsPublic: persona.characterCardIsPublic,
-        vroidFileUrl: characterAccess.canAccessPatreonGatedContent
-          ? buildSignedVrmDownloadUrl(request, character.id, character.vroidFileUrl)
-          : null,
+        vroidFileUrl: vroidFileUrlForResponse,
+        poseFileUrl: character.poseFileUrl,
         previewImageUrl: character.previewImageUrl,
         legacyFileHash: character.legacyFileHash,
         legacyTier: character.legacyTier,
@@ -793,6 +1193,12 @@ characterRoutes.get('/characters/:characterId/vrm-signed-url', requireAuth, asyn
     }
 
     const signedUrl = buildSignedVrmDownloadUrl(request, character.id, character.vroidFileUrl)
+    if (!signedUrl) {
+      response.status(404).json({
+        message: 'VRM asset is not available for signed download.'
+      })
+      return
+    }
 
     response.json({
       data: {
@@ -842,26 +1248,118 @@ characterRoutes.get('/characters/assets/vrm/:token', async (request, response, n
       return
     }
 
-    const expectedFilename = extractUploadFilenameFromVrmUrl(character.vroidFileUrl)
-    if (!expectedFilename || expectedFilename !== parsed.f) {
+    if (parsed.m === 'object') {
+      const currentObjectKey = parseObjectStorageVrmRef(character.vroidFileUrl)
+      if (!currentObjectKey || parsed.k !== currentObjectKey) {
+        response.status(403).json({
+          message: 'VRM token no longer matches the current asset.'
+        })
+        return
+      }
+
+      const downloaded = await downloadVrmObjectFromStorage(currentObjectKey)
+      response.setHeader('Cache-Control', 'private, max-age=0, no-store')
+      response.setHeader('Content-Type', downloaded.contentType || 'model/gltf-binary')
+      if (downloaded.contentLength !== null) {
+        response.setHeader('Content-Length', String(downloaded.contentLength))
+      }
+      if (downloaded.eTag) {
+        response.setHeader('ETag', downloaded.eTag)
+      }
+
+      downloaded.stream.on('error', (streamError) => {
+        if (!response.headersSent) {
+          response.status(502).json({
+            message: 'Failed to stream VRM from object storage.'
+          })
+          return
+        }
+
+        response.destroy(streamError as Error)
+      })
+      downloaded.stream.pipe(response)
+      return
+    }
+
+    if (parsed.m === 'self') {
+      const expectedFilename = extractUploadFilenameFromVrmUrl(character.vroidFileUrl)
+      if (!expectedFilename || expectedFilename !== parsed.f) {
+        response.status(403).json({
+          message: 'VRM token no longer matches the current asset.'
+        })
+        return
+      }
+
+      const absolutePath = path.join(uploadsRoot, expectedFilename)
+      if (!absolutePath.startsWith(uploadsRoot)) {
+        response.status(403).json({
+          message: 'Invalid asset path.'
+        })
+        return
+      }
+
+      await fs.promises.access(absolutePath, fs.constants.R_OK)
+      response.setHeader('Cache-Control', 'private, max-age=0, no-store')
+      response.setHeader('Content-Type', 'model/gltf-binary')
+      response.sendFile(absolutePath)
+      return
+    }
+
+    const currentExternalUrl = character.vroidFileUrl?.trim() ?? null
+    if (!currentExternalUrl || parsed.u !== currentExternalUrl || !isSafeExternalVrmUrlForProxy(currentExternalUrl)) {
       response.status(403).json({
         message: 'VRM token no longer matches the current asset.'
       })
       return
     }
 
-    const absolutePath = path.join(uploadsRoot, expectedFilename)
-    if (!absolutePath.startsWith(uploadsRoot)) {
-      response.status(403).json({
-        message: 'Invalid asset path.'
+    const upstreamAbortController = new AbortController()
+    const upstreamTimeout = setTimeout(() => upstreamAbortController.abort(), 20_000)
+    try {
+      const upstreamResponse = await fetch(currentExternalUrl, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: upstreamAbortController.signal
       })
-      return
-    }
 
-    await fs.promises.access(absolutePath, fs.constants.R_OK)
-    response.setHeader('Cache-Control', 'private, max-age=0, no-store')
-    response.setHeader('Content-Type', 'model/gltf-binary')
-    response.sendFile(absolutePath)
+      if (!upstreamResponse.ok || !upstreamResponse.body) {
+        response.status(502).json({
+          message: 'Failed to fetch VRM from upstream storage.'
+        })
+        return
+      }
+
+      const contentLengthHeader = upstreamResponse.headers.get('content-length')
+      const parsedLength = contentLengthHeader ? Number.parseInt(contentLengthHeader, 10) : NaN
+      if (Number.isFinite(parsedLength) && parsedLength > 150 * 1024 * 1024) {
+        response.status(502).json({
+          message: 'VRM download is too large.'
+        })
+        return
+      }
+
+      response.setHeader('Cache-Control', 'private, max-age=0, no-store')
+      response.setHeader('Content-Type', upstreamResponse.headers.get('content-type') || 'model/gltf-binary')
+      if (contentLengthHeader) {
+        response.setHeader('Content-Length', contentLengthHeader)
+      }
+
+      const stream = Readable.fromWeb(upstreamResponse.body as any)
+      stream.on('error', (streamError) => {
+        if (!response.headersSent) {
+          response.status(502).json({
+            message: 'Failed to stream VRM from upstream storage.'
+          })
+          return
+        }
+
+        response.destroy(streamError as Error)
+      })
+      stream.pipe(response)
+      return
+    } finally {
+      clearTimeout(upstreamTimeout)
+    }
   } catch (error) {
     next(error)
   }
@@ -988,10 +1486,27 @@ characterRoutes.post('/characters/:characterId/chat-start', optionalAuth, async 
 characterRoutes.post('/characters', requireVerifiedEmail, async (request, response, next) => {
   try {
     const payload = createCharacterSchema.parse(request.body)
-    assertSafeCharacterAssetUrls({
-      vroidFileUrl: payload.vroidFileUrl,
-      previewImageUrl: payload.previewImageUrl
-    })
+    const characterFieldLimits = await getCharacterFieldLimits()
+    if (!validateCharacterFieldLengths(response, payload, characterFieldLimits)) {
+      return
+    }
+    try {
+      assertSafeCharacterAssetUrls({
+        vroidFileUrl: payload.vroidFileUrl,
+        poseFileUrl: payload.poseFileUrl,
+        previewImageUrl: payload.previewImageUrl
+      })
+    } catch (error) {
+      if (error instanceof CharacterAssetUrlValidationError) {
+        respondCharacterAssetUrlValidationFailure(request, response, error, {
+          vroidFileUrl: payload.vroidFileUrl,
+          poseFileUrl: payload.poseFileUrl,
+          previewImageUrl: payload.previewImageUrl
+        })
+        return
+      }
+      throw error
+    }
     const actor = toCharacterAccessActor(request)
 
     if (!canCreateCharacter(actor) || !actor) {
@@ -1020,11 +1535,8 @@ characterRoutes.post('/characters', requireVerifiedEmail, async (request, respon
           fullName: payload.fullName,
           tagline: payload.tagline,
           description: payload.description,
-          personality: payload.personality,
-          scenario: payload.scenario,
-          firstMessage: payload.firstMessage,
-          exampleDialogs: payload.exampleDialogs,
           vroidFileUrl: payload.vroidFileUrl,
+          poseFileUrl: payload.poseFileUrl,
           previewImageUrl: payload.previewImageUrl,
           legacyFileHash: payload.legacyFileHash,
           legacyTier: payload.legacyTier,
@@ -1084,10 +1596,27 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
   try {
     const { characterId } = characterParamsSchema.parse(request.params)
     const payload = updateCharacterSchema.parse(request.body)
-    assertSafeCharacterAssetUrls({
-      vroidFileUrl: payload.vroidFileUrl,
-      previewImageUrl: payload.previewImageUrl
-    })
+    const characterFieldLimits = await getCharacterFieldLimits()
+    if (!validateCharacterFieldLengths(response, payload, characterFieldLimits)) {
+      return
+    }
+    try {
+      assertSafeCharacterAssetUrls({
+        vroidFileUrl: payload.vroidFileUrl,
+        poseFileUrl: payload.poseFileUrl,
+        previewImageUrl: payload.previewImageUrl
+      })
+    } catch (error) {
+      if (error instanceof CharacterAssetUrlValidationError) {
+        respondCharacterAssetUrlValidationFailure(request, response, error, {
+          vroidFileUrl: payload.vroidFileUrl,
+          poseFileUrl: payload.poseFileUrl,
+          previewImageUrl: payload.previewImageUrl
+        })
+        return
+      }
+      throw error
+    }
 
     const actor = toCharacterAccessActor(request)
 
@@ -1128,9 +1657,17 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
       return
     }
 
+    // Non-admin creators cannot edit approved characters (metadata is locked once approved).
+    if (actor.role !== 'ADMIN' && existingCharacter.status === 'APPROVED') {
+      response.status(403).json({
+        message: 'Approved characters cannot be edited.'
+      })
+      return
+    }
+
     const shouldResetStatusToPending =
       actor.role !== 'ADMIN' &&
-      (existingCharacter.status === 'APPROVED' || existingCharacter.status === 'REJECTED') &&
+      existingCharacter.status === 'REJECTED' &&
       Object.keys(payload).length > 0
 
     const updatedCharacter = await prisma.$transaction(async (transactionClient) => {
@@ -1143,11 +1680,8 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
           ...(payload.fullName !== undefined ? { fullName: payload.fullName } : {}),
           ...(payload.tagline !== undefined ? { tagline: payload.tagline } : {}),
           ...(payload.description !== undefined ? { description: payload.description } : {}),
-          ...(payload.personality !== undefined ? { personality: payload.personality } : {}),
-          ...(payload.scenario !== undefined ? { scenario: payload.scenario } : {}),
-          ...(payload.firstMessage !== undefined ? { firstMessage: payload.firstMessage } : {}),
-          ...(payload.exampleDialogs !== undefined ? { exampleDialogs: payload.exampleDialogs } : {}),
           ...(payload.vroidFileUrl !== undefined ? { vroidFileUrl: payload.vroidFileUrl } : {}),
+          ...(payload.poseFileUrl !== undefined ? { poseFileUrl: payload.poseFileUrl } : {}),
           ...(payload.previewImageUrl !== undefined ? { previewImageUrl: payload.previewImageUrl } : {}),
           ...(payload.legacyFileHash !== undefined ? { legacyFileHash: payload.legacyFileHash } : {}),
           ...(payload.legacyTier !== undefined ? { legacyTier: payload.legacyTier } : {}),
@@ -1158,10 +1692,10 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
           officialListing: existingCharacter.owner.role === 'ADMIN',
           ...(shouldResetStatusToPending
             ? {
-                status: 'PENDING',
-                moderationRejectReason: null,
-                publishedAt: null
-              }
+              status: 'PENDING',
+              moderationRejectReason: null,
+              publishedAt: null
+            }
             : {})
         },
         select: {
@@ -1170,10 +1704,6 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
           name: true,
           fullName: true,
           description: true,
-          personality: true,
-          scenario: true,
-          firstMessage: true,
-          exampleDialogs: true,
           status: true,
           visibility: true,
           updatedAt: true
@@ -1189,19 +1719,19 @@ characterRoutes.patch('/characters/:characterId', requireVerifiedEmail, async (r
           creatorUserId: existingCharacter.ownerId,
           fullName: nextCharacter.fullName,
           description: nextCharacter.description,
-          personality: nextCharacter.personality,
-          scenario: nextCharacter.scenario,
-          firstMessage: nextCharacter.firstMessage,
-          exampleDialogs: nextCharacter.exampleDialogs,
+          personality: payload.personality ?? null,
+          scenario: payload.scenario ?? null,
+          firstMessage: payload.firstMessage ?? null,
+          exampleDialogs: payload.exampleDialogs ?? null,
           isPublic: true
         },
         update: {
-          fullName: nextCharacter.fullName,
-          description: nextCharacter.description,
-          personality: nextCharacter.personality,
-          scenario: nextCharacter.scenario,
-          firstMessage: nextCharacter.firstMessage,
-          exampleDialogs: nextCharacter.exampleDialogs,
+          ...(payload.fullName !== undefined ? { fullName: payload.fullName } : {}),
+          ...(payload.description !== undefined ? { description: payload.description } : {}),
+          ...(payload.personality !== undefined ? { personality: payload.personality } : {}),
+          ...(payload.scenario !== undefined ? { scenario: payload.scenario } : {}),
+          ...(payload.firstMessage !== undefined ? { firstMessage: payload.firstMessage } : {}),
+          ...(payload.exampleDialogs !== undefined ? { exampleDialogs: payload.exampleDialogs } : {}),
           isPublic: true
         }
       })
@@ -1469,11 +1999,11 @@ characterRoutes.patch('/characters/:characterId/status', requireAdmin, async (re
         moderationRejectReason: payload.status === 'REJECTED' ? rejectReasonTrimmed : null,
         ...(payload.status === 'APPROVED'
           ? {
-              publishedAt: currentCharacter.publishedAt ?? new Date()
-            }
+            publishedAt: currentCharacter.publishedAt ?? new Date()
+          }
           : {
-              publishedAt: null
-            })
+            publishedAt: null
+          })
       },
       select: {
         id: true,
@@ -1531,6 +2061,7 @@ characterRoutes.delete('/characters/:characterId', requireAdmin, async (request,
       select: {
         id: true,
         vroidFileUrl: true,
+        poseFileUrl: true,
         previewImageUrl: true
       }
     })
@@ -1542,7 +2073,7 @@ characterRoutes.delete('/characters/:characterId', requireAdmin, async (request,
       return
     }
 
-    const assetUrlList = [existingCharacter.vroidFileUrl, existingCharacter.previewImageUrl]
+    const assetUrlList = [existingCharacter.vroidFileUrl, existingCharacter.poseFileUrl, existingCharacter.previewImageUrl]
 
     await prisma.character.delete({
       where: {
@@ -1584,6 +2115,8 @@ characterRoutes.get('/admin/characters/review-queue', requireAdmin, async (reque
         id: true,
         slug: true,
         name: true,
+        vroidFileUrl: true,
+        poseFileUrl: true,
         previewImageUrl: true,
         description: true,
         createdAt: true,
@@ -1601,14 +2134,14 @@ characterRoutes.get('/admin/characters/review-queue', requireAdmin, async (reque
     const scanRows =
       pendingCharacterIdList.length > 0
         ? await prisma.$queryRaw<
-            Array<{
-              characterId: string
-              overall: string
-              issuesCount: number
-              summary: string
-              createdAt: string | Date
-            }>
-          >`SELECT characterId, overall, issuesCount, summary, createdAt
+          Array<{
+            characterId: string
+            overall: string
+            issuesCount: number
+            summary: string
+            createdAt: string | Date
+          }>
+        >`SELECT characterId, overall, issuesCount, summary, createdAt
             FROM CharacterSystemScanReport
             WHERE characterId IN (${Prisma.join(pendingCharacterIdList)})
             ORDER BY datetime(createdAt) DESC`
@@ -1624,16 +2157,17 @@ characterRoutes.get('/admin/characters/review-queue', requireAdmin, async (reque
     response.json({
       data: pendingCharacterList.map((character) => ({
         ...character,
+        vroidFileUrl: buildSignedVrmDownloadUrl(request, character.id, character.vroidFileUrl),
         systemScanSummary: latestScanByCharacterId.get(character.id)
           ? {
-              overall: latestScanByCharacterId.get(character.id)!.overall,
-              issuesCount: latestScanByCharacterId.get(character.id)!.issuesCount,
-              summary: latestScanByCharacterId.get(character.id)!.summary,
-              createdAt:
-                typeof latestScanByCharacterId.get(character.id)!.createdAt === 'string'
-                  ? latestScanByCharacterId.get(character.id)!.createdAt
-                  : (latestScanByCharacterId.get(character.id)!.createdAt as Date).toISOString()
-            }
+            overall: latestScanByCharacterId.get(character.id)!.overall,
+            issuesCount: latestScanByCharacterId.get(character.id)!.issuesCount,
+            summary: latestScanByCharacterId.get(character.id)!.summary,
+            createdAt:
+              typeof latestScanByCharacterId.get(character.id)!.createdAt === 'string'
+                ? latestScanByCharacterId.get(character.id)!.createdAt
+                : (latestScanByCharacterId.get(character.id)!.createdAt as Date).toISOString()
+          }
           : null
       }))
     })
@@ -1742,15 +2276,15 @@ characterRoutes.get('/admin/characters/:characterId/system-scan-report', require
     response.json({
       data: latest
         ? {
-            ...latest,
-            reportJson: (() => {
-              try {
-                return JSON.parse(latest.reportJson)
-              } catch {
-                return latest.reportJson
-              }
-            })()
-          }
+          ...latest,
+          reportJson: (() => {
+            try {
+              return JSON.parse(latest.reportJson)
+            } catch {
+              return latest.reportJson
+            }
+          })()
+        }
         : null
     })
   } catch (error) {

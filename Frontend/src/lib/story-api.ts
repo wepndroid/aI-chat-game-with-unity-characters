@@ -36,7 +36,7 @@ type StoryListRecord = {
   likesCount: number
   /** Present on public catalog rows when the viewer is signed in. */
   hasLiked?: boolean
-  characterId: string | null
+  characterId: string
   scenarioType: string | null
   author: StoryAuthor
   character: StoryCharacterRef
@@ -56,7 +56,7 @@ type StoryDetailRecord = {
   moderationRejectReason: string | null
   publishedAt: string | null
   likesCount: number
-  characterId: string | null
+  characterId: string
   scenarioType: string | null
   author: StoryAuthor
   character: StoryCharacterRef
@@ -101,8 +101,8 @@ const listStories = async (params: ListStoriesParams = {}) => {
 
   const query = searchParams.toString()
   const path = query ? `/stories?${query}` : '/stories'
-
-  return apiGet<{ data: StoryListRecord[] }>(path)
+  const response = await apiGet<{ data: StoryListRecord[] } | StoryListRecord[]>(path)
+  return Array.isArray(response) ? { data: response } : response
 }
 
 const listAdminStories = async (params: ListAdminStoriesParams = {}) => {
@@ -128,7 +128,7 @@ type CreateStoryPayload = {
   title: string
   scenarioStory: string
   scenarioChat: string
-  characterId?: string
+  characterId: string
   scenarioType?: StoryScenarioType
   publicationStatus?: StoryPublicationStatus
 }
@@ -139,7 +139,7 @@ const createStory = async (payload: CreateStoryPayload) => {
     title: payload.title,
     scenarioStory: payload.scenarioStory,
     scenarioChat: payload.scenarioChat,
-    ...(payload.characterId ? { characterId: payload.characterId } : {}),
+    characterId: payload.characterId,
     ...(payload.scenarioType ? { scenarioType: payload.scenarioType } : {}),
     publicationStatus
   })
@@ -149,7 +149,7 @@ type UpdateStoryPayload = {
   title?: string
   scenarioStory?: string
   scenarioChat?: string
-  characterId?: string | null
+  characterId?: string
   scenarioType?: StoryScenarioType | null
   publicationStatus?: StoryPublicationStatus
 }

@@ -1,11 +1,12 @@
 'use client'
 
 import { SCENARIO_EDIT_RETURN_TO_YOUR_SCENARIOS } from '@/components/your-characters/your-scenarios-helpers'
+import { buildAiGirlfriendRouteHref } from '@/lib/ai-girlfriend-route'
 import { getStory } from '@/lib/story-api'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
-/** Old `/stories/[id]/edit` → `/characters/.../edit-scenario/...`. */
+/** Old `/stories/[id]/edit` → `/ai-girlfriends/.../edit-scenario/...`. */
 const LegacyEditRedirect = () => {
   const router = useRouter()
   const params = useParams()
@@ -17,7 +18,7 @@ const LegacyEditRedirect = () => {
     const storyId = typeof raw === 'string' ? raw : Array.isArray(raw) ? raw[0] : ''
 
     if (!storyId) {
-      router.replace('/characters')
+      router.replace('/ai-girlfriends')
       return
     }
 
@@ -36,21 +37,21 @@ const LegacyEditRedirect = () => {
         }
 
         const ch = payload.data.character
-        const key = ch?.slug ?? ch?.id ?? payload.data.characterId
+        const key = ch?.id ?? payload.data.characterId
 
         if (key) {
           router.replace(
-            `/characters/${encodeURIComponent(key)}/edit-scenario/${encodeURIComponent(storyId)}${returnToQuery}`
+            `${buildAiGirlfriendRouteHref(ch?.name ?? 'ai-girlfriend', key)}/edit-scenario/${encodeURIComponent(storyId)}${returnToQuery}`
           )
         } else {
           setLabel('This scenario has no character link.')
-          router.replace('/characters')
+          router.replace('/ai-girlfriends')
         }
       })
       .catch(() => {
         if (!isCancelled) {
           setLabel('Could not open editor.')
-          router.replace('/characters')
+          router.replace('/ai-girlfriends')
         }
       })
 

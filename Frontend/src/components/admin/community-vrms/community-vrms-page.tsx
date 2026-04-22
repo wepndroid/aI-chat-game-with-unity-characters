@@ -7,6 +7,7 @@ import { AdminVrmMetricHeartIcon, AdminVrmMetricViewsIcon } from '@/components/u
 import { deleteCharacter, listCharacters, submitCharacterForReview, type CharacterListRecord } from '@/lib/character-api'
 import { ADMIN_OVERVIEW_REFRESH_EVENT } from '@/lib/admin-overview-events'
 import { apiPost } from '@/lib/api-client'
+import { buildAiGirlfriendRouteHref } from '@/lib/ai-girlfriend-route'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
@@ -116,7 +117,7 @@ const CommunityVrmRowActions = ({ characterRecord, busyCharacterId, onReview, on
   return (
     <div className="inline-flex items-center gap-2">
       <Link
-        href={`/characters/${encodeURIComponent(characterRecord.slug)}`}
+        href={buildAiGirlfriendRouteHref(characterRecord.name, characterRecord.id)}
         className={communityVrmActionLinkClassName}
         aria-label={`View ${characterRecord.name} in gallery`}
       >

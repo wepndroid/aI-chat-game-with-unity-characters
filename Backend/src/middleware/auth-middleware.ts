@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express'
 import { authConfig } from '../lib/auth-config'
+import { sendApiError } from '../lib/api-contract'
 import { sendBannedAccountForbidden } from '../lib/banned-account-response'
 import { resolveAuthenticatedSessionUser } from '../services/auth-service'
 
@@ -65,9 +66,7 @@ const optionalAuth = (request: Request, _response: Response, next: NextFunction)
 const requireAuth = (request: Request, response: Response, next: NextFunction) => {
   optionalAuth(request, response, () => {
     if (!request.authUser) {
-      response.status(401).json({
-        message: 'Authentication required.'
-      })
+      sendApiError(response, 401, 'AUTH_REQUIRED', 'Authentication required.')
       return
     }
 
@@ -77,6 +76,11 @@ const requireAuth = (request: Request, response: Response, next: NextFunction) =
 
 const requireAdmin = (request: Request, response: Response, next: NextFunction) => {
   requireAuth(request, response, () => {
+    if (request.authUser?.role !== 'ADMIN') {
+      sendApiError(response, 403, 'FORBIDDEN', 'Forbidden.')
+      return
+    }
+
     next()
   })
 }
@@ -84,9 +88,7 @@ const requireAdmin = (request: Request, response: Response, next: NextFunction) 
 const requireVerifiedEmail = (request: Request, response: Response, next: NextFunction) => {
   requireAuth(request, response, () => {
     if (!request.authUser?.isEmailVerified) {
-      response.status(403).json({
-        message: 'Email verification required.'
-      })
+      sendApiError(response, 403, 'FORBIDDEN', 'Email verification required.')
       return
     }
 

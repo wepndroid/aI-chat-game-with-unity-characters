@@ -15,8 +15,32 @@ Express + Prisma API for authentication, Patreon linking, characters, reviews, a
 5. `npm run seed`
 6. `npm run dev`
 
+## Legacy Model Import
+Use the one-time importer when migrating VRMs from the previous site:
+
+`npm run import:legacy-models -- --owner-email=ghostlady0613@gmail.com`
+
+What it does:
+- fetches the old `models.json`
+- downloads each legacy `.vrm` into `Backend/uploads`
+- imports persona info for records where `heywaifu = 1`
+- fills `tagline` from the shared legacy origin map
+- creates or updates approved characters without overwriting an existing thumbnail
+
+Useful flags:
+- `--dry-run`
+- `--skip-downloads`
+- `--limit=5`
+- `--public-asset-base-url=http://127.0.0.1:4000`
+
+If you already imported the characters and only want to fill missing taglines later:
+
+`npm run backfill:legacy-taglines`
+
+There is also an admin UI for this workflow at `/admin/legacy-import`.
+
 ## Security Baseline
-- Passwords: Argon2 hashing (`passwordHash`)
+- Passwords: configurable Argon2/Scrypt hashing (`passwordHash`), with backward-compatible verification for both formats
 - Sessions: opaque random tokens, hashed in DB
 - Session transport: HTTP-only cookie, secure in production
 - Token flows: hashed one-time tokens for verification/reset
@@ -41,6 +65,7 @@ Use placeholders only in `.env.example`. Put real values only in local `.env` / 
 - `AUTH_SESSION_TTL_MS`
 - `AUTH_EMAIL_VERIFICATION_TOKEN_TTL_MS`
 - `AUTH_PASSWORD_RESET_TOKEN_TTL_MS`
+- `AUTH_PASSWORD_HASH_ALGORITHM` (optional: `argon2` or `scrypt`; defaults to `argon2` in production and `scrypt` locally)
 - `AUTH_VERIFY_EMAIL_URL_BASE`
 - `AUTH_RESET_PASSWORD_URL_BASE`
 

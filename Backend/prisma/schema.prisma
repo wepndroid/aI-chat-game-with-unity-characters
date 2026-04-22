@@ -48,11 +48,11 @@ enum EntitlementStatus {
 
 /// Subscription tier catalog (PDF: Tiers.code, message_limit). Used for chat quota and optional User.tierCode.
 model Tier {
-  code          String @id
-  messageLimit  Int
-  periodDays    Int    @default(30)
-  label         String?
-  users         User[]
+  code         String  @id
+  messageLimit Int
+  periodDays   Int     @default(30)
+  label        String?
+  users        User[]
 }
 
 enum ChatMessageRole {
@@ -77,8 +77,12 @@ model User {
   officialVrmsListSeenAt  DateTime?
   /// When this admin last opened Community VRMs; used for sidebar “new community” badge (per admin).
   communityVrmsListSeenAt DateTime?
+  acquisitionVisitId      String?                  @unique
+  patreonLinkedAt         DateTime?
+  patreonActiveAt         DateTime?
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
+  acquisitionVisit        LandingPageVisit?        @relation("UserAcquisitionVisit", fields: [acquisitionVisitId], references: [id], onDelete: SetNull)
   characters              Character[]
   hearts                  CharacterHeart[]
   reviews                 Review[]
@@ -94,7 +98,71 @@ model User {
   storyPostLikes          StoryPostLike[]
   characterCardsCreated   CharacterCard[]
   chatSessions            ChatSession[]
+  chatQuotaReservations   ChatQuotaReservation[]
   userNotifications       UserNotification[]
+}
+
+model LandingPage {
+  id          String               @id @default(cuid())
+  key         String               @unique
+  name        String
+  description String?
+  basePath    String?
+  isActive    Boolean              @default(true)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  variants    LandingPageVariant[]
+  visits      LandingPageVisit[]
+}
+
+model LandingPageVariant {
+  id            String             @id @default(cuid())
+  landingPageId String
+  key           String
+  name          String
+  routePath     String             @unique
+  notes         String?
+  weight        Int                @default(100)
+  isControl     Boolean            @default(false)
+  isActive      Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  landingPage   LandingPage        @relation(fields: [landingPageId], references: [id], onDelete: Cascade)
+  visits        LandingPageVisit[]
+
+  @@unique([landingPageId, key])
+  @@index([landingPageId, isActive])
+}
+
+model LandingPageVisit {
+  id                String             @id @default(cuid())
+  landingPageId     String
+  variantId         String
+  visitorId         String
+  source            String?
+  medium            String?
+  campaign          String?
+  content           String?
+  term              String?
+  referrerHost      String?
+  entryPath         String?
+  landingUrl        String?
+  userAgent         String?
+  visitCount        Int                @default(1)
+  firstVisitedAt    DateTime           @default(now())
+  lastVisitedAt     DateTime           @default(now())
+  signupClickedAt   DateTime?
+  signedUpUserId    String?            @unique
+  signupCompletedAt DateTime?
+  landingPage       LandingPage        @relation(fields: [landingPageId], references: [id], onDelete: Cascade)
+  variant           LandingPageVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  attributedUser    User?              @relation("UserAcquisitionVisit")
+
+  @@unique([visitorId, variantId])
+  @@index([landingPageId, firstVisitedAt])
+  @@index([variantId, firstVisitedAt])
+  @@index([source, campaign, medium])
+  @@index([signedUpUserId])
 }
 
 /// In-app notifications (VRM moderation, etc.). Story rejections use StoryPost + merge in API until read.
@@ -124,43 +192,40 @@ model SystemActivityLog {
 }
 
 model Character {
-  id               String                @id @default(cuid())
-  slug             String                @unique
-  name             String
-  fullName         String?
-  tagline          String?
-  description      String?
-  personality      String?
-  scenario         String?
-  firstMessage     String?
-  exampleDialogs   String?
-  vroidFileUrl     String?
-  previewImageUrl  String?
-  legacyFileHash   String?
-  legacyTier       Int?
-  legacyHeyWaifu   Int?
-  status           CharacterStatus       @default(DRAFT)
-  visibility       CharacterVisibility   @default(PUBLIC)
+  id                     String                      @id @default(cuid())
+  slug                   String                      @unique
+  name                   String
+  fullName               String?
+  tagline                String?
+  description            String?
+  vroidFileUrl           String?
+  poseFileUrl            String?
+  previewImageUrl        String?
+  legacyFileHash         String?
+  legacyTier             Int?
+  legacyHeyWaifu         Int?
+  status                 CharacterStatus             @default(DRAFT)
+  visibility             CharacterVisibility         @default(PUBLIC)
   /// True when the owning account is an admin (admin-uploaded VRMs); mirrored for API compatibility.
-  officialListing  Boolean               @default(false)
-  isPatreonGated   Boolean               @default(false)
-  minimumTierCents Int?
+  officialListing        Boolean                     @default(false)
+  isPatreonGated         Boolean                     @default(false)
+  minimumTierCents       Int?
   /// Optional note from admin when status is set to REJECTED (shown in moderation / future creator messaging).
   moderationRejectReason String?
-  heartsCount      Int                   @default(0)
-  viewsCount       Int                   @default(0)
-  ownerId          String
-  owner            User                  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  reviews             Review[]
-  hearts              CharacterHeart[]
-  chatStartLedgerRows CharacterChatStartLedger[]
-  systemScanReports    CharacterSystemScanReport[]
-  storyPosts           StoryPost[]
+  heartsCount            Int                         @default(0)
+  viewsCount             Int                         @default(0)
+  ownerId                String
+  owner                  User                        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  reviews                Review[]
+  hearts                 CharacterHeart[]
+  chatStartLedgerRows    CharacterChatStartLedger[]
+  systemScanReports      CharacterSystemScanReport[]
+  storyPosts             StoryPost[]
   /// Primary character card (PDF: CharacterCards) — AI persona / chat context. Mirrors legacy fields on Character.
-  characterCard        CharacterCard?
-  createdAt           DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
-  publishedAt      DateTime?
+  characterCard          CharacterCard?
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+  publishedAt            DateTime?
 
   @@index([ownerId, status])
   @@index([status, visibility])
@@ -168,49 +233,61 @@ model Character {
 
 /// PDF: CharacterCards — persona / behavior layer on top of base Character (visual avatar).
 model CharacterCard {
-  id              String    @id @default(cuid())
-  characterId     String    @unique
-  creatorUserId   String
-  fullName        String?
-  description     String?
-  personality     String?
-  scenario        String?
-  firstMessage    String?
-  exampleDialogs  String?
-  isPublic        Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  character       Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
-  creator         User      @relation(fields: [creatorUserId], references: [id], onDelete: Cascade)
-  chatSessions    ChatSession[]
+  id             String        @id @default(cuid())
+  characterId    String        @unique
+  creatorUserId  String
+  fullName       String?
+  description    String?
+  personality    String?
+  scenario       String?
+  firstMessage   String?
+  exampleDialogs String?
+  isPublic       Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  character      Character     @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  creator        User          @relation(fields: [creatorUserId], references: [id], onDelete: Cascade)
+  chatSessions   ChatSession[]
 
   @@index([creatorUserId])
 }
 
 /// PDF: ChatSessions — groups messages per user + character card.
 model ChatSession {
-  id              String @id @default(cuid())
-  userId          String
-  characterCardId String
-  createdAt       DateTime @default(now())
-  user            User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  characterCard   CharacterCard @relation(fields: [characterCardId], references: [id], onDelete: Cascade)
-  messages        ChatMessage[]
+  id                String                 @id @default(cuid())
+  userId            String
+  characterCardId   String
+  /// Phase-1 v4: Story context for this thread.
+  storyId           String
+  createdAt         DateTime               @default(now())
+  /// Mutable metadata for session list UX.
+  lastUpdatedAt     DateTime               @default(now())
+  previewText       String?
+  user              User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  characterCard     CharacterCard          @relation(fields: [characterCardId], references: [id], onDelete: Cascade)
+  story             StoryPost              @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  messages          ChatMessage[]
+  quotaReservations ChatQuotaReservation[]
 
   @@index([userId, createdAt])
   @@index([characterCardId])
+  @@index([storyId, userId, createdAt])
 }
 
 /// PDF: ChatMessages — chat history (role + content).
 model ChatMessage {
-  id        String @id @default(cuid())
-  sessionId String
-  role      ChatMessageRole
-  content   String
-  createdAt DateTime @default(now())
-  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  id                String                 @id @default(cuid())
+  sessionId         String
+  /// Idempotency key echoed on both USER and ASSISTANT messages for replay-safe transcript recovery.
+  clientMessageId   String?
+  role              ChatMessageRole
+  content           String
+  createdAt         DateTime               @default(now())
+  session           ChatSession            @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  quotaReservations ChatQuotaReservation[]
 
   @@index([sessionId, createdAt])
+  @@index([sessionId, clientMessageId])
 }
 
 /// Moderation/system scan output (e.g. Unity-side checks) stored per character (append-only).
@@ -223,7 +300,7 @@ model CharacterSystemScanReport {
   reportJson  Json
   createdAt   DateTime @default(now())
 
-  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
 
   @@index([characterId, createdAt])
 }
@@ -391,33 +468,44 @@ model RuntimeAdminSettings {
 
 /// User-submitted story adjustments / community posts visible on the public feed.
 model StoryPost {
-  id                  String                  @id @default(cuid())
-  authorId            String
-  title               String
+  id                     String                 @id @default(cuid())
+  authorId               String
+  title                  String
+  /// Phase-1 field alias for API/Unity compatibility (`prompt_description`).
+  promptDescription      String?
+  /// Phase-1 persona field alias.
+  personality            String?
+  /// Phase-1 scenario field alias.
+  scenario               String?
+  /// Phase-1 first message field alias.
+  firstMessage           String?
+  /// Phase-1 example dialogs field alias.
+  exampleDialogs         String?
   /// Setting / narrative shown on the left of scenario cards (plain text).
-  scenarioStory       String                  @default("")
+  scenarioStory          String                 @default("")
   /// Dialogue and stage direction on the right; supports mini-markup (`"…"`, `**…**`, `*…*`).
-  scenarioChat        String                  @default("")
+  scenarioChat           String                 @default("")
   /// Denormalized: `scenarioStory` + blank lines + `scenarioChat` for search and legacy readers.
-  body                String
-  characterId         String?
+  body                   String
+  characterId            String
   /// Story category / badge (e.g. CYBERPUNK, ROMANCE). Required when published; shown on feeds and character cards.
-  scenarioType        String?
-  publicationStatus   StoryPublicationStatus @default(PUBLISHED)
+  scenarioType           String?
+  publicationStatus      StoryPublicationStatus @default(PUBLISHED)
   /// NONE = draft / not submitted; PENDING = submitted for review; APPROVED = public; REJECTED = author must revise.
-  moderationStatus    StoryModerationStatus   @default(NONE)
+  moderationStatus       StoryModerationStatus  @default(NONE)
   /// Shown to the author when moderationStatus is REJECTED (and to admins).
   moderationRejectReason String?
   /// When the author has seen the rejection (clears header notification); set by acknowledge or viewing story/edit.
-  authorReadRejectionAt DateTime?
+  authorReadRejectionAt  DateTime?
   /// Set when the story is or was published; kept if moved back to draft for ordering/history.
-  publishedAt         DateTime?
-  likesCount          Int                     @default(0)
-  createdAt           DateTime                @default(now())
-  updatedAt           DateTime                @updatedAt
-  author              User                    @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  character           Character?              @relation(fields: [characterId], references: [id], onDelete: SetNull)
-  likes               StoryPostLike[]
+  publishedAt            DateTime?
+  likesCount             Int                    @default(0)
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  author                 User                   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  character              Character              @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  likes                  StoryPostLike[]
+  chatSessions           ChatSession[]
 
   @@index([authorId, createdAt])
   @@index([authorId, publicationStatus])
@@ -450,30 +538,65 @@ enum StoryModerationStatus {
   REJECTED
 }
 
+enum ChatQuotaReservationStatus {
+  RESERVED
+  FINALIZED
+  RELEASED
+}
+
 /// Rolling message quota tracker: one row per user per billing period.
 model ChatMessageUsage {
-  id             String   @id @default(cuid())
-  userId         String
-  periodStartAt  DateTime
-  periodEndAt    DateTime
-  messagesUsed   Int      @default(0)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            String                 @id @default(cuid())
+  userId        String
+  periodStartAt DateTime
+  periodEndAt   DateTime
+  messagesUsed  Int                    @default(0)
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  user          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reservations  ChatQuotaReservation[]
 
   @@unique([userId, periodStartAt])
   @@index([userId, periodEndAt])
 }
 
+/// Quota reservation ledger for reserve/finalize/release + idempotent retries (Phase-1 v4).
+model ChatQuotaReservation {
+  id            String                     @id @default(cuid())
+  userId        String
+  usageId       String
+  periodStartAt DateTime
+  requestId     String
+  /// Stable hash of semantic payload (`session_id` + `message`) to detect idempotency key reuse with different body.
+  requestFingerprint String?
+  status        ChatQuotaReservationStatus @default(RESERVED)
+  sessionId     String?
+  messageId     String?
+  errorReason   String?
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
+  finalizedAt   DateTime?
+  releasedAt    DateTime?
+  user          User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usage         ChatMessageUsage           @relation(fields: [usageId], references: [id], onDelete: Cascade)
+  session       ChatSession?               @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  message       ChatMessage?               @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, requestId])
+  @@index([usageId])
+  @@index([userId, periodStartAt, status])
+  @@index([sessionId])
+}
+
 /// Persistent failed-login throttling by client IP to survive process restarts.
 model FailedLoginAttempt {
   /// Normalized IP key (Express `request.ip` or remote address fallback).
-  ipAddress     String   @id
-  attempts      Int      @default(0)
+  ipAddress     String    @id
+  attempts      Int       @default(0)
   windowStartAt DateTime
   lockUntil     DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([lockUntil])
   @@index([windowStartAt])

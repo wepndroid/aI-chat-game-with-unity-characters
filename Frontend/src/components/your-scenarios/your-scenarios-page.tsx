@@ -143,7 +143,7 @@ const YourScenariosPage = () => {
             Your Scenarios
           </h1>
           <p className="mx-auto mt-3 max-w-[780px] text-center text-sm leading-7 text-white/70">
-            Community scenarios you created — open to edit or check moderation status.
+            Community scenarios you created — edit drafts and scenarios in review; live (approved) scenarios stay read-only.
           </p>
 
           <div className="mt-10 grid min-w-0 gap-8 lg:grid-cols-[380px_1fr] lg:items-start">
@@ -184,52 +184,96 @@ const YourScenariosPage = () => {
                       const ch = story.character
                       const linked = Boolean(ch)
                       const thumbName = ch?.name?.trim() || 'Character'
+                      const isApprovedLive =
+                        story.publicationStatus === 'PUBLISHED' && story.moderationStatus === 'APPROVED'
+                      const canEditScenario = !isApprovedLive
 
                       return (
                         <li key={story.id}>
-                          <Link
-                            href={buildScenarioEditHref(story, {
-                              returnTo: SCENARIO_EDIT_RETURN_TO_YOUR_SCENARIOS
-                            })}
-                            className="flex gap-3 rounded-lg border border-white/[0.07] bg-[#0a0a0a]/90 px-3 py-2.5 transition hover:border-ember-500/35 hover:bg-[#141212]"
-                          >
-                            <ScenarioCharacterThumb
-                              previewImageUrl={ch?.previewImageUrl ?? null}
-                              characterName={thumbName}
-                              linked={linked}
-                            />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-start justify-between gap-2">
-                                <span className="min-w-0 flex-1 font-[family-name:var(--font-heading)] text-[13px] font-medium italic leading-snug text-white/90 line-clamp-2">
-                                  {story.title}
-                                </span>
-                                <span
-                                  className={`shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.06em] ${scenarioStatusPillClass(story)}`}
-                                >
-                                  {scenarioStatusLabel(story)}
-                                </span>
-                              </div>
-                              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-white/40">
-                                {typeLabel ? <span>{typeLabel}</span> : null}
-                                {ch ? (
-                                  <span className="truncate">· {ch.name}</span>
-                                ) : (
-                                  <span>· No character linked</span>
-                                )}
-                              </div>
-                              {story.moderationStatus === 'REJECTED' ? (
-                                <div className="mt-2 rounded-md border border-rose-400/30 bg-rose-950/25 px-2.5 py-2">
-                                  <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-rose-200/85">
-                                    Rejection reason
-                                  </p>
-                                  <p className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-white/85">
-                                    {story.moderationRejectReason?.trim() ||
-                                      'No reason was provided.'}
-                                  </p>
+                          {canEditScenario ? (
+                            <Link
+                              href={buildScenarioEditHref(story, {
+                                returnTo: SCENARIO_EDIT_RETURN_TO_YOUR_SCENARIOS
+                              })}
+                              className="flex gap-3 rounded-lg border border-white/[0.07] bg-[#0a0a0a]/90 px-3 py-2.5 transition hover:border-ember-500/35 hover:bg-[#141212]"
+                            >
+                              <ScenarioCharacterThumb
+                                previewImageUrl={ch?.previewImageUrl ?? null}
+                                characterName={thumbName}
+                                linked={linked}
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="min-w-0 flex-1 font-[family-name:var(--font-heading)] text-[13px] font-medium italic leading-snug text-white/90 line-clamp-2">
+                                    {story.title}
+                                  </span>
+                                  <span
+                                    className={`shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.06em] ${scenarioStatusPillClass(story)}`}
+                                  >
+                                    {scenarioStatusLabel(story)}
+                                  </span>
                                 </div>
-                              ) : null}
+                                <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-white/40">
+                                  {typeLabel ? <span>{typeLabel}</span> : null}
+                                  {ch ? (
+                                    <span className="truncate">· {ch.name}</span>
+                                  ) : (
+                                    <span>· No character linked</span>
+                                  )}
+                                </div>
+                                {story.moderationStatus === 'REJECTED' ? (
+                                  <div className="mt-2 rounded-md border border-rose-400/30 bg-rose-950/25 px-2.5 py-2">
+                                    <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-rose-200/85">
+                                      Rejection reason
+                                    </p>
+                                    <p className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-white/85">
+                                      {story.moderationRejectReason?.trim() ||
+                                        'No reason was provided.'}
+                                    </p>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </Link>
+                          ) : (
+                            <div className="flex gap-3 rounded-lg border border-white/[0.07] bg-[#0a0a0a]/70 px-3 py-2.5 opacity-80">
+                              <ScenarioCharacterThumb
+                                previewImageUrl={ch?.previewImageUrl ?? null}
+                                characterName={thumbName}
+                                linked={linked}
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="min-w-0 flex-1 font-[family-name:var(--font-heading)] text-[13px] font-medium italic leading-snug text-white/90 line-clamp-2">
+                                    {story.title}
+                                  </span>
+                                  <span
+                                    className={`shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.06em] ${scenarioStatusPillClass(story)}`}
+                                  >
+                                    {scenarioStatusLabel(story)}
+                                  </span>
+                                </div>
+                                <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-white/40">
+                                  {typeLabel ? <span>{typeLabel}</span> : null}
+                                  {ch ? (
+                                    <span className="truncate">· {ch.name}</span>
+                                  ) : (
+                                    <span>· No character linked</span>
+                                  )}
+                                </div>
+                                {story.moderationStatus === 'REJECTED' ? (
+                                  <div className="mt-2 rounded-md border border-rose-400/30 bg-rose-950/25 px-2.5 py-2">
+                                    <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-rose-200/85">
+                                      Rejection reason
+                                    </p>
+                                    <p className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-white/85">
+                                      {story.moderationRejectReason?.trim() ||
+                                        'No reason was provided.'}
+                                    </p>
+                                  </div>
+                                ) : null}
+                              </div>
                             </div>
-                          </Link>
+                          )}
                         </li>
                       )
                     })}

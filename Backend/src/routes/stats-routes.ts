@@ -195,6 +195,18 @@ const adminSettingsPatchSchema = z.object({
     })
     .strict()
     .optional(),
+  characterFieldLimits: z
+    .object({
+      nameMaxLength: z.number().int().min(2).max(500),
+      tagLineMaxLength: z.number().int().min(1).max(1000),
+      descriptionMaxLength: z.number().int().min(1).max(50000),
+      personalityMaxLength: z.number().int().min(1).max(50000),
+      scenarioMaxLength: z.number().int().min(1).max(50000),
+      exampleDialogsMaxLength: z.number().int().min(1).max(50000),
+      firstMessageMaxLength: z.number().int().min(1).max(50000)
+    })
+    .strict()
+    .optional(),
   requestLimits: z
     .object({
       generalPerMinute: z.number().int().min(10).max(10000),
@@ -213,6 +225,20 @@ const adminSettingsPatchSchema = z.object({
     .object({
       publicUploadsEnabled: z.boolean(),
       communityPageEnabled: z.boolean()
+    })
+    .strict()
+    .optional(),
+  thumbnailGeneration: z
+    .object({
+      prompt: z.string().trim().min(1).max(20000),
+      negativePrompt: z.string().trim().max(20000),
+      width: z.number().int().min(64).max(2048).multipleOf(64),
+      height: z.number().int().min(64).max(2048).multipleOf(64),
+      steps: z.number().int().min(1).max(150),
+      cfgScale: z.number().min(1).max(30),
+      seed: z.number().int().min(-1).max(2147483647),
+      samplerName: z.string().trim().min(1).max(120),
+      denoisingStrength: z.number().min(0).max(1)
     })
     .strict()
     .optional(),
@@ -542,6 +568,19 @@ statsRoutes.get('/admin/global-settings', requireAdmin, async (_request, respons
   }
 })
 
+statsRoutes.get('/global-settings/public', async (_request, response, next) => {
+  try {
+    const settings = await getRuntimeAdminSettings()
+    response.json({
+      data: {
+        characterFieldLimits: settings.characterFieldLimits
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 statsRoutes.patch('/admin/global-settings', requireAdmin, async (request, response, next) => {
   try {
     const payload = adminSettingsPatchSchema.parse(request.body)
@@ -549,9 +588,11 @@ statsRoutes.patch('/admin/global-settings', requireAdmin, async (request, respon
 
     const nextSettings = await updateRuntimeAdminSettings({
       uploadLimits: payload.uploadLimits ?? previous.uploadLimits,
+      characterFieldLimits: payload.characterFieldLimits ?? previous.characterFieldLimits,
       requestLimits: payload.requestLimits ?? previous.requestLimits,
       sessionLogin: payload.sessionLogin ?? previous.sessionLogin,
       featureSwitches: payload.featureSwitches ?? previous.featureSwitches,
+      thumbnailGeneration: payload.thumbnailGeneration ?? previous.thumbnailGeneration,
       maintenance: payload.maintenance ?? previous.maintenance,
       apiKeys: payload.apiKeys
         ? {

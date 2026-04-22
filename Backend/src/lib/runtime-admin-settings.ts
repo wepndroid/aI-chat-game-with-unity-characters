@@ -6,6 +6,16 @@ type UploadLimitsSettings = {
   allowedPreviewMimeTypes: string[]
 }
 
+type CharacterFieldLimitsSettings = {
+  nameMaxLength: number
+  tagLineMaxLength: number
+  descriptionMaxLength: number
+  personalityMaxLength: number
+  scenarioMaxLength: number
+  exampleDialogsMaxLength: number
+  firstMessageMaxLength: number
+}
+
 type RequestLimitsSettings = {
   generalPerMinute: number
   authPerMinute: number
@@ -19,6 +29,18 @@ type SessionLoginSettings = {
 type FeatureSwitchesSettings = {
   publicUploadsEnabled: boolean
   communityPageEnabled: boolean
+}
+
+type ThumbnailGenerationSettings = {
+  prompt: string
+  negativePrompt: string
+  width: number
+  height: number
+  steps: number
+  cfgScale: number
+  seed: number
+  samplerName: string
+  denoisingStrength: number
 }
 
 type MaintenanceSettings = {
@@ -47,9 +69,11 @@ export type ApiKeysSettings = {
 
 type RuntimeAdminSettings = {
   uploadLimits: UploadLimitsSettings
+  characterFieldLimits: CharacterFieldLimitsSettings
   requestLimits: RequestLimitsSettings
   sessionLogin: SessionLoginSettings
   featureSwitches: FeatureSwitchesSettings
+  thumbnailGeneration: ThumbnailGenerationSettings
   maintenance: MaintenanceSettings
   apiKeys: ApiKeysSettings
 }
@@ -114,6 +138,15 @@ const defaultRuntimeAdminSettings: RuntimeAdminSettings = {
     maxPreviewImageSizeMb: 10,
     allowedPreviewMimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
   },
+  characterFieldLimits: {
+    nameMaxLength: 120,
+    tagLineMaxLength: 160,
+    descriptionMaxLength: 5000,
+    personalityMaxLength: 8000,
+    scenarioMaxLength: 8000,
+    exampleDialogsMaxLength: 12000,
+    firstMessageMaxLength: 50000
+  },
   requestLimits: {
     generalPerMinute: 240,
     authPerMinute: 60,
@@ -125,6 +158,17 @@ const defaultRuntimeAdminSettings: RuntimeAdminSettings = {
   featureSwitches: {
     publicUploadsEnabled: true,
     communityPageEnabled: true
+  },
+  thumbnailGeneration: {
+    prompt: '1girl, anime, playful selfie, sticking out tongue, eyes half closed, masterpiece, best quality',
+    negativePrompt: 'blurry, low quality, deformed, ugly',
+    width: 832,
+    height: 1216,
+    steps: 50,
+    cfgScale: 20,
+    seed: -1,
+    samplerName: 'DPM++ 2M Karras',
+    denoisingStrength: 0.6
   },
   maintenance: {
     enabled: false,
@@ -142,6 +186,31 @@ const defaultRuntimeAdminSettings: RuntimeAdminSettings = {
 
 let tableEnsured = false
 
+const isMissingCharacterFieldLimitsColumnError = (error: unknown) => {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  return error.message.includes('no such column: characterFieldLimitsJson') || error.message.includes('no such column: thumbnailGenerationJson')
+}
+
+const ensureCharacterFieldLimitsColumn = async () => {
+  const tableInfo = await prisma.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info('RuntimeAdminSettings')`)
+  const existingColumns = new Set(tableInfo.map((column) => column.name))
+
+  if (!existingColumns.has('characterFieldLimitsJson')) {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE RuntimeAdminSettings ADD COLUMN characterFieldLimitsJson TEXT NOT NULL DEFAULT '${JSON.stringify(defaultRuntimeAdminSettings.characterFieldLimits)}'`
+    )
+  }
+
+  if (!existingColumns.has('thumbnailGenerationJson')) {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE RuntimeAdminSettings ADD COLUMN thumbnailGenerationJson TEXT NOT NULL DEFAULT '${JSON.stringify(defaultRuntimeAdminSettings.thumbnailGeneration)}'`
+    )
+  }
+}
+
 const ensureSettingsTable = async () => {
   if (tableEnsured) {
     return
@@ -151,6 +220,8 @@ const ensureSettingsTable = async () => {
     CREATE TABLE IF NOT EXISTS RuntimeAdminSettings (
       id TEXT PRIMARY KEY NOT NULL,
       uploadLimitsJson TEXT NOT NULL,
+      characterFieldLimitsJson TEXT NOT NULL,
+      thumbnailGenerationJson TEXT NOT NULL,
       requestLimitsJson TEXT NOT NULL,
       sessionLoginJson TEXT NOT NULL,
       featureSwitchesJson TEXT NOT NULL,
@@ -159,6 +230,8 @@ const ensureSettingsTable = async () => {
       updatedAt TEXT NOT NULL
     )
   `)
+
+  await ensureCharacterFieldLimitsColumn()
 
   tableEnsured = true
 }
@@ -175,9 +248,11 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
 
 const normalize = (input: Partial<RuntimeAdminSettings>): RuntimeAdminSettings => {
   const upload: Partial<UploadLimitsSettings> = input.uploadLimits ?? {}
+  const characterFieldLimits: Partial<CharacterFieldLimitsSettings> = input.characterFieldLimits ?? {}
   const request: Partial<RequestLimitsSettings> = input.requestLimits ?? {}
   const session: Partial<SessionLoginSettings> = input.sessionLogin ?? {}
   const feature: Partial<FeatureSwitchesSettings> = input.featureSwitches ?? {}
+  const thumbnailGeneration: Partial<ThumbnailGenerationSettings> = input.thumbnailGeneration ?? {}
   const maintenance: Partial<MaintenanceSettings> = input.maintenance ?? {}
   const apiKeys: Partial<ApiKeysSettings> = input.apiKeys ?? {}
 
@@ -188,6 +263,45 @@ const normalize = (input: Partial<RuntimeAdminSettings>): RuntimeAdminSettings =
       allowedPreviewMimeTypes: Array.isArray(upload.allowedPreviewMimeTypes)
         ? upload.allowedPreviewMimeTypes.filter((row: unknown): row is string => typeof row === 'string' && row.trim().length > 0)
         : defaultRuntimeAdminSettings.uploadLimits.allowedPreviewMimeTypes
+    },
+    characterFieldLimits: {
+      nameMaxLength: clamp(
+        Number(characterFieldLimits.nameMaxLength ?? defaultRuntimeAdminSettings.characterFieldLimits.nameMaxLength),
+        2,
+        500
+      ),
+      tagLineMaxLength: clamp(
+        Number(characterFieldLimits.tagLineMaxLength ?? defaultRuntimeAdminSettings.characterFieldLimits.tagLineMaxLength),
+        1,
+        1000
+      ),
+      descriptionMaxLength: clamp(
+        Number(characterFieldLimits.descriptionMaxLength ?? defaultRuntimeAdminSettings.characterFieldLimits.descriptionMaxLength),
+        1,
+        50000
+      ),
+      personalityMaxLength: clamp(
+        Number(characterFieldLimits.personalityMaxLength ?? defaultRuntimeAdminSettings.characterFieldLimits.personalityMaxLength),
+        1,
+        50000
+      ),
+      scenarioMaxLength: clamp(
+        Number(characterFieldLimits.scenarioMaxLength ?? defaultRuntimeAdminSettings.characterFieldLimits.scenarioMaxLength),
+        1,
+        50000
+      ),
+      exampleDialogsMaxLength: clamp(
+        Number(
+          characterFieldLimits.exampleDialogsMaxLength ?? defaultRuntimeAdminSettings.characterFieldLimits.exampleDialogsMaxLength
+        ),
+        1,
+        50000
+      ),
+      firstMessageMaxLength: clamp(
+        Number(characterFieldLimits.firstMessageMaxLength ?? defaultRuntimeAdminSettings.characterFieldLimits.firstMessageMaxLength),
+        1,
+        50000
+      )
     },
     requestLimits: {
       generalPerMinute: clamp(Number(request.generalPerMinute ?? defaultRuntimeAdminSettings.requestLimits.generalPerMinute), 10, 10000),
@@ -200,6 +314,30 @@ const normalize = (input: Partial<RuntimeAdminSettings>): RuntimeAdminSettings =
     featureSwitches: {
       publicUploadsEnabled: feature.publicUploadsEnabled ?? defaultRuntimeAdminSettings.featureSwitches.publicUploadsEnabled,
       communityPageEnabled: feature.communityPageEnabled ?? defaultRuntimeAdminSettings.featureSwitches.communityPageEnabled
+    },
+    thumbnailGeneration: {
+      prompt:
+        typeof thumbnailGeneration.prompt === 'string' && thumbnailGeneration.prompt.trim().length > 0
+          ? thumbnailGeneration.prompt.trim()
+          : defaultRuntimeAdminSettings.thumbnailGeneration.prompt,
+      negativePrompt:
+        typeof thumbnailGeneration.negativePrompt === 'string'
+          ? thumbnailGeneration.negativePrompt.trim()
+          : defaultRuntimeAdminSettings.thumbnailGeneration.negativePrompt,
+      width: clamp(Number(thumbnailGeneration.width ?? defaultRuntimeAdminSettings.thumbnailGeneration.width), 64, 2048),
+      height: clamp(Number(thumbnailGeneration.height ?? defaultRuntimeAdminSettings.thumbnailGeneration.height), 64, 2048),
+      steps: clamp(Number(thumbnailGeneration.steps ?? defaultRuntimeAdminSettings.thumbnailGeneration.steps), 1, 150),
+      cfgScale: clamp(Number(thumbnailGeneration.cfgScale ?? defaultRuntimeAdminSettings.thumbnailGeneration.cfgScale), 1, 30),
+      seed: clamp(Number(thumbnailGeneration.seed ?? defaultRuntimeAdminSettings.thumbnailGeneration.seed), -1, 2147483647),
+      samplerName:
+        typeof thumbnailGeneration.samplerName === 'string' && thumbnailGeneration.samplerName.trim().length > 0
+          ? thumbnailGeneration.samplerName.trim()
+          : defaultRuntimeAdminSettings.thumbnailGeneration.samplerName,
+      denoisingStrength: clamp(
+        Number(thumbnailGeneration.denoisingStrength ?? defaultRuntimeAdminSettings.thumbnailGeneration.denoisingStrength),
+        0,
+        1
+      )
     },
     maintenance: {
       enabled: maintenance.enabled ?? defaultRuntimeAdminSettings.maintenance.enabled,
@@ -239,19 +377,36 @@ const normalize = (input: Partial<RuntimeAdminSettings>): RuntimeAdminSettings =
 const getRuntimeAdminSettings = async () => {
   await ensureSettingsTable()
 
-  const rows = await prisma.$queryRaw<
-    Array<{
-      uploadLimitsJson: string
-      requestLimitsJson: string
-      sessionLoginJson: string
-      featureSwitchesJson: string
-      maintenanceJson: string
-      apiKeysJson: string
-    }>
-  >`SELECT uploadLimitsJson, requestLimitsJson, sessionLoginJson, featureSwitchesJson, maintenanceJson, apiKeysJson
-    FROM RuntimeAdminSettings
-    WHERE id = ${SETTINGS_SINGLETON_ID}
-    LIMIT 1`
+  type RuntimeSettingsRow = {
+    uploadLimitsJson: string
+    characterFieldLimitsJson: string
+    thumbnailGenerationJson: string
+    requestLimitsJson: string
+    sessionLoginJson: string
+    featureSwitchesJson: string
+    maintenanceJson: string
+    apiKeysJson: string
+  }
+
+  let rows: RuntimeSettingsRow[]
+
+  try {
+    rows = await prisma.$queryRaw<RuntimeSettingsRow[]>`SELECT uploadLimitsJson, characterFieldLimitsJson, thumbnailGenerationJson, requestLimitsJson, sessionLoginJson, featureSwitchesJson, maintenanceJson, apiKeysJson
+      FROM RuntimeAdminSettings
+      WHERE id = ${SETTINGS_SINGLETON_ID}
+      LIMIT 1`
+  } catch (error) {
+    if (!isMissingCharacterFieldLimitsColumnError(error)) {
+      throw error
+    }
+
+    await ensureCharacterFieldLimitsColumn()
+
+    rows = await prisma.$queryRaw<RuntimeSettingsRow[]>`SELECT uploadLimitsJson, characterFieldLimitsJson, thumbnailGenerationJson, requestLimitsJson, sessionLoginJson, featureSwitchesJson, maintenanceJson, apiKeysJson
+      FROM RuntimeAdminSettings
+      WHERE id = ${SETTINGS_SINGLETON_ID}
+      LIMIT 1`
+  }
 
   if (!rows[0]) {
     await updateRuntimeAdminSettings(defaultRuntimeAdminSettings)
@@ -261,6 +416,8 @@ const getRuntimeAdminSettings = async () => {
   const row = rows[0]
   const normalized = normalize({
     uploadLimits: safeJsonParse(row.uploadLimitsJson, defaultRuntimeAdminSettings.uploadLimits),
+    characterFieldLimits: safeJsonParse(row.characterFieldLimitsJson, defaultRuntimeAdminSettings.characterFieldLimits),
+    thumbnailGeneration: safeJsonParse(row.thumbnailGenerationJson, defaultRuntimeAdminSettings.thumbnailGeneration),
     requestLimits: safeJsonParse(row.requestLimitsJson, defaultRuntimeAdminSettings.requestLimits),
     sessionLogin: safeJsonParse(row.sessionLoginJson, defaultRuntimeAdminSettings.sessionLogin),
     featureSwitches: safeJsonParse(row.featureSwitchesJson, defaultRuntimeAdminSettings.featureSwitches),
@@ -280,10 +437,12 @@ const updateRuntimeAdminSettings = async (nextSettingsInput: Partial<RuntimeAdmi
   const updatedAt = new Date().toISOString()
 
   await prisma.$executeRaw`INSERT INTO RuntimeAdminSettings
-    (id, uploadLimitsJson, requestLimitsJson, sessionLoginJson, featureSwitchesJson, maintenanceJson, apiKeysJson, updatedAt)
+    (id, uploadLimitsJson, characterFieldLimitsJson, thumbnailGenerationJson, requestLimitsJson, sessionLoginJson, featureSwitchesJson, maintenanceJson, apiKeysJson, updatedAt)
     VALUES (
       ${SETTINGS_SINGLETON_ID},
       ${JSON.stringify(nextSettings.uploadLimits)},
+      ${JSON.stringify(nextSettings.characterFieldLimits)},
+      ${JSON.stringify(nextSettings.thumbnailGeneration)},
       ${JSON.stringify(nextSettings.requestLimits)},
       ${JSON.stringify(nextSettings.sessionLogin)},
       ${JSON.stringify(nextSettings.featureSwitches)},
@@ -293,6 +452,8 @@ const updateRuntimeAdminSettings = async (nextSettingsInput: Partial<RuntimeAdmi
     )
     ON CONFLICT(id) DO UPDATE SET
       uploadLimitsJson = excluded.uploadLimitsJson,
+      characterFieldLimitsJson = excluded.characterFieldLimitsJson,
+      thumbnailGenerationJson = excluded.thumbnailGenerationJson,
       requestLimitsJson = excluded.requestLimitsJson,
       sessionLoginJson = excluded.sessionLoginJson,
       featureSwitchesJson = excluded.featureSwitchesJson,

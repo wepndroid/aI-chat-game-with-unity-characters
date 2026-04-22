@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 import AdminOfficialVrmStatusPill, { type AdminOfficialVrmStatus } from '@/components/ui-elements/admin-official-vrm-status-pill'
 import { AdminVrmMetricHeartIcon, AdminVrmMetricViewsIcon } from '@/components/ui-elements/admin-vrm-metric-icons'
+import { buildAiGirlfriendRouteHref } from '@/lib/ai-girlfriend-route'
 import Link from 'next/link'
 
 type AdminOfficialVrmRecord = {
@@ -114,7 +115,7 @@ const AdminOfficialVrmRow = ({ vrmRecord, isBusy = false, onDeleteRequest }: Adm
             <EditIcon />
           </Link>
           <Link
-            href={`/characters/${encodeURIComponent(vrmRecord.slug)}`}
+            href={buildAiGirlfriendRouteHref(vrmRecord.name, vrmRecord.id)}
             className="inline-flex size-9 items-center justify-center rounded-lg text-[#8c99b0] transition hover:bg-white/5 hover:text-white"
             aria-label={`Open gallery page for ${vrmRecord.name}`}
           >

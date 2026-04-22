@@ -28,9 +28,54 @@
     <script>
       (function () {
         var nativeAlert = window.alert ? window.alert.bind(window) : null;
+        var nativeConsoleLog = window.console && window.console.log ? window.console.log.bind(window.console) : null;
+        var nativeConsoleWarn = window.console && window.console.warn ? window.console.warn.bind(window.console) : null;
+        var nativeConsoleError = window.console && window.console.error ? window.console.error.bind(window.console) : null;
+        var hiddenPreloadMode = false;
+        var didLogSuppressedGpuValidationNotice = false;
         var isSuppressedUnityPermissionError = function (value) {
           var text = String(value || "").toLowerCase();
           return text.includes("permissions check failed");
+        };
+        var isSuppressedUnityGpuValidationError = function (value) {
+          var text = String(value || "").toLowerCase();
+          return (
+            text.includes("hidden/nilotoon/animepostprocess_bindgroup") ||
+            text.includes("invalid bindgroup") ||
+            text.includes("invalid commandbuffer") ||
+            (text.includes("validation:") && text.includes("bindgroup"))
+          );
+        };
+        var isSuppressedUnityConsoleNoise = function (value) {
+          var text = String(value || "").toLowerCase();
+          return (
+            text.includes("[unitymemory] configuration parameters") ||
+            text.includes("memorysetup-") ||
+            text.includes("input system module state changed to: initialized") ||
+            text.includes("[physics::module]") ||
+            text.includes("loading player data from data.unity3d") ||
+            text.includes("platformgetstacktrace") ||
+            text.includes("the referenced script") ||
+            text.includes("scripted object") ||
+            text.includes("serialization layout") ||
+            text.includes("sendmessage: object authmanager not found") ||
+            text.includes("could not find main camera") ||
+            text.includes("dontdestroyonload only works for root gameobjects") ||
+            text.includes("could not find a collider associated with this filter") ||
+            text.includes("entry point \"\"vertexmain\"\" doesn't exist") ||
+            text.includes("none of the supported sample types") ||
+            text.includes("invalid bindgroup") ||
+            text.includes("invalid commandbuffer") ||
+            text.includes("while calling [queue].submit") ||
+            text.includes("the powerpreference option is currently ignored") ||
+            text.includes("manual synchronization of unity application.persistentdatapath via js_filesystem_sync() is deprecated")
+          );
+        };
+        var shouldSuppressUnityConsoleArguments = function (argsLike) {
+          var joined = Array.prototype.slice.call(argsLike).map(function (item) {
+            return String(item || "");
+          }).join(" ");
+          return isSuppressedUnityConsoleNoise(joined);
         };
 
         if (nativeAlert) {
@@ -41,6 +86,43 @@
             }
 
             nativeAlert(message);
+          };
+        }
+
+        if (nativeConsoleLog) {
+          window.console.log = function () {
+            if (shouldSuppressUnityConsoleArguments(arguments)) {
+              return;
+            }
+            nativeConsoleLog.apply(window.console, arguments);
+          };
+        }
+
+        if (nativeConsoleWarn) {
+          window.console.warn = function () {
+            if (shouldSuppressUnityConsoleArguments(arguments)) {
+              return;
+            }
+            nativeConsoleWarn.apply(window.console, arguments);
+          };
+        }
+
+        if (nativeConsoleError) {
+          window.console.error = function () {
+            var joined = Array.prototype.slice.call(arguments).map(function (item) {
+              return String(item || "");
+            }).join(" ");
+            if (isSuppressedUnityConsoleNoise(joined)) {
+              return;
+            }
+            if (hiddenPreloadMode && isSuppressedUnityGpuValidationError(joined)) {
+              if (!didLogSuppressedGpuValidationNotice) {
+                didLogSuppressedGpuValidationNotice = true;
+                console.warn("Suppressed repetitive Unity GPU validation errors while iframe is in hidden preload mode.");
+              }
+              return;
+            }
+            nativeConsoleError.apply(window.console, arguments);
           };
         }
 
@@ -180,6 +262,14 @@
         window.addEventListener("message", function (event) {
           var data = event.data;
           if (!data || typeof data !== "object") {
+            return;
+          }
+
+          if (data.type === "secretwaifu-embed:preload-mode") {
+            hiddenPreloadMode = Boolean(data.hiddenPreload);
+            if (!hiddenPreloadMode) {
+              didLogSuppressedGpuValidationNotice = false;
+            }
             return;
           }
 

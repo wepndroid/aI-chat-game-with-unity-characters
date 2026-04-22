@@ -224,6 +224,8 @@ const ReviewQueuePage = () => {
               key={queueRecord.id}
               queueRecord={toQueueCardRecord(queueRecord)}
               previewImageUrl={queueRecord.previewImageUrl}
+              vroidFileUrl={queueRecord.vroidFileUrl}
+              poseFileUrl={queueRecord.poseFileUrl}
               onApprove={handleApproveRecord}
               onReject={handleRejectRequest}
               onDetail={handleDetailRequest}

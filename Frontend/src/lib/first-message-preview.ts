@@ -10,6 +10,81 @@ export function isRichFirstMessageHtml(raw: string | null | undefined): boolean 
   return t.startsWith('<') && /<\/[a-z][\s\S]*/i.test(t)
 }
 
+type LegacyToken =
+  | { kind: 'plain'; text: string }
+  | { kind: 'action'; text: string }
+  | { kind: 'pink'; text: string }
+  | { kind: 'quoted'; text: string }
+
+const escapeHtml = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+function tokenizeLegacyFirstMessage(input: string): LegacyToken[] {
+  const tokens: LegacyToken[] = []
+  let i = 0
+
+  const appendPlain = (chunk: string) => {
+    if (!chunk) {
+      return
+    }
+    const previous = tokens[tokens.length - 1]
+    if (previous?.kind === 'plain') {
+      previous.text += chunk
+    } else {
+      tokens.push({ kind: 'plain', text: chunk })
+    }
+  }
+
+  while (i < input.length) {
+    if (input[i] === '*' && input[i + 1] === '*') {
+      const close = input.indexOf('**', i + 2)
+      if (close !== -1) {
+        tokens.push({ kind: 'action', text: input.slice(i + 2, close) })
+        i = close + 2
+        continue
+      }
+      appendPlain('*')
+      i += 1
+      continue
+    }
+
+    if (input[i] === '"') {
+      const close = input.indexOf('"', i + 1)
+      if (close !== -1) {
+        tokens.push({ kind: 'quoted', text: input.slice(i + 1, close) })
+        i = close + 1
+        continue
+      }
+    }
+
+    if (input[i] === '*' && input[i + 1] !== '*') {
+      const close = input.indexOf('*', i + 1)
+      if (close !== -1 && close > i + 1) {
+        tokens.push({ kind: 'pink', text: input.slice(i + 1, close) })
+        i = close + 1
+        continue
+      }
+    }
+
+    appendPlain(input[i] ?? '')
+    i += 1
+  }
+
+  return tokens
+}
+
+function legacyTokenToHtml(token: LegacyToken): string {
+  switch (token.kind) {
+    case 'plain':
+      return `<span style="color:#9ca3af;font-style:italic;font-family:ui-serif,Georgia,serif">${escapeHtml(token.text)}</span>`
+    case 'action':
+      return `<span style="color:#9ca3af;font-style:italic;font-family:ui-serif,Georgia,serif">${escapeHtml(token.text)}</span>`
+    case 'pink':
+      return `<span style="color:#f472b6;font-style:italic;font-family:ui-serif,Georgia,serif">${escapeHtml(token.text)}</span>`
+    case 'quoted':
+      return `<span style="color:rgba(255,255,255,0.95);font-style:normal;font-family:ui-serif,Georgia,serif">"${escapeHtml(token.text)}"</span>`
+  }
+}
+
 /** Legacy plain-text first messages → minimal HTML for the rich editor. */
 export function firstMessageToEditorHtml(raw: string | null | undefined): string {
   const rawValue = raw ?? ''
@@ -19,10 +94,14 @@ export function firstMessageToEditorHtml(raw: string | null | undefined): string
   if (isRichFirstMessageHtml(rawValue)) {
     return rawValue.trim()
   }
-  const escaped = rawValue.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const escaped = rawValue.replace(/\r\n/g, '\n')
   return escaped
     .split(/\n\n+/)
-    .map((block) => `<p>${block.replace(/\n/g, '<br>')}</p>`)
+    .map((block) => {
+      const lines = block.split('\n')
+      const htmlLines = lines.map((line) => tokenizeLegacyFirstMessage(line).map(legacyTokenToHtml).join(''))
+      return `<p>${htmlLines.join('<br>')}</p>`
+    })
     .join('')
 }
 

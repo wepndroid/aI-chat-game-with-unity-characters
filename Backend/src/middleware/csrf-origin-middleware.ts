@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express'
+import { sendApiError } from '../lib/api-contract'
 
 type CsrfOriginOptions = {
   allowedOrigins: Set<string>
@@ -8,6 +9,15 @@ type CsrfOriginOptions = {
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 const normalizeOrigin = (origin: string) => origin.trim().replace(/^['"]|['"]$/g, '').replace(/\/+$/, '')
+
+const hasBearerAuthorization = (request: Request) => {
+  const authHeader = request.get('authorization')
+  if (!authHeader) {
+    return false
+  }
+
+  return /^Bearer\s+\S+$/i.test(authHeader.trim())
+}
 
 const extractRequestOrigin = (request: Request): string | null => {
   const originHeader = request.get('origin')
@@ -35,13 +45,18 @@ const createCsrfOriginMiddleware = ({ allowedOrigins, isProduction }: CsrfOrigin
       return
     }
 
+    // Bearer-token callers (Unity Desktop/VR, service-to-service) are not vulnerable
+    // to browser cookie CSRF, so origin checks are unnecessary for these requests.
+    if (hasBearerAuthorization(request)) {
+      next()
+      return
+    }
+
     // Non-browser callers might not send Origin/Referer. Allow in dev, block in production.
     const requestOrigin = extractRequestOrigin(request)
     if (!requestOrigin) {
       if (isProduction) {
-        response.status(403).json({
-          message: 'Origin header is required for state-changing requests.'
-        })
+        sendApiError(response, 403, 'FORBIDDEN', 'Origin header is required for state-changing requests.')
         return
       }
       next()
@@ -49,9 +64,7 @@ const createCsrfOriginMiddleware = ({ allowedOrigins, isProduction }: CsrfOrigin
     }
 
     if (!allowedOrigins.has(requestOrigin)) {
-      response.status(403).json({
-        message: 'Request origin is not allowed.'
-      })
+      sendApiError(response, 403, 'FORBIDDEN', 'Request origin is not allowed.')
       return
     }
 

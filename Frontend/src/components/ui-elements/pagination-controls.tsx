@@ -18,7 +18,9 @@ const PaginationControls = ({ currentPage, totalPages, onPageChange }: Paginatio
       return [1, 2, 3]
     }
 
-    if (currentPage >= totalPages - 2) {
+    // Only pin to the last three page numbers on the final two pages.
+    // Using `totalPages - 2` here wrongly included e.g. page 4 of 6, which hid 1–3 entirely.
+    if (currentPage >= totalPages - 1) {
       return [totalPages - 2, totalPages - 1, totalPages]
     }
 
@@ -26,11 +28,15 @@ const PaginationControls = ({ currentPage, totalPages, onPageChange }: Paginatio
   }
 
   const visiblePages = getVisiblePages()
-  const showLeadingEllipsis = visiblePages[0] > 1
-  const showTrailingEllipsis = visiblePages[visiblePages.length - 1] < totalPages
+  const firstVisible = visiblePages[0] ?? 1
+  const lastVisible = visiblePages[visiblePages.length - 1] ?? 1
+  const showLeadingJump = firstVisible > 1
+  const showLeadingGapEllipsis = firstVisible > 2
+  const showTrailingGapEllipsis = lastVisible < totalPages - 1
+  const showTrailingLast = lastVisible < totalPages
 
   const baseClassName =
-    'inline-flex h-7 min-w-7 items-center justify-center rounded border text-xs font-semibold transition'
+    'inline-flex min-h-[42px] min-w-[42px] items-center justify-center rounded-xl border px-2 text-[14px] font-semibold transition sm:min-h-7 sm:min-w-7 sm:rounded sm:px-0 sm:text-xs'
 
   const getPageButtonClassName = (page: number) => {
     if (page === currentPage) {
@@ -41,16 +47,25 @@ const PaginationControls = ({ currentPage, totalPages, onPageChange }: Paginatio
   }
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-1.5">
+      {showLeadingJump ? (
+        <>
+          <button type="button" onClick={() => onPageChange(1)} className={getPageButtonClassName(1)} aria-label="Go to page 1">
+            1
+          </button>
+          {showLeadingGapEllipsis ? <span className="px-1 text-[14px] text-white/70 sm:text-xs">...</span> : null}
+        </>
+      ) : null}
+
       {visiblePages.map((page) => (
         <button key={page} type="button" onClick={() => onPageChange(page)} className={getPageButtonClassName(page)} aria-label={`Go to page ${page}`}>
           {page}
         </button>
       ))}
 
-      {showTrailingEllipsis ? (
+      {showTrailingLast ? (
         <>
-          <span className="px-1 text-xs text-white/70">...</span>
+          {showTrailingGapEllipsis ? <span className="px-1 text-[14px] text-white/70 sm:text-xs">...</span> : null}
           <button
             type="button"
             onClick={() => onPageChange(totalPages)}
@@ -61,8 +76,6 @@ const PaginationControls = ({ currentPage, totalPages, onPageChange }: Paginatio
           </button>
         </>
       ) : null}
-
-      {showLeadingEllipsis ? <span className="hidden" aria-hidden="true">...</span> : null}
     </div>
   )
 }

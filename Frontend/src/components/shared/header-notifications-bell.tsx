@@ -26,6 +26,10 @@ const HeaderNotificationsBell = () => {
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const markingReadIdsRef = useRef<Set<string>>(new Set())
+  const hoverMarkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hoverCandidateIdRef = useRef<string | null>(null)
+  const HOVER_MARK_DELAY_MS = 700
 
   const unreadCount = sessionUser?.unreadNotificationCount ?? 0
 
@@ -56,6 +60,14 @@ const HeaderNotificationsBell = () => {
     return () => document.removeEventListener('mousedown', onDocPointerDown)
   }, [open])
 
+  useEffect(() => {
+    return () => {
+      if (hoverMarkTimeoutRef.current) {
+        clearTimeout(hoverMarkTimeoutRef.current)
+      }
+    }
+  }, [])
+
   const handleToggle = () => {
     if (open) {
       setOpen(false)
@@ -77,6 +89,68 @@ const HeaderNotificationsBell = () => {
     setOpen(false)
     router.push(item.href)
   }
+
+  const markItemRead = useCallback((item: NotificationFeedItem) => {
+    if (item.read) {
+      return
+    }
+
+    if (markingReadIdsRef.current.has(item.id)) {
+      return
+    }
+
+    markingReadIdsRef.current.add(item.id)
+    setItems((previousItems) =>
+      previousItems.map((previousItem) =>
+        previousItem.id === item.id ? { ...previousItem, read: true } : previousItem
+      )
+    )
+
+    void markNotificationRead(item.id)
+      .then(() => refreshSessionUser())
+      .catch(() => {
+        // Revert optimistic flag only if this request fails.
+        setItems((previousItems) =>
+          previousItems.map((previousItem) =>
+            previousItem.id === item.id ? { ...previousItem, read: false } : previousItem
+          )
+        )
+      })
+      .finally(() => {
+        markingReadIdsRef.current.delete(item.id)
+      })
+  }, [refreshSessionUser])
+
+  const handleItemHoverStart = useCallback((item: NotificationFeedItem) => {
+    if (hoverMarkTimeoutRef.current) {
+      clearTimeout(hoverMarkTimeoutRef.current)
+      hoverMarkTimeoutRef.current = null
+    }
+
+    hoverCandidateIdRef.current = item.id
+
+    if (item.read || markingReadIdsRef.current.has(item.id)) {
+      return
+    }
+
+    hoverMarkTimeoutRef.current = setTimeout(() => {
+      if (hoverCandidateIdRef.current !== item.id) {
+        return
+      }
+      markItemRead(item)
+      hoverMarkTimeoutRef.current = null
+    }, HOVER_MARK_DELAY_MS)
+  }, [markItemRead])
+
+  const handleItemHoverEnd = useCallback((itemId: string) => {
+    if (hoverCandidateIdRef.current === itemId) {
+      hoverCandidateIdRef.current = null
+    }
+    if (hoverMarkTimeoutRef.current) {
+      clearTimeout(hoverMarkTimeoutRef.current)
+      hoverMarkTimeoutRef.current = null
+    }
+  }, [])
 
   if (!sessionUser) {
     return null
@@ -135,11 +209,16 @@ const HeaderNotificationsBell = () => {
                   className={`flex w-full flex-col gap-0.5 border-b border-white/[0.06] px-3 py-2.5 text-left transition last:border-b-0 hover:bg-white/[0.06] ${
                     item.read ? 'opacity-75' : ''
                   }`}
+                  onMouseEnter={() => handleItemHoverStart(item)}
+                  onMouseLeave={() => handleItemHoverEnd(item.id)}
                   onClick={() => void handleItemActivate(item)}
                 >
                   <span className="flex items-start justify-between gap-2">
-                    <span className={`text-[13px] font-semibold leading-snug ${item.read ? 'text-white/75' : 'text-white'}`}>
-                      {item.title}
+                    <span className="flex min-w-0 items-start gap-2">
+                      {!item.read ? <span className="mt-1 size-1.5 shrink-0 rounded-full bg-red-500" aria-hidden /> : null}
+                      <span className={`text-[13px] font-semibold leading-snug ${item.read ? 'text-white/75' : 'text-white'}`}>
+                        {item.title}
+                      </span>
                     </span>
                     <span className="shrink-0 text-[10px] text-white/35">{formatNotificationTime(item.createdAt)}</span>
                   </span>

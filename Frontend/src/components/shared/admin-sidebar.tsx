@@ -10,6 +10,8 @@ import { usePathname, useRouter } from 'next/navigation'
 
 type AdminSidebarKey =
   | 'dashboard'
+  | 'landing-pages'
+  | 'legacy-import'
   | 'activity'
   | 'users'
   | 'community-vrms'
@@ -17,6 +19,7 @@ type AdminSidebarKey =
   | 'stories'
   | 'review-queue'
   | 'global-settings'
+  | 'image-lab'
 
 type AdminSidebarEntry = {
   id: AdminSidebarKey
@@ -68,6 +71,16 @@ const ServerIcon = () => {
   )
 }
 
+const TransferIcon = () => {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M7 7h10M7 17h10" strokeLinecap="round" />
+      <path d="m13.5 3.8 3.7 3.2-3.7 3.2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="m10.5 13.8-3.7 3.2 3.7 3.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 const StarsIcon = () => {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -109,6 +122,16 @@ const ShieldIcon = () => {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <path d="M12 3.4 5.6 6v5.6c0 4.2 2.7 7.2 6.4 8.9 3.7-1.7 6.4-4.7 6.4-8.9V6L12 3.4Z" />
       <path d="m9.7 10.3 2 2 2.7-3.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+const SparklesIcon = () => {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="m12 3 1.7 4.1L18 8.8l-4.3 1.6L12 14.5l-1.7-4.1L6 8.8l4.3-1.7L12 3Z" />
+      <path d="m18.5 14.2.9 2.2 2.2.8-2.2.8-.9 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z" />
+      <path d="m5.4 14.5 1 2.5 2.5 1-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1 1-2.5Z" />
     </svg>
   )
 }
@@ -183,6 +206,8 @@ const AdminSidebar = ({ activeKey, className }: AdminSidebarProps) => {
         title: 'Management',
         entryList: [
           { id: 'dashboard', label: 'Dashboard', href: '/admin/dashboard', icon: <DashboardGridIcon /> },
+          { id: 'landing-pages', label: 'Landing Pages', href: '/admin/landing-pages', icon: <ClipboardIcon /> },
+          { id: 'legacy-import', label: 'Legacy Transfer', href: '/admin/legacy-import', icon: <TransferIcon /> },
           { id: 'users', label: 'Users', href: '/admin/users', icon: <UserGroupIcon /> },
           {
             id: 'community-vrms',
@@ -233,7 +258,10 @@ const AdminSidebar = ({ activeKey, className }: AdminSidebarProps) => {
       {
         id: 'system',
         title: 'System',
-        entryList: [{ id: 'global-settings', label: 'Global Settings', href: '/admin/global-settings', icon: <CogIcon /> }]
+        entryList: [
+          { id: 'global-settings', label: 'Global Settings', href: '/admin/global-settings', icon: <CogIcon /> },
+          { id: 'image-lab', label: 'Image Lab', href: '/admin/image-lab', icon: <SparklesIcon /> }
+        ]
       }
     ],
     [pendingReviewCount, pendingStoriesCount, newOfficialVrmsCount, newCommunityVrmsCount]

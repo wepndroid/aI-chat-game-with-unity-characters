@@ -12,6 +12,8 @@ type AdminReviewQueueCardRecord = {
 type AdminReviewQueueCardProps = {
   queueRecord: AdminReviewQueueCardRecord
   previewImageUrl?: string | null
+  vroidFileUrl?: string | null
+  poseFileUrl?: string | null
   onApprove: (recordId: string) => void
   onReject: (recordId: string) => void
   onDetail?: (recordId: string) => void
@@ -44,6 +46,13 @@ const DetailIcon = () => {
     </svg>
   )
 }
+
+const DownloadIcon = () => (
+  <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <path d="M12 4v10m0 0 4-4m-4 4-4-4" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M4 16.5v1.2A2.3 2.3 0 0 0 6.3 20h11.4a2.3 2.3 0 0 0 2.3-2.3v-1.2" strokeLinecap="round" />
+  </svg>
+)
 
 const ScanOkIcon = () => (
   <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -84,6 +93,8 @@ const ScanBadge = ({ queueRecord }: { queueRecord: AdminReviewQueueCardRecord })
 const AdminReviewQueueCard = ({
   queueRecord,
   previewImageUrl,
+  vroidFileUrl,
+  poseFileUrl,
   onApprove,
   onReject,
   onDetail,
@@ -100,6 +111,9 @@ const AdminReviewQueueCard = ({
   const handleDetailClick = () => {
     onDetail?.(queueRecord.id)
   }
+
+  const hasVrm = Boolean(vroidFileUrl?.trim())
+  const hasVrma = Boolean(poseFileUrl?.trim())
 
   return (
     <article className="rounded-2xl border border-white/10 bg-[#0d1219]/95 shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
@@ -138,6 +152,51 @@ const AdminReviewQueueCard = ({
         </div>
 
         <div className="mt-4 flex w-full min-w-0 flex-col gap-2 sm:mt-0 sm:w-[170px] sm:shrink-0">
+          <div className="grid grid-cols-2 gap-2">
+            <a
+              href={hasVrm ? vroidFileUrl ?? undefined : undefined}
+              download
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md border text-xs transition ${
+                hasVrm
+                  ? 'border-cyan-400/40 bg-cyan-400/15 text-cyan-200 hover:brightness-110'
+                  : 'cursor-not-allowed border-white/12 bg-white/5 text-white/35'
+              }`}
+              aria-label={`Download VRM for ${queueRecord.title}`}
+              title={hasVrm ? 'Download VRM' : 'VRM file unavailable'}
+              onClick={(event) => {
+                if (!hasVrm) {
+                  event.preventDefault()
+                }
+              }}
+            >
+              <DownloadIcon />
+              VRM
+            </a>
+            <a
+              href={hasVrma ? poseFileUrl ?? undefined : undefined}
+              download
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md border text-xs transition ${
+                hasVrma
+                  ? 'border-indigo-400/40 bg-indigo-400/15 text-indigo-200 hover:brightness-110'
+                  : 'cursor-not-allowed border-white/12 bg-white/5 text-white/35'
+              }`}
+              aria-label={`Download VRMA for ${queueRecord.title}`}
+              title={hasVrma ? 'Download VRMA' : 'VRMA file unavailable'}
+              onClick={(event) => {
+                if (!hasVrma) {
+                  event.preventDefault()
+                }
+              }}
+            >
+              <DownloadIcon />
+              VRMA
+            </a>
+          </div>
+
           <button
             type="button"
             onClick={handleApproveClick}

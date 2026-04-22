@@ -1,5 +1,19 @@
 type ApiErrorPayload = {
   message?: string
+  code?: string
+  field?: string
+}
+
+class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly code?: string,
+    public readonly field?: string
+  ) {
+    super(message)
+    this.name = 'ApiRequestError'
+  }
 }
 
 const API_REQUEST_TIMEOUT_MS = 15000
@@ -18,7 +32,12 @@ const parseApiResponse = async <T>(response: Response): Promise<T> => {
   const payload = (await response.json().catch(() => null)) as (T & ApiErrorPayload) | null
 
   if (!response.ok) {
-    throw new Error(payload?.message ?? 'API request failed.')
+    throw new ApiRequestError(
+      payload?.message ?? 'API request failed.',
+      response.status,
+      payload?.code,
+      payload?.field
+    )
   }
 
   if (!payload) {
@@ -60,14 +79,29 @@ const apiGet = async <T>(path: string) => {
 
     return parseApiResponse<T>(response)
   } catch (error) {
+    if (error instanceof ApiRequestError) {
+      throw error
+    }
     throw new Error(toNetworkErrorMessage(error))
   } finally {
     requestSignal.clear()
   }
 }
 
-const apiPost = async <T>(path: string, body?: unknown) => {
-  const requestSignal = createRequestSignal()
+const createRequestSignalWithTimeout = (timeoutMs = API_REQUEST_TIMEOUT_MS) => {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => {
+    controller.abort()
+  }, timeoutMs)
+
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timeoutId)
+  }
+}
+
+const apiPost = async <T>(path: string, body?: unknown, timeoutMs = API_REQUEST_TIMEOUT_MS) => {
+  const requestSignal = createRequestSignalWithTimeout(timeoutMs)
 
   try {
     const response = await fetch(buildApiUrl(path), {
@@ -82,6 +116,9 @@ const apiPost = async <T>(path: string, body?: unknown) => {
 
     return parseApiResponse<T>(response)
   } catch (error) {
+    if (error instanceof ApiRequestError) {
+      throw error
+    }
     throw new Error(toNetworkErrorMessage(error))
   } finally {
     requestSignal.clear()
@@ -104,6 +141,9 @@ const apiPostFormData = async <T>(path: string, formData: FormData, timeoutMs = 
 
     return parseApiResponse<T>(response)
   } catch (error) {
+    if (error instanceof ApiRequestError) {
+      throw error
+    }
     throw new Error(toNetworkErrorMessage(error))
   } finally {
     clearTimeout(timeoutId)
@@ -126,6 +166,9 @@ const apiPatch = async <T>(path: string, body?: unknown) => {
 
     return parseApiResponse<T>(response)
   } catch (error) {
+    if (error instanceof ApiRequestError) {
+      throw error
+    }
     throw new Error(toNetworkErrorMessage(error))
   } finally {
     requestSignal.clear()
@@ -144,10 +187,13 @@ const apiDelete = async <T>(path: string) => {
 
     return parseApiResponse<T>(response)
   } catch (error) {
+    if (error instanceof ApiRequestError) {
+      throw error
+    }
     throw new Error(toNetworkErrorMessage(error))
   } finally {
     requestSignal.clear()
   }
 }
 
-export { apiDelete, apiGet, apiPatch, apiPost, apiPostFormData, buildApiUrl, getApiBaseUrl }
+export { ApiRequestError, apiDelete, apiGet, apiPatch, apiPost, apiPostFormData, buildApiUrl, getApiBaseUrl }

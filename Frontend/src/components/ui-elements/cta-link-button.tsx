@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import type { MouseEvent } from 'react'
 
 type CtaLinkButtonProps = {
   href: string
@@ -6,11 +7,20 @@ type CtaLinkButtonProps = {
   variant: 'light' | 'accent'
   ariaLabel: string
   iconType?: 'download' | 'chrome'
+  onClick?: (event: MouseEvent<HTMLAnchorElement>) => void
 }
 
 const DownloadTrayIcon = ({ className }: { className?: string }) => {
   return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      aria-hidden="true"
+      suppressHydrationWarning
+    >
       <path d="M12 3.5v9.4" strokeLinecap="round" />
       <path d="m8.8 9.9 3.2 3.2 3.2-3.2" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M5 15.3v2.1c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-2.1" strokeLinecap="round" />
@@ -22,7 +32,15 @@ const DownloadTrayIcon = ({ className }: { className?: string }) => {
 
 const ChromeMonochromeIcon = ({ className }: { className?: string }) => {
   return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      aria-hidden="true"
+      suppressHydrationWarning
+    >
       <circle cx="12" cy="12" r="9" />
       <circle cx="12" cy="12" r="3.5" />
       <path d="M19.6 8.5H12" strokeLinecap="round" />
@@ -32,9 +50,9 @@ const ChromeMonochromeIcon = ({ className }: { className?: string }) => {
   )
 }
 
-const CtaLinkButton = ({ href, label, variant, ariaLabel, iconType = 'download' }: CtaLinkButtonProps) => {
+const CtaLinkButton = ({ href, label, variant, ariaLabel, iconType = 'download', onClick }: CtaLinkButtonProps) => {
   const baseClassName =
-    'inline-flex h-12 w-full items-center justify-center gap-2 rounded-md px-5 text-sm font-bold uppercase tracking-[0.07em] transition sm:w-1/2'
+    'inline-flex min-h-[52px] w-full items-center justify-center gap-2.5 rounded-xl px-5 text-[15px] font-bold uppercase tracking-[0.07em] transition sm:min-h-[48px] sm:w-1/2 sm:rounded-md sm:text-sm'
 
   const variantClassName =
     variant === 'light'
@@ -69,7 +87,7 @@ const CtaLinkButton = ({ href, label, variant, ariaLabel, iconType = 'download' 
   }
 
   return (
-    <Link href={href} className={`${baseClassName} ${variantClassName}`} aria-label={ariaLabel}>
+    <Link href={href} onClick={onClick} className={`${baseClassName} ${variantClassName}`} aria-label={ariaLabel}>
       {content}
     </Link>
   )

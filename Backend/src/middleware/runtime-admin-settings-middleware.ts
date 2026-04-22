@@ -5,6 +5,27 @@ import { resolveAuthenticatedSessionUser } from '../services/auth-service'
 
 const requestMinuteMap = new Map<string, { count: number; minuteKey: number }>()
 
+const getClientIpFromRequest = (request: Request) => {
+  const cfConnectingIp = request.header('cf-connecting-ip')?.trim()
+  if (cfConnectingIp) {
+    return cfConnectingIp
+  }
+
+  const forwardedFor = request.header('x-forwarded-for')
+  const forwardedIp = forwardedFor?.split(',')[0]?.trim()
+  if (forwardedIp) {
+    return forwardedIp
+  }
+
+  const ip = request.ip?.trim()
+  if (ip) {
+    return ip
+  }
+
+  const socketIp = request.socket.remoteAddress?.trim()
+  return socketIp || 'unknown'
+}
+
 const resolveTokenFromRequest = (request: Request) => {
   const tokenFromCookie = request.cookies?.[authConfig.cookieName]
   if (typeof tokenFromCookie === 'string' && tokenFromCookie.length > 0) {
@@ -16,6 +37,16 @@ const resolveTokenFromRequest = (request: Request) => {
 const isRoutePrefixMatch = (path: string, prefix: string) => {
   const normalizedPrefix = prefix.trim()
   return normalizedPrefix.length > 0 && path.startsWith(normalizedPrefix)
+}
+
+const isPassiveAuthProbeRoute = (path: string, method: string) => {
+  const normalizedMethod = method.toUpperCase()
+  const normalizedPath = path.toLowerCase()
+  if (normalizedMethod !== 'GET') {
+    return false
+  }
+
+  return normalizedPath === '/api/auth/me' || normalizedPath === '/api/auth/webgl-token'
 }
 
 const runtimeAdminSettingsMiddleware = async (request: Request, response: Response, next: NextFunction) => {
@@ -92,7 +123,22 @@ const runtimeAdminSettingsMiddleware = async (request: Request, response: Respon
         ? settings.requestLimits.uploadPerMinute
         : settings.requestLimits.generalPerMinute
 
-    const requestKey = `${request.ip || 'unknown'}:${path.startsWith('/api/auth') ? 'auth' : path.startsWith('/api/characters/assets/upload') ? 'upload' : 'general'}`
+    if (isPassiveAuthProbeRoute(path, method)) {
+      next()
+      return
+    }
+
+    const limiterScope = path.startsWith('/api/auth')
+      ? 'auth'
+      : path.startsWith('/api/characters/assets/upload')
+        ? 'upload'
+        : 'general'
+
+    const actorKey =
+      resolvedAuthUser && resolvedAuthUser !== 'banned'
+        ? `user:${resolvedAuthUser.userId}`
+        : `ip:${getClientIpFromRequest(request)}`
+    const requestKey = `${actorKey}:${limiterScope}`
     const current = requestMinuteMap.get(requestKey)
     if (!current || current.minuteKey !== minuteKey) {
       requestMinuteMap.set(requestKey, { count: 1, minuteKey })

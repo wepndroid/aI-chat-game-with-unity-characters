@@ -1,24 +1,34 @@
-import EditStoryPage from '@/components/stories/edit-story-page'
-import { Suspense } from 'react'
+import type { Metadata } from 'next'
+import { redirect } from 'next/navigation'
+import { getCharacterDetail } from '@/lib/character-api'
+import { buildAiGirlfriendRouteKey } from '@/lib/ai-girlfriend-route'
+import { extractCharacterIdFromRouteKey } from '@/lib/character-route'
 
-type EditScenarioPageProps = {
+type EditScenarioLegacyPageProps = {
   params: Promise<{ id: string; storyId: string }>
 }
 
-const EditScenarioPage = async ({ params }: EditScenarioPageProps) => {
-  const { id, storyId } = await params
-
-  return (
-    <Suspense
-      fallback={
-        <main className="relative min-h-[calc(100vh-140px)] bg-[#030303] text-white">
-          <div className="mx-auto max-w-6xl px-5 pt-24 text-center text-sm text-white/70">Loading...</div>
-        </main>
-      }
-    >
-      <EditStoryPage storyId={storyId} characterRouteKey={id} />
-    </Suspense>
-  )
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: false
+  },
+  alternates: {
+    canonical: '/characters'
+  }
 }
 
-export default EditScenarioPage
+const EditScenarioLegacyPage = async ({ params }: EditScenarioLegacyPageProps) => {
+  const resolvedParams = await params
+  const legacyCharacterId = extractCharacterIdFromRouteKey(resolvedParams.id)
+
+  try {
+    const payload = await getCharacterDetail(legacyCharacterId)
+    const nextRouteKey = buildAiGirlfriendRouteKey(payload.data.name, payload.data.id)
+    redirect(`/ai-girlfriends/${encodeURIComponent(nextRouteKey)}/edit-scenario/${encodeURIComponent(resolvedParams.storyId)}`)
+  } catch {
+    redirect('/ai-girlfriends')
+  }
+}
+
+export default EditScenarioLegacyPage

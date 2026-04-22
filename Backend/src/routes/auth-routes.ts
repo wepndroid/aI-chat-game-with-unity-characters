@@ -3,8 +3,10 @@ import type { Request } from 'express'
 import { Router } from 'express'
 import { z } from 'zod'
 import { clearAuthCookie, setAuthCookie } from '../lib/auth-cookie'
+import { sendApiData, sendApiError } from '../lib/api-contract'
 import { authConfig, getEffectiveUserRoleForTesting } from '../lib/auth-config'
 import { oauthConfig } from '../lib/oauth-config'
+import { attachAcquisitionToUser, getLatestLandingAttributionForRequest } from '../lib/landing-page-attribution'
 import { hashPassword, verifyPassword } from '../lib/password-hash'
 import { optionalAuth, requireAuth } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
@@ -43,10 +45,6 @@ const resendVerificationSchema = z.object({
   email: z.string().email().optional()
 }).strict()
 
-const verifyEmailQuerySchema = z.object({
-  token: z.string().min(6).max(500)
-})
-
 const verifyEmailCodeSchema = z.object({
   code: z.string().trim().min(6).max(32)
 }).strict()
@@ -79,10 +77,30 @@ const oauthProviderToSocialProviderMap: Record<'google', SocialProvider> = {
 const FAILED_LOGIN_WINDOW_MS = 15 * 60 * 1000
 const FAILED_LOGIN_MAX_ATTEMPTS = 6
 const FAILED_LOGIN_LOCK_MS = 20 * 60 * 1000
+const FAILED_LOGIN_LOCK_ENABLED = false
 
 const getLoginThrottleIp = (request: Request) => {
   const candidate = request.ip || request.socket.remoteAddress || 'unknown'
   return candidate.trim() || 'unknown'
+}
+
+const getSessionTokensFromRequest = (request: Request) => {
+  const tokenList: string[] = []
+  const cookieToken = request.cookies?.[authConfig.cookieName]
+  if (typeof cookieToken === 'string' && cookieToken.length > 0) {
+    tokenList.push(cookieToken)
+  }
+
+  const authorizationHeader = request.header('authorization')
+  if (authorizationHeader) {
+    const match = /^Bearer\s+(.+)$/i.exec(authorizationHeader.trim())
+    const bearerToken = match?.[1]?.trim()
+    if (bearerToken && bearerToken.length > 0) {
+      tokenList.push(bearerToken)
+    }
+  }
+
+  return [...new Set(tokenList)]
 }
 
 const getLoginLockRemainingSeconds = async (ip: string, nowMs: number): Promise<number | null> => {
@@ -174,12 +192,6 @@ const clearFailedLoginAttempts = async (ip: string) => {
   })
 }
 
-const buildTokenLink = (baseUrl: string, rawToken: string) => {
-  const url = new URL(baseUrl)
-  url.searchParams.set('token', rawToken)
-  return url.toString()
-}
-
 const frontendOrigin = new URL(oauthConfig.frontendPublicUrl).origin
 
 const sanitizeRedirectAfter = (value: string | undefined) => {
@@ -224,7 +236,7 @@ const buildFrontendRedirectUrl = (pathValue: string, extraParams: Record<string,
 const dispatchVerificationEmail = async (user: { id: string; email: string; username: string }, request: Request) => {
   const clientMeta = extractSessionClientMeta(request)
   const { rawToken, expiresAt } = await issueEmailVerificationToken(user.id, clientMeta)
-  const verificationUrl = buildTokenLink(authConfig.verifyEmailUrlBase, rawToken)
+  const verificationUrl = authConfig.verifyEmailUrlBase
 
   await emailService.sendVerificationEmail({
     toEmail: user.email,
@@ -238,11 +250,12 @@ const dispatchVerificationEmail = async (user: { id: string; email: string; user
 const dispatchPasswordResetEmail = async (user: { id: string; email: string; username: string }, request: Request) => {
   const clientMeta = extractSessionClientMeta(request)
   const { rawToken, expiresAt } = await issuePasswordResetToken(user.id, clientMeta)
-  const resetUrl = buildTokenLink(authConfig.resetPasswordUrlBase, rawToken)
+  const resetUrl = authConfig.resetPasswordUrlBase
 
   await emailService.sendPasswordResetEmail({
     toEmail: user.email,
     username: user.username,
+    resetCode: rawToken,
     resetUrl,
     expiresAt
   })
@@ -365,6 +378,9 @@ authRoutes.get('/auth/oauth/:provider/callback', optionalAuth, async (request, r
       return
     }
 
+    const landingAttribution = await getLatestLandingAttributionForRequest(request)
+    await attachAcquisitionToUser(resolvedUser.id, landingAttribution)
+
     const rawSessionToken = await createOpaqueSessionForUser(resolvedUser.id, extractSessionClientMeta(request))
     setAuthCookie(response, rawSessionToken)
 
@@ -389,6 +405,7 @@ authRoutes.get('/auth/oauth/:provider/callback', optionalAuth, async (request, r
 
 authRoutes.post('/auth/register', async (request, response, next) => {
   try {
+    const landingAttribution = await getLatestLandingAttributionForRequest(request)
     const payload = registerSchema.parse(request.body)
     const normalizedEmail = payload.email.trim().toLowerCase()
     const normalizedUsername = payload.username.trim()
@@ -446,6 +463,8 @@ authRoutes.post('/auth/register', async (request, response, next) => {
       }
     })
 
+    await attachAcquisitionToUser(createdUser.id, landingAttribution)
+
     const rawSessionToken = await createOpaqueSessionForUser(createdUser.id, extractSessionClientMeta(request))
     setAuthCookie(response, rawSessionToken)
 
@@ -461,12 +480,16 @@ authRoutes.post('/auth/register', async (request, response, next) => {
     response.status(201).json({
       data: {
         user: {
-          ...createdUser,
+          id: createdUser.id,
+          email: createdUser.email,
+          username: createdUser.username,
           role: getEffectiveUserRoleForTesting(createdUser.role),
-          unreadNotificationCount: 0
+          is_email_verified: createdUser.isEmailVerified,
+          avatar_url: createdUser.avatarUrl,
+          unread_notification_count: 0
         },
-        requiresEmailVerification: true,
-        verificationEmailSent
+        requires_email_verification: true,
+        verification_email_sent: verificationEmailSent
       }
     })
   } catch (error) {
@@ -526,7 +549,7 @@ authRoutes.post('/auth/resend-verification', optionalAuth, async (request, respo
         response.json({
           data: {
             sent: false,
-            alreadyVerified: true
+            already_verified: true
           }
         })
         return
@@ -581,50 +604,8 @@ authRoutes.post('/auth/resend-verification', optionalAuth, async (request, respo
 
 authRoutes.get('/auth/verify-email', async (request, response, next) => {
   try {
-    const query = verifyEmailQuerySchema.parse(request.query)
-    const activeToken = await findActiveEmailVerificationToken(query.token)
-
-    if (!activeToken) {
-      response.status(400).json({
-        message: 'Verification token is invalid or expired.'
-      })
-      return
-    }
-
-    const now = new Date()
-
-    await prisma.$transaction([
-      prisma.user.update({
-        where: {
-          id: activeToken.userId
-        },
-        data: {
-          isEmailVerified: true
-        }
-      }),
-      prisma.emailVerificationToken.update({
-        where: {
-          id: activeToken.tokenId
-        },
-        data: {
-          consumedAt: now
-        }
-      }),
-      prisma.emailVerificationToken.updateMany({
-        where: {
-          userId: activeToken.userId,
-          consumedAt: null
-        },
-        data: {
-          consumedAt: now
-        }
-      })
-    ])
-
-    response.json({
-      data: {
-        verified: true
-      }
+    response.status(410).json({
+      message: 'Verification via URL token is disabled. Sign in and submit your verification code.'
     })
   } catch (error) {
     next(error)
@@ -696,12 +677,14 @@ authRoutes.post('/auth/login', async (request, response, next) => {
   try {
     const nowMs = Date.now()
     const throttleIp = getLoginThrottleIp(request)
-    const lockRemainingSeconds = await getLoginLockRemainingSeconds(throttleIp, nowMs)
-    if (lockRemainingSeconds !== null) {
-      response.status(429).json({
-        message: `Too many failed login attempts. Try again in ${lockRemainingSeconds} seconds.`
-      })
-      return
+    if (FAILED_LOGIN_LOCK_ENABLED) {
+      const lockRemainingSeconds = await getLoginLockRemainingSeconds(throttleIp, nowMs)
+      if (lockRemainingSeconds !== null) {
+        response.status(429).json({
+          message: `Too many failed login attempts. Try again in ${lockRemainingSeconds} seconds.`
+        })
+        return
+      }
     }
 
     const payload = loginSchema.parse(request.body)
@@ -724,7 +707,9 @@ authRoutes.post('/auth/login', async (request, response, next) => {
     })
 
     if (!existingUser?.passwordHash) {
-      await recordFailedLoginAttempt(throttleIp, nowMs)
+      if (FAILED_LOGIN_LOCK_ENABLED) {
+        await recordFailedLoginAttempt(throttleIp, nowMs)
+      }
       response.status(401).json({
         message: 'Invalid e-mail or password.'
       })
@@ -741,14 +726,18 @@ authRoutes.post('/auth/login', async (request, response, next) => {
     const passwordMatches = await verifyPassword(payload.password, existingUser.passwordHash)
 
     if (!passwordMatches) {
-      await recordFailedLoginAttempt(throttleIp, nowMs)
+      if (FAILED_LOGIN_LOCK_ENABLED) {
+        await recordFailedLoginAttempt(throttleIp, nowMs)
+      }
       response.status(401).json({
         message: 'Invalid e-mail or password.'
       })
       return
     }
 
-    await clearFailedLoginAttempts(throttleIp)
+    if (FAILED_LOGIN_LOCK_ENABLED) {
+      await clearFailedLoginAttempts(throttleIp)
+    }
     const rawSessionToken = await createOpaqueSessionForUser(existingUser.id, extractSessionClientMeta(request))
     setAuthCookie(response, rawSessionToken)
 
@@ -761,9 +750,9 @@ authRoutes.post('/auth/login', async (request, response, next) => {
           email: existingUser.email,
           username: existingUser.username,
           role: getEffectiveUserRoleForTesting(existingUser.role),
-          isEmailVerified: existingUser.isEmailVerified,
-          avatarUrl: existingUser.avatarUrl,
-          unreadNotificationCount
+          is_email_verified: existingUser.isEmailVerified,
+          avatar_url: existingUser.avatarUrl,
+          unread_notification_count: unreadNotificationCount
         }
       }
     })
@@ -774,17 +763,15 @@ authRoutes.post('/auth/login', async (request, response, next) => {
 
 authRoutes.post('/auth/logout', async (request, response, next) => {
   try {
-    const rawSessionToken = request.cookies?.[authConfig.cookieName]
+    const tokenList = getSessionTokensFromRequest(request)
 
-    if (typeof rawSessionToken === 'string' && rawSessionToken.length > 0) {
-      await revokeOpaqueSessionByToken(rawSessionToken)
+    if (tokenList.length > 0) {
+      await Promise.all(tokenList.map((token) => revokeOpaqueSessionByToken(token)))
     }
 
     clearAuthCookie(response)
-    response.json({
-      data: {
-        loggedOut: true
-      }
+    sendApiData(response, {
+      logged_out: true
     })
   } catch (error) {
     next(error)
@@ -894,9 +881,7 @@ authRoutes.get('/auth/me', requireAuth, async (request, response, next) => {
     const authUser = request.authUser
 
     if (!authUser) {
-      response.status(401).json({
-        message: 'Authentication required.'
-      })
+      sendApiError(response, 401, 'AUTH_REQUIRED', 'Authentication required.')
       return
     }
 
@@ -930,20 +915,33 @@ authRoutes.get('/auth/me', requireAuth, async (request, response, next) => {
 
     if (!existingUser) {
       clearAuthCookie(response)
-      response.status(401).json({
-        message: 'Session user not found.'
-      })
+      sendApiError(response, 401, 'AUTH_REQUIRED', 'Session user not found.')
       return
     }
 
-    response.json({
-      data: {
-        user: {
-          ...existingUser,
-          role: getEffectiveUserRoleForTesting(existingUser.role),
-          unreadNotificationCount
-        }
-      }
+    const userPayload = {
+      id: existingUser.id,
+      email: existingUser.email,
+      username: existingUser.username,
+      role: getEffectiveUserRoleForTesting(existingUser.role),
+      is_email_verified: existingUser.isEmailVerified,
+      avatar_url: existingUser.avatarUrl,
+      created_at: existingUser.createdAt,
+      updated_at: existingUser.updatedAt,
+      tier_code: existingUser.tierCode,
+      tier: existingUser.tier
+        ? {
+            code: existingUser.tier.code,
+            message_limit: existingUser.tier.messageLimit,
+            period_days: existingUser.tier.periodDays,
+            label: existingUser.tier.label
+          }
+        : null,
+      unread_notification_count: unreadNotificationCount
+    }
+
+    sendApiData(response, {
+      user: userPayload
     })
   } catch (error) {
     next(error)
@@ -959,7 +957,7 @@ authRoutes.get('/auth/webgl-token', requireAuth, async (request, response, next)
     const authUser = request.authUser
 
     if (!authUser) {
-      response.status(401).json({ message: 'Authentication required.' })
+      sendApiError(response, 401, 'AUTH_REQUIRED', 'Authentication required.')
       return
     }
 
@@ -969,8 +967,8 @@ authRoutes.get('/auth/webgl-token', requireAuth, async (request, response, next)
     response.json({
       data: {
         token: rawSessionToken,
-        expiresAt: expiresAt.toISOString(),
-        tokenType: 'Bearer'
+        expires_at: expiresAt.toISOString(),
+        token_type: 'Bearer'
       }
     })
   } catch (error) {

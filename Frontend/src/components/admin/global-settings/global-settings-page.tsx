@@ -11,6 +11,15 @@ type RuntimeAdminSettingsResponse = {
       maxPreviewImageSizeMb: number
       allowedPreviewMimeTypes: string[]
     }
+    characterFieldLimits: {
+      nameMaxLength: number
+      tagLineMaxLength: number
+      descriptionMaxLength: number
+      personalityMaxLength: number
+      scenarioMaxLength: number
+      exampleDialogsMaxLength: number
+      firstMessageMaxLength: number
+    }
     requestLimits: {
       generalPerMinute: number
       authPerMinute: number
@@ -22,6 +31,17 @@ type RuntimeAdminSettingsResponse = {
     featureSwitches: {
       publicUploadsEnabled: boolean
       communityPageEnabled: boolean
+    }
+    thumbnailGeneration: {
+      prompt: string
+      negativePrompt: string
+      width: number
+      height: number
+      steps: number
+      cfgScale: number
+      seed: number
+      samplerName: string
+      denoisingStrength: number
     }
     maintenance: {
       enabled: boolean
@@ -78,12 +98,28 @@ const applyGlobalSettingsToForm = (
     setMaxVrmSizeMb: (v: string) => void
     setMaxPreviewImageSizeMb: (v: string) => void
     setAllowedPreviewMimeTypesCsv: (v: string) => void
+    setNameMaxLength: (v: string) => void
+    setTagLineMaxLength: (v: string) => void
+    setDescriptionMaxLength: (v: string) => void
+    setPersonalityMaxLength: (v: string) => void
+    setScenarioMaxLength: (v: string) => void
+    setExampleDialogsMaxLength: (v: string) => void
+    setFirstMessageMaxLength: (v: string) => void
     setGeneralPerMinute: (v: string) => void
     setAuthPerMinute: (v: string) => void
     setUploadPerMinute: (v: string) => void
     setSessionTtlMinutes: (v: string) => void
     setPublicUploadsEnabled: (v: boolean) => void
     setCommunityPageEnabled: (v: boolean) => void
+    setThumbnailPrompt: (v: string) => void
+    setThumbnailNegativePrompt: (v: string) => void
+    setThumbnailWidth: (v: string) => void
+    setThumbnailHeight: (v: string) => void
+    setThumbnailSteps: (v: string) => void
+    setThumbnailCfgScale: (v: string) => void
+    setThumbnailSeed: (v: string) => void
+    setThumbnailSamplerName: (v: string) => void
+    setThumbnailDenoisingStrength: (v: string) => void
     setMaintenanceEnabled: (v: boolean) => void
     setMaintenanceMessage: (v: string) => void
     setMaintenanceStartAt: (v: string) => void
@@ -105,12 +141,28 @@ const applyGlobalSettingsToForm = (
   setters.setMaxVrmSizeMb(String(settings.uploadLimits.maxVrmSizeMb))
   setters.setMaxPreviewImageSizeMb(String(settings.uploadLimits.maxPreviewImageSizeMb))
   setters.setAllowedPreviewMimeTypesCsv(settings.uploadLimits.allowedPreviewMimeTypes.join(', '))
+  setters.setNameMaxLength(String(settings.characterFieldLimits.nameMaxLength))
+  setters.setTagLineMaxLength(String(settings.characterFieldLimits.tagLineMaxLength))
+  setters.setDescriptionMaxLength(String(settings.characterFieldLimits.descriptionMaxLength))
+  setters.setPersonalityMaxLength(String(settings.characterFieldLimits.personalityMaxLength))
+  setters.setScenarioMaxLength(String(settings.characterFieldLimits.scenarioMaxLength))
+  setters.setExampleDialogsMaxLength(String(settings.characterFieldLimits.exampleDialogsMaxLength))
+  setters.setFirstMessageMaxLength(String(settings.characterFieldLimits.firstMessageMaxLength))
   setters.setGeneralPerMinute(String(settings.requestLimits.generalPerMinute))
   setters.setAuthPerMinute(String(settings.requestLimits.authPerMinute))
   setters.setUploadPerMinute(String(settings.requestLimits.uploadPerMinute))
   setters.setSessionTtlMinutes(String(settings.sessionLogin.sessionTtlMinutes))
   setters.setPublicUploadsEnabled(settings.featureSwitches.publicUploadsEnabled)
   setters.setCommunityPageEnabled(settings.featureSwitches.communityPageEnabled)
+  setters.setThumbnailPrompt(settings.thumbnailGeneration.prompt)
+  setters.setThumbnailNegativePrompt(settings.thumbnailGeneration.negativePrompt)
+  setters.setThumbnailWidth(String(settings.thumbnailGeneration.width))
+  setters.setThumbnailHeight(String(settings.thumbnailGeneration.height))
+  setters.setThumbnailSteps(String(settings.thumbnailGeneration.steps))
+  setters.setThumbnailCfgScale(String(settings.thumbnailGeneration.cfgScale))
+  setters.setThumbnailSeed(String(settings.thumbnailGeneration.seed))
+  setters.setThumbnailSamplerName(settings.thumbnailGeneration.samplerName)
+  setters.setThumbnailDenoisingStrength(String(settings.thumbnailGeneration.denoisingStrength))
   setters.setMaintenanceEnabled(settings.maintenance.enabled)
   setters.setMaintenanceMessage(settings.maintenance.message)
   setters.setMaintenanceStartAt(toLocalInputDateTime(settings.maintenance.startAtIso))
@@ -188,12 +240,28 @@ const GlobalSettingsPage = () => {
   const [maxVrmSizeMb, setMaxVrmSizeMb] = useState('100')
   const [maxPreviewImageSizeMb, setMaxPreviewImageSizeMb] = useState('10')
   const [allowedPreviewMimeTypesCsv, setAllowedPreviewMimeTypesCsv] = useState('image/jpeg, image/png, image/webp, image/gif')
+  const [nameMaxLength, setNameMaxLength] = useState('120')
+  const [tagLineMaxLength, setTagLineMaxLength] = useState('160')
+  const [descriptionMaxLength, setDescriptionMaxLength] = useState('5000')
+  const [personalityMaxLength, setPersonalityMaxLength] = useState('8000')
+  const [scenarioMaxLength, setScenarioMaxLength] = useState('8000')
+  const [exampleDialogsMaxLength, setExampleDialogsMaxLength] = useState('12000')
+  const [firstMessageMaxLength, setFirstMessageMaxLength] = useState('50000')
   const [generalPerMinute, setGeneralPerMinute] = useState('240')
   const [authPerMinute, setAuthPerMinute] = useState('60')
   const [uploadPerMinute, setUploadPerMinute] = useState('40')
   const [sessionTtlMinutes, setSessionTtlMinutes] = useState('10080')
   const [publicUploadsEnabled, setPublicUploadsEnabled] = useState(true)
   const [communityPageEnabled, setCommunityPageEnabled] = useState(true)
+  const [thumbnailPrompt, setThumbnailPrompt] = useState('1girl, anime, playful selfie, sticking out tongue, eyes half closed, masterpiece, best quality')
+  const [thumbnailNegativePrompt, setThumbnailNegativePrompt] = useState('blurry, low quality, deformed, ugly')
+  const [thumbnailWidth, setThumbnailWidth] = useState('832')
+  const [thumbnailHeight, setThumbnailHeight] = useState('1216')
+  const [thumbnailSteps, setThumbnailSteps] = useState('50')
+  const [thumbnailCfgScale, setThumbnailCfgScale] = useState('20')
+  const [thumbnailSeed, setThumbnailSeed] = useState('-1')
+  const [thumbnailSamplerName, setThumbnailSamplerName] = useState('DPM++ 2M Karras')
+  const [thumbnailDenoisingStrength, setThumbnailDenoisingStrength] = useState('0.6')
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false)
   const [maintenanceMessage, setMaintenanceMessage] = useState('')
   const [maintenanceStartAt, setMaintenanceStartAt] = useState('')
@@ -226,12 +294,28 @@ const GlobalSettingsPage = () => {
           setMaxVrmSizeMb,
           setMaxPreviewImageSizeMb,
           setAllowedPreviewMimeTypesCsv,
+          setNameMaxLength,
+          setTagLineMaxLength,
+          setDescriptionMaxLength,
+          setPersonalityMaxLength,
+          setScenarioMaxLength,
+          setExampleDialogsMaxLength,
+          setFirstMessageMaxLength,
           setGeneralPerMinute,
           setAuthPerMinute,
           setUploadPerMinute,
           setSessionTtlMinutes,
           setPublicUploadsEnabled,
           setCommunityPageEnabled,
+          setThumbnailPrompt,
+          setThumbnailNegativePrompt,
+          setThumbnailWidth,
+          setThumbnailHeight,
+          setThumbnailSteps,
+          setThumbnailCfgScale,
+          setThumbnailSeed,
+          setThumbnailSamplerName,
+          setThumbnailDenoisingStrength,
           setMaintenanceEnabled,
           setMaintenanceMessage,
           setMaintenanceStartAt,
@@ -272,6 +356,15 @@ const GlobalSettingsPage = () => {
             maxPreviewImageSizeMb: Number(maxPreviewImageSizeMb),
             allowedPreviewMimeTypes: parseCsv(allowedPreviewMimeTypesCsv)
           },
+          characterFieldLimits: {
+            nameMaxLength: Number(nameMaxLength),
+            tagLineMaxLength: Number(tagLineMaxLength),
+            descriptionMaxLength: Number(descriptionMaxLength),
+            personalityMaxLength: Number(personalityMaxLength),
+            scenarioMaxLength: Number(scenarioMaxLength),
+            exampleDialogsMaxLength: Number(exampleDialogsMaxLength),
+            firstMessageMaxLength: Number(firstMessageMaxLength)
+          },
           requestLimits: {
             generalPerMinute: Number(generalPerMinute),
             authPerMinute: Number(authPerMinute),
@@ -283,6 +376,17 @@ const GlobalSettingsPage = () => {
           featureSwitches: {
             publicUploadsEnabled,
             communityPageEnabled
+          },
+          thumbnailGeneration: {
+            prompt: thumbnailPrompt.trim(),
+            negativePrompt: thumbnailNegativePrompt.trim(),
+            width: Number(thumbnailWidth),
+            height: Number(thumbnailHeight),
+            steps: Number(thumbnailSteps),
+            cfgScale: Number(thumbnailCfgScale),
+            seed: Number(thumbnailSeed),
+            samplerName: thumbnailSamplerName.trim(),
+            denoisingStrength: Number(thumbnailDenoisingStrength)
           },
           maintenance: {
             enabled: maintenanceEnabled,
@@ -314,12 +418,28 @@ const GlobalSettingsPage = () => {
           setMaxVrmSizeMb,
           setMaxPreviewImageSizeMb,
           setAllowedPreviewMimeTypesCsv,
+          setNameMaxLength,
+          setTagLineMaxLength,
+          setDescriptionMaxLength,
+          setPersonalityMaxLength,
+          setScenarioMaxLength,
+          setExampleDialogsMaxLength,
+          setFirstMessageMaxLength,
           setGeneralPerMinute,
           setAuthPerMinute,
           setUploadPerMinute,
           setSessionTtlMinutes,
           setPublicUploadsEnabled,
           setCommunityPageEnabled,
+          setThumbnailPrompt,
+          setThumbnailNegativePrompt,
+          setThumbnailWidth,
+          setThumbnailHeight,
+          setThumbnailSteps,
+          setThumbnailCfgScale,
+          setThumbnailSeed,
+          setThumbnailSamplerName,
+          setThumbnailDenoisingStrength,
           setMaintenanceEnabled,
           setMaintenanceMessage,
           setMaintenanceStartAt,
@@ -366,6 +486,20 @@ const GlobalSettingsPage = () => {
       </section>
 
       <section className={sectionClassName}>
+        <h2 className="font-[family-name:var(--font-heading)] text-[21px] font-normal leading-none text-white">Character field limits</h2>
+        <p className={hintClassName}>These limits are used on the upload form and enforced by the API.</p>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label><span className={labelClassName}>Full name max tokens</span><input className={inputClassName} value={nameMaxLength} onChange={(event) => setNameMaxLength(event.target.value)} /></label>
+          <label><span className={labelClassName}>Tag line max tokens</span><input className={inputClassName} value={tagLineMaxLength} onChange={(event) => setTagLineMaxLength(event.target.value)} /></label>
+          <label><span className={labelClassName}>Description max tokens</span><input className={inputClassName} value={descriptionMaxLength} onChange={(event) => setDescriptionMaxLength(event.target.value)} /></label>
+          <label><span className={labelClassName}>Personality max tokens</span><input className={inputClassName} value={personalityMaxLength} onChange={(event) => setPersonalityMaxLength(event.target.value)} /></label>
+          <label><span className={labelClassName}>Scenario max tokens</span><input className={inputClassName} value={scenarioMaxLength} onChange={(event) => setScenarioMaxLength(event.target.value)} /></label>
+          <label><span className={labelClassName}>Example dialogs max tokens</span><input className={inputClassName} value={exampleDialogsMaxLength} onChange={(event) => setExampleDialogsMaxLength(event.target.value)} /></label>
+          <label className="md:col-span-2"><span className={labelClassName}>First message max tokens</span><input className={inputClassName} value={firstMessageMaxLength} onChange={(event) => setFirstMessageMaxLength(event.target.value)} /></label>
+        </div>
+      </section>
+
+      <section className={sectionClassName}>
         <h2 className="font-[family-name:var(--font-heading)] text-[21px] font-normal leading-none text-white">Request limits (rate limiting)</h2>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           <label><span className={labelClassName}>General requests / minute</span><input className={inputClassName} value={generalPerMinute} onChange={(event) => setGeneralPerMinute(event.target.value)} /></label>
@@ -394,6 +528,28 @@ const GlobalSettingsPage = () => {
             <input type="checkbox" checked={communityPageEnabled} onChange={(event) => setCommunityPageEnabled(event.target.checked)} />
             Community page enabled
           </label>
+        </div>
+      </section>
+
+      <section className={sectionClassName}>
+        <h2 className="font-[family-name:var(--font-heading)] text-[21px] font-normal leading-none text-white">Thumbnail generation</h2>
+        <p className={hintClassName}>These values are used by the hidden prompt-pose thumbnail generator on the upload/edit character page.</p>
+        <label className="mt-4 block">
+          <span className={labelClassName}>Prompt</span>
+          <textarea className={inputClassName} rows={4} value={thumbnailPrompt} onChange={(event) => setThumbnailPrompt(event.target.value)} />
+        </label>
+        <label className="mt-4 block">
+          <span className={labelClassName}>Negative prompt</span>
+          <textarea className={inputClassName} rows={3} value={thumbnailNegativePrompt} onChange={(event) => setThumbnailNegativePrompt(event.target.value)} />
+        </label>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label><span className={labelClassName}>Width</span><input className={inputClassName} value={thumbnailWidth} onChange={(event) => setThumbnailWidth(event.target.value)} /></label>
+          <label><span className={labelClassName}>Height</span><input className={inputClassName} value={thumbnailHeight} onChange={(event) => setThumbnailHeight(event.target.value)} /></label>
+          <label><span className={labelClassName}>Steps</span><input className={inputClassName} value={thumbnailSteps} onChange={(event) => setThumbnailSteps(event.target.value)} /></label>
+          <label><span className={labelClassName}>CFG scale</span><input className={inputClassName} value={thumbnailCfgScale} onChange={(event) => setThumbnailCfgScale(event.target.value)} /></label>
+          <label><span className={labelClassName}>Seed</span><input className={inputClassName} value={thumbnailSeed} onChange={(event) => setThumbnailSeed(event.target.value)} /></label>
+          <label><span className={labelClassName}>Sampler name</span><input className={inputClassName} value={thumbnailSamplerName} onChange={(event) => setThumbnailSamplerName(event.target.value)} /></label>
+          <label className="md:col-span-2"><span className={labelClassName}>Denoising strength</span><input className={inputClassName} value={thumbnailDenoisingStrength} onChange={(event) => setThumbnailDenoisingStrength(event.target.value)} /></label>
         </div>
       </section>
 

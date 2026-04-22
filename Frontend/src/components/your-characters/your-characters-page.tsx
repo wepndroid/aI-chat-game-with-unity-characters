@@ -73,11 +73,10 @@ const toCardRecord = (characterRecord: CharacterMineRecord): MyCharacterCardReco
     summary: characterRecord.tagline?.trim() || 'No tagline yet. Update this character to improve discoverability.',
     moderationStatus: mappedStatus,
     moderationRejectReason: characterRecord.moderationRejectReason,
-    nsfwLevel: 'none',
     updatedAtLabel: formatRelativeTimeLabel(characterRecord.updatedAt),
     views: characterRecord.viewsCount,
     hearts: characterRecord.heartsCount,
-    pledgeAccess: characterRecord.isPatreonGated ? 'patreon' : 'free'
+    previewImageUrl: characterRecord.previewImageUrl
   }
 }
 
@@ -195,12 +194,14 @@ const YourCharactersPage = () => {
     const approvedCount = characterRecords.filter((characterItem) => characterItem.moderationStatus === 'approved').length
     const pendingCount = characterRecords.filter((characterItem) => characterItem.moderationStatus === 'pending').length
     const requiresActionCount = characterRecords.filter((characterItem) => characterItem.moderationStatus === 'draft' || characterItem.moderationStatus === 'rejected').length
+    const totalViews = characterRecords.reduce((sum, characterItem) => sum + characterItem.views, 0)
 
     return {
       totalCount,
       approvedCount,
       pendingCount,
-      requiresActionCount
+      requiresActionCount,
+      totalViews
     }
   }, [characterRecords])
 
@@ -222,17 +223,39 @@ const YourCharactersPage = () => {
             <AccountSideMenu activeKey="your-characters" />
 
             <MaintenanceWorkspaceGate>
-            <div className="space-y-5">
+            <div className="space-y-6">
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <DashboardStatCard value={dashboardStats.totalCount.toString()} label="Total Characters" helperText="All drafts and published entries" />
                 <DashboardStatCard value={dashboardStats.approvedCount.toString()} label="Approved" helperText="Visible in public gallery" />
                 <DashboardStatCard value={dashboardStats.pendingCount.toString()} label="Pending Review" helperText="Waiting for admin/moderator decision" isEmphasized />
-                <DashboardStatCard value={dashboardStats.requiresActionCount.toString()} label="Needs Action" helperText="Draft or rejected items to update" />
+                <DashboardStatCard value={dashboardStats.totalViews.toLocaleString()} label="Views" helperText="Total views across all your characters" />
               </div>
 
-              <div className="rounded-xl border border-white/10 bg-[#161213]/95 p-4 md:p-5">
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                  <div className="grid w-full gap-3 sm:grid-cols-2 xl:max-w-[520px]">
+              <div className="rounded-2xl border border-white/10 bg-[#161213]/95 p-4 md:p-6">
+                <div className="flex flex-col gap-6">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ember-200/80">Manage Library</p>
+                      <h2 className="mt-2 font-[family-name:var(--font-heading)] text-3xl font-normal italic leading-none text-white">
+                        Character roster
+                      </h2>
+                      <p className="mt-2 max-w-2xl text-sm leading-6 text-white/65">
+                        Edit your character details, keep drafts moving toward approval, and track how each one is performing.
+                      </p>
+                    </div>
+
+                    <div className="flex w-full flex-col gap-3 sm:flex-row lg:w-auto">
+                      <Link
+                        href="/upload-vrm"
+                        className="inline-flex h-11 shrink-0 items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-black transition hover:brightness-110"
+                        aria-label="Upload new VRM character"
+                      >
+                        Upload New VRM
+                      </Link>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 rounded-2xl border border-white/8 bg-black/20 p-4 sm:grid-cols-[220px_minmax(0,1fr)]">
                     <SelectField
                       label="Status"
                       value={statusFilter}
@@ -240,22 +263,12 @@ const YourCharactersPage = () => {
                       onChange={handleStatusFilterChange}
                       ariaLabel="Filter your characters by moderation status"
                     />
-                  </div>
-
-                  <div className="flex w-full flex-col gap-3 sm:flex-row xl:max-w-[520px]">
                     <SearchField
                       value={searchValue}
                       onChange={handleSearchChange}
                       placeholder="Search your characters..."
                       ariaLabel="Search your character records"
                     />
-                    <Link
-                      href="/upload-vrm"
-                      className="inline-flex h-11 shrink-0 items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-black transition hover:brightness-110"
-                      aria-label="Upload new VRM character"
-                    >
-                      Upload New VRM
-                    </Link>
                   </div>
                 </div>
 
@@ -263,7 +276,7 @@ const YourCharactersPage = () => {
                   <p className="mt-4 rounded-md border border-rose-300/30 bg-rose-300/10 px-3 py-2 text-xs text-rose-100">{errorMessage}</p>
                 ) : null}
 
-                <div className="mt-5 space-y-3">
+                <div className="space-y-4">
                   {isLoading ? (
                     <div className="rounded-lg border border-dashed border-white/20 bg-[#100f11] p-6 text-center">
                       <p className="text-sm text-white/75">Loading your characters...</p>
@@ -275,14 +288,24 @@ const YourCharactersPage = () => {
                       <p className="text-sm text-white/75">No characters match your current filter settings.</p>
                     </div>
                   ) : !isLoading ? (
-                    filteredAndSortedCharacters.map((characterItem) => (
-                      <MyCharacterCard
-                        key={characterItem.id}
-                        characterRecord={characterItem}
-                        onSubmitForReview={isAdmin ? undefined : handleSubmitForReview}
-                        adminMode={Boolean(isAdmin)}
-                      />
-                    ))
+                    <>
+                      {dashboardStats.requiresActionCount > 0 ? (
+                        <div className="rounded-xl border border-amber-300/20 bg-amber-200/10 px-4 py-3 text-sm text-amber-50/90">
+                          {dashboardStats.requiresActionCount} character{dashboardStats.requiresActionCount === 1 ? '' : 's'} still need attention before they are fully live.
+                        </div>
+                      ) : null}
+
+                      <div className="grid gap-4">
+                        {filteredAndSortedCharacters.map((characterItem) => (
+                          <MyCharacterCard
+                            key={characterItem.id}
+                            characterRecord={characterItem}
+                            onSubmitForReview={isAdmin ? undefined : handleSubmitForReview}
+                            adminMode={Boolean(isAdmin)}
+                          />
+                        ))}
+                      </div>
+                    </>
                   ) : null}
                 </div>
               </div>

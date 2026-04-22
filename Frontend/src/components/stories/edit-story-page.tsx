@@ -8,6 +8,7 @@ import {
   type StoryPublicationStatus
 } from '@/lib/story-api'
 import { listCharacters, type CharacterListRecord } from '@/lib/character-api'
+import { buildAiGirlfriendRouteKey, extractAiGirlfriendIdFromRouteKey } from '@/lib/ai-girlfriend-route'
 import { STORY_BODY_FIELD_TEXTAREA_CLASS, StoryBodyMarkupPreview } from '@/lib/story-body-markup-preview'
 import { SCENARIO_EDIT_RETURN_TO_YOUR_SCENARIOS } from '@/components/your-characters/your-scenarios-helpers'
 import { STORY_SCENARIO_TYPE_LABELS, STORY_SCENARIO_TYPES, type StoryScenarioType } from '@/lib/story-scenario-types'
@@ -17,7 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 type EditStoryPageProps = {
   storyId: string
-  /** Segment from `/characters/[id]/edit-scenario/...` (id or slug). */
+  /** Segment from `/ai-girlfriends/[id]/edit-scenario/...` (id or slug). */
   characterRouteKey?: string | null
 }
 
@@ -27,6 +28,7 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
   const returnToPath =
     searchParams.get('returnTo') === SCENARIO_EDIT_RETURN_TO_YOUR_SCENARIOS ? '/your-scenarios' : null
   const { sessionUser, isAuthLoading } = useAuth()
+  const isAdminEditor = sessionUser?.role === 'ADMIN'
 
   const [title, setTitle] = useState('')
   const [scenarioStory, setScenarioStory] = useState('')
@@ -34,6 +36,7 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
   const [selectedCharacterId, setSelectedCharacterId] = useState('')
   const [scenarioType, setScenarioType] = useState<StoryScenarioType | ''>('')
   const [characters, setCharacters] = useState<CharacterListRecord[]>([])
+  const [linkedCharacterName, setLinkedCharacterName] = useState('')
   const [publicationStatus, setPublicationStatus] = useState<StoryPublicationStatus>('PUBLISHED')
   const [storyModerationStatus, setStoryModerationStatus] = useState<StoryModerationStatus | null>(null)
   const [storyRejectReason, setStoryRejectReason] = useState<string | null>(null)
@@ -73,7 +76,15 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
           return
         }
 
-        setTitle(story.title)
+        const isApprovedLive =
+          story.publicationStatus === 'PUBLISHED' && story.moderationStatus === 'APPROVED'
+        if (isApprovedLive && sessionUser.role !== 'ADMIN') {
+          setLoadError('Approved live scenarios cannot be edited.')
+          setIsLoadingStory(false)
+          return
+        }
+
+        setTitle(story.title ?? '')
         const hasSplit =
           (story.scenarioStory && story.scenarioStory.trim().length > 0) ||
           (story.scenarioChat && story.scenarioChat.trim().length > 0)
@@ -84,7 +95,9 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
           setScenarioStory(story.body ?? '')
           setScenarioChat('')
         }
-        setSelectedCharacterId(story.characterId ?? '')
+        const initialCharacterId = story.characterId ?? story.character?.id ?? ''
+        setSelectedCharacterId(initialCharacterId)
+        setLinkedCharacterName(story.character?.name ?? '')
         setScenarioType(
           story.scenarioType && story.scenarioType in STORY_SCENARIO_TYPE_LABELS
             ? (story.scenarioType as StoryScenarioType)
@@ -94,14 +107,14 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
         setStoryModerationStatus(story.moderationStatus)
         setStoryRejectReason(story.moderationRejectReason)
 
-        const initialTitle = story.title.trim()
+        const initialTitle = (story.title ?? '').trim()
         const initialScenarioStory = hasSplit ? (story.scenarioStory ?? '').trim() : (story.body ?? '').trim()
         const initialScenarioChat = hasSplit ? (story.scenarioChat ?? '').trim() : ''
         setContentBaseline({
           title: initialTitle,
           scenarioStory: initialScenarioStory,
           scenarioChat: initialScenarioChat,
-          characterId: story.characterId ?? '',
+          characterId: initialCharacterId,
           scenarioType:
             story.scenarioType && story.scenarioType in STORY_SCENARIO_TYPE_LABELS ? (story.scenarioType as StoryScenarioType) : ''
         })
@@ -143,11 +156,15 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
   const t = title.trim()
   const st = scenarioStory.trim()
   const ch = scenarioChat.trim()
+  const hasSelectedCharacterOption = useMemo(
+    () => (selectedCharacterId ? characters.some((character) => character.id === selectedCharacterId) : false),
+    [characters, selectedCharacterId]
+  )
   const storyBodyFields = {
     title: t,
     scenarioStory: st,
     scenarioChat: ch,
-    characterId: selectedCharacterId || null,
+    characterId: selectedCharacterId.trim() || undefined,
     scenarioType: scenarioType || null
   }
   const hasContentChanged = useMemo(() => {
@@ -158,7 +175,7 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
       t !== contentBaseline.title ||
       st !== contentBaseline.scenarioStory ||
       ch !== contentBaseline.scenarioChat ||
-      (selectedCharacterId || '') !== contentBaseline.characterId ||
+      selectedCharacterId !== contentBaseline.characterId ||
       (scenarioType || '') !== contentBaseline.scenarioType
     )
   }, [contentBaseline, t, st, ch, selectedCharacterId, scenarioType])
@@ -201,15 +218,22 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
   const characterPagePath = useCallback(() => {
     const fromList = characters.find((c) => c.id === selectedCharacterId)
     const seg = fromList
-      ? fromList.slug || fromList.id
-      : selectedCharacterId || characterRouteKey || null
+      ? buildAiGirlfriendRouteKey(fromList.name, fromList.id)
+      : selectedCharacterId
+        ? buildAiGirlfriendRouteKey('ai-girlfriend', selectedCharacterId)
+        : characterRouteKey
+          ? buildAiGirlfriendRouteKey('ai-girlfriend', extractAiGirlfriendIdFromRouteKey(characterRouteKey))
+          : null
 
-    return seg ? `/characters/${encodeURIComponent(seg)}` : '/characters'
+    return seg ? `/ai-girlfriends/${encodeURIComponent(seg)}` : '/ai-girlfriends'
   }, [characters, selectedCharacterId, characterRouteKey])
 
   const resolveExitPath = useCallback(() => {
+    if (isAdminEditor) {
+      return '/admin/stories'
+    }
     return returnToPath ?? characterPagePath()
-  }, [returnToPath, characterPagePath])
+  }, [isAdminEditor, returnToPath, characterPagePath])
 
   const handleSaveDraftOnly = async () => {
     if (!canSaveDraftEdit) return
@@ -279,7 +303,7 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
         <div className="mx-auto max-w-[720px] px-5 pt-24">
           <p className="rounded-md border border-rose-300/20 bg-rose-300/10 px-4 py-3 text-sm text-rose-100">{loadError}</p>
           <Link href={resolveExitPath()} className="mt-4 inline-block text-sm text-ember-300 hover:underline">
-            {returnToPath ? 'Back to your scenarios' : 'Back to character'}
+            {returnToPath ? 'Back to your scenarios' : 'Back to AI girlfriend'}
           </Link>
         </div>
       </main>
@@ -300,7 +324,7 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
             <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5">
               <path d="M19 12H5M12 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            {returnToPath ? 'Back to your scenarios' : 'Back to character'}
+            {returnToPath ? 'Back to your scenarios' : 'Back to AI girlfriend'}
           </Link>
 
           <h1 className="font-[family-name:var(--font-heading)] text-4xl font-semibold italic text-white md:text-5xl">
@@ -397,7 +421,7 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
 
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.08em] text-white/60">
-                Related character (optional)
+                Related AI girlfriend (optional)
               </label>
               <select
                 value={selectedCharacterId}
@@ -405,6 +429,9 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
                 className="h-[48px] w-full rounded-lg border border-white/15 bg-[#0a0c10]/90 pl-4 pr-14 text-sm text-white outline-none transition focus:border-ember-400/60"
               >
                 <option value="">None</option>
+                {!hasSelectedCharacterOption && selectedCharacterId ? (
+                  <option value={selectedCharacterId}>{linkedCharacterName || 'Linked AI girlfriend'}</option>
+                ) : null}
                 {characters.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
@@ -414,43 +441,46 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
             </div>
 
             <div className="min-w-0 overflow-x-hidden rounded-md border border-white/10 bg-black/25 p-4 md:p-5">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-white/50">Scenario content</p>
-              <p className="mt-1.5 text-[11px] leading-relaxed text-white/40">
-                <span className="text-white/55">Story</span> = setting (plain).{' '}
-                <span className="text-white/55">Chat &amp; explanation</span> = dialogue (
-                <span className="text-white/55">&quot;quotes&quot;</span>
-                ), <span className="text-white/55">**beats**</span>, <span className="text-white/55">*pink*</span>.
-              </p>
-              <div className="mt-4 grid min-w-0 gap-5 md:grid-cols-2 md:items-start">
+              <div className="min-w-0 space-y-7">
                 <div className="min-w-0">
-                  <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-white/55">
-                    Story (setting)
-                  </label>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <label className="block text-[22px] font-medium text-white/80">Scenario</label>
+                    <p className="text-[18px] text-white/35">{scenarioStory.length} / 8000 tokens</p>
+                  </div>
                   <textarea
                     value={scenarioStory}
                     onChange={(e) => setScenarioStory(e.target.value)}
-                    maxLength={12000}
-                    rows={12}
+                    maxLength={8000}
+                    rows={6}
+                    placeholder="Setting, situation, or roleplay context..."
                     className={STORY_BODY_FIELD_TEXTAREA_CLASS}
-                    aria-label="Story setting"
+                    aria-label="Scenario"
                   />
-                  <p className="mt-1 text-right text-[11px] text-white/30">{scenarioStory.length}/12000</p>
                 </div>
+
                 <div className="min-w-0">
-                  <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-white/55">
-                    Chat &amp; explanation
-                  </label>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <label className="block text-[22px] font-medium text-white/80">Example dialogs (optional)</label>
+                    <p className="text-[18px] text-white/35">{scenarioChat.length} / 12000 tokens</p>
+                  </div>
                   <textarea
                     value={scenarioChat}
                     onChange={(e) => setScenarioChat(e.target.value)}
                     maxLength={12000}
-                    rows={12}
+                    rows={6}
+                    placeholder="Sample exchanges (e.g. User: ... / Character: ...)"
                     className={STORY_BODY_FIELD_TEXTAREA_CLASS}
-                    aria-label="Chat and explanation"
+                    aria-label="Example dialogs"
                   />
-                  <p className="mt-1 text-right text-[11px] text-white/30">{scenarioChat.length}/12000</p>
                 </div>
               </div>
+
+              <p className="mt-4 text-[12px] leading-relaxed text-white/45">
+                Text styling guide:{' '}
+                <span className="text-white/65">&quot;quoted dialogue&quot;</span> uses your story-category color,{' '}
+                <span className="text-white/65">**double-asterisk actions**</span> become gray italic narration, and{' '}
+                <span className="text-white/65">*single-asterisk emphasis*</span> becomes pink italic text in chat preview.
+              </p>
               {st.length > 0 || ch.length > 0 ? (
                 <div className="mt-5 min-w-0 overflow-hidden rounded-md border border-white/10 bg-black/40 p-3">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-white/45">Card preview</p>
@@ -508,15 +538,17 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
                 >
                   {isSubmitting
                     ? 'Saving...'
-                    : storyModerationStatus === 'REJECTED'
-                      ? 'Save & submit for review'
-                      : storyModerationStatus === 'APPROVED' || storyModerationStatus === 'PENDING'
-                        ? 'Submit for review'
-                        : 'Save changes'}
+                    : isAdminEditor
+                      ? 'Save changes'
+                      : storyModerationStatus === 'REJECTED'
+                        ? 'Save & submit for review'
+                        : storyModerationStatus === 'APPROVED' || storyModerationStatus === 'PENDING'
+                          ? 'Submit for review'
+                          : 'Save changes'}
                 </button>
                 {mustChangeBeforeReviewSubmit && !hasContentChanged ? (
                   <p className="text-center text-[11px] leading-relaxed text-white/40">
-                    Change the scenario above to enable submit.
+                    {isAdminEditor ? 'Change the scenario above to enable save.' : 'Change the scenario above to enable submit.'}
                   </p>
                 ) : null}
               </div>

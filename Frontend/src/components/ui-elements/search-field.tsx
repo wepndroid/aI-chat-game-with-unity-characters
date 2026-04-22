@@ -18,7 +18,7 @@ const SearchField = ({ value, onChange, placeholder, ariaLabel, containerClassNa
         aria-label={ariaLabel}
         className={
           inputClassName ??
-          'w-full rounded-md border border-white/20 bg-[#0f1116]/90 px-4 py-2.5 text-sm text-white outline-none transition placeholder:text-white/50 focus:border-ember-300 focus:ring-2 focus:ring-ember-400/35'
+          'min-h-[50px] w-full rounded-xl border border-white/20 bg-[#0f1116]/90 px-4 py-3 text-[16px] text-white outline-none transition placeholder:text-white/50 focus:border-ember-300 focus:ring-2 focus:ring-ember-400/35 sm:min-h-0 sm:rounded-md sm:py-2.5 sm:text-sm'
         }
       />
     </label>

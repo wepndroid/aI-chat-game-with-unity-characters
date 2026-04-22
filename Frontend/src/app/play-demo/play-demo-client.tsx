@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/components/providers/auth-provider'
 import { getWebGlBridgeToken } from '@/lib/auth-api'
+import { buildWebglEmbedUrlWithCharacterContext } from '@/lib/webgl-embed-url'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -80,36 +81,10 @@ const buildOverlayDropSpecs = (count: number): OverlayDropSpec[] => {
   })
 }
 
-/**
- * Appends character context from /play-demo?characterId=&character= (slug) onto the Unity embed URL
- * so the WebGL build can read the same query string (legacy flow used ?character= for lookups).
- */
-const buildWebglEmbedUrlWithCharacterContext = (
-  baseUrl: string,
-  characterId: string | null,
-  characterSlug: string | null,
-  storyId: string | null
-) => {
-  try {
-    const url = new URL(baseUrl)
-    if (characterId) {
-      url.searchParams.set('characterId', characterId)
-    }
-    if (characterSlug) {
-      url.searchParams.set('character', characterSlug)
-    }
-    if (storyId) {
-      url.searchParams.set('storyId', storyId)
-    }
-    return url.toString()
-  } catch {
-    return baseUrl
-  }
-}
-
 const PlayDemoClient = () => {
   const router = useRouter()
   const { sessionUser, isAuthLoading } = useAuth()
+  const sessionUserId = sessionUser?.id ?? null
   const searchParams = useSearchParams()
   const characterId = searchParams.get('characterId')
   const characterSlug = searchParams.get('character')
@@ -208,7 +183,7 @@ const PlayDemoClient = () => {
   }, [webglEmbedUrl, sessionUser])
 
   useEffect(() => {
-    if (!unityReady || !sessionUser || !iframeRef.current?.contentWindow) {
+    if (!unityReady || !sessionUserId || !iframeRef.current?.contentWindow) {
       return
     }
 
@@ -238,7 +213,7 @@ const PlayDemoClient = () => {
     return () => {
       isCancelled = true
     }
-  }, [unityReady, sessionUser])
+  }, [unityReady, sessionUserId])
 
   useEffect(() => {
     const canHideOverlay = unityReady && loadingProgress >= 100
@@ -308,9 +283,8 @@ const PlayDemoClient = () => {
                     ref={iframeRef}
                     src={resolvedWebglEmbedUrl}
                     title="AI Chat Game WebGL Demo"
-                    className={`h-full w-full overflow-hidden border-0 transition-opacity duration-500 ${
-                      showLoadingOverlay ? 'opacity-0' : 'opacity-100'
-                    }`}
+                    className={`h-full w-full overflow-hidden border-0 transition-opacity duration-500 ${showLoadingOverlay ? 'opacity-0' : 'opacity-100'
+                      }`}
                     loading="eager"
                     allow="fullscreen; gamepad; autoplay; microphone; camera; clipboard-read; clipboard-write"
                     scrolling="no"

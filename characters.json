@@ -1,0 +1,25 @@
+{
+  "data": [
+    {
+      "id": "cmo4ppvd501icysefd3j9ezt2",
+      "slug": "yourichi-13748878",
+      "name": "Yourichi",
+      "preview_image_url": "https://secretwaifu.com/uploads/1eda1f57-cadb-41bd-bab3-eb6b18ecb740.png",
+      "thumbnail_url": "https://secretwaifu.com/uploads/1eda1f57-cadb-41bd-bab3-eb6b18ecb740.png",
+      "tier_code": "patreon_1650",
+      "story_count": 0,
+      "default_story_id": null,
+      "unity_asset": {
+        "asset_key": "cmo4ppvd501icysefd3j9ezt2",
+        "model_url": null,
+        "model_hash": "sha256:13748878c2901194add2cddbc2fdcf530bdc10376c43bde3f3c4533f38909ccb",
+        "model_version": "2026-04-22T14:02:12.335Z",
+        "icon_url": "https://secretwaifu.com/uploads/1eda1f57-cadb-41bd-bab3-eb6b18ecb740.png",
+        "signed_model_url_endpoint": "https://secretwaifu.com/api/characters/cmo4ppvd501icysefd3j9ezt2/vrm-signed-url"
+      }
+    }
+  ],
+  "page": {
+    "nextCursor": "MQ"
+  }
+}

@@ -1,6 +1,7 @@
 'use client'
 
 import { getStory } from '@/lib/story-api'
+import { buildAiGirlfriendRouteHref } from '@/lib/ai-girlfriend-route'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
@@ -23,19 +24,19 @@ const StoryToCharacterRedirect = ({ storyId }: StoryToCharacterRedirectProps) =>
         }
 
         const ch = payload.data.character
-        const key = ch?.slug ?? ch?.id ?? payload.data.characterId
+        const key = ch?.id ?? payload.data.characterId
 
         if (key) {
-          router.replace(`/characters/${encodeURIComponent(key)}`)
+          router.replace(buildAiGirlfriendRouteHref(ch?.name ?? 'ai-girlfriend', key))
         } else {
           setMessage('This scenario is not linked to a character.')
-          router.replace('/characters')
+          router.replace('/ai-girlfriends')
         }
       })
       .catch(() => {
         if (!isCancelled) {
           setMessage('Could not open character.')
-          router.replace('/characters')
+          router.replace('/ai-girlfriends')
         }
       })
 

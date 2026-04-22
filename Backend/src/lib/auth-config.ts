@@ -1,5 +1,7 @@
 import type { UserRole } from '@prisma/client'
 
+type PasswordHashAlgorithm = 'argon2' | 'scrypt'
+
 const parseDuration = (value: string | undefined, fallbackValue: number) => {
   const parsed = Number.parseInt(value ?? '', 10)
 
@@ -28,11 +30,22 @@ const parseBoolean = (value: string | undefined, fallbackValue: boolean) => {
   return fallbackValue
 }
 
+const parsePasswordHashAlgorithm = (value: string | undefined, fallbackValue: PasswordHashAlgorithm): PasswordHashAlgorithm => {
+  const normalized = value?.trim().toLowerCase()
+
+  if (normalized === 'argon2' || normalized === 'scrypt') {
+    return normalized
+  }
+
+  return fallbackValue
+}
+
 /** When true, session + API expose every user as ADMIN (DB rows unchanged). Default false so real DB roles apply. */
 const forceAllUsersAdminForTesting = parseBoolean(process.env.FORCE_ALL_USERS_ADMIN, false)
 
 const backendPublicUrl = process.env.BACKEND_PUBLIC_URL?.trim() || 'http://127.0.0.1:4000'
 const frontendPublicUrl = process.env.FRONTEND_URL?.trim() || 'http://127.0.0.1:7000'
+const defaultPasswordHashAlgorithm: PasswordHashAlgorithm = process.env.NODE_ENV === 'production' ? 'argon2' : 'scrypt'
 
 const authConfig = {
   cookieName: process.env.AUTH_COOKIE_NAME?.trim() || 'secretwaifu_auth',
@@ -43,6 +56,7 @@ const authConfig = {
   // One-time token lifetimes for email verification and password reset.
   emailVerificationTokenTtlMs: parseDuration(process.env.AUTH_EMAIL_VERIFICATION_TOKEN_TTL_MS, 24 * 60 * 60 * 1000),
   passwordResetTokenTtlMs: parseDuration(process.env.AUTH_PASSWORD_RESET_TOKEN_TTL_MS, 60 * 60 * 1000),
+  passwordHashAlgorithm: parsePasswordHashAlgorithm(process.env.AUTH_PASSWORD_HASH_ALGORITHM, defaultPasswordHashAlgorithm),
   verifyEmailUrlBase: process.env.AUTH_VERIFY_EMAIL_URL_BASE?.trim() || `${frontendPublicUrl}/auth/verify-email`,
   resetPasswordUrlBase: process.env.AUTH_RESET_PASSWORD_URL_BASE?.trim() || `${frontendPublicUrl}/auth/reset-password`
 }
@@ -72,4 +86,4 @@ const getEffectiveUserRoleForTesting = (role: UserRole): UserRole => {
 }
 
 export { authConfig, forceAllUsersAdminForTesting, getEffectiveUserRoleForTesting, getEmailConfig, getIsSecureCookie }
-export type { EmailConfig }
+export type { EmailConfig, PasswordHashAlgorithm }

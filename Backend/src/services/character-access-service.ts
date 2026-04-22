@@ -205,14 +205,12 @@ const buildCharacterListWhereClause = (
         OR: [
           {
             name: {
-              contains: normalizedSearch,
-              mode: 'insensitive' as const
+              contains: normalizedSearch
             }
           },
           {
             slug: {
-              contains: normalizedSearch,
-              mode: 'insensitive' as const
+              contains: normalizedSearch
             }
           }
         ]

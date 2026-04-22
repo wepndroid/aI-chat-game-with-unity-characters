@@ -7,6 +7,51 @@ type AuthUserResponse = {
   }
 }
 
+type SessionUserTierWire = {
+  code: string
+  messageLimit?: number
+  message_limit?: number
+  periodDays?: number
+  period_days?: number
+  label?: string | null
+}
+
+type SessionUserWire = {
+  id: string
+  email: string
+  username: string
+  role: SessionUser['role']
+  isEmailVerified?: boolean
+  is_email_verified?: boolean
+  avatarUrl?: string | null
+  avatar_url?: string | null
+  unreadNotificationCount?: number
+  unread_notification_count?: number
+  createdAt?: string
+  created_at?: string
+  updatedAt?: string
+  updated_at?: string
+  tierCode?: string | null
+  tier_code?: string | null
+  tier?: SessionUserTierWire | null
+}
+
+type AuthUserResponseWire = {
+  data: {
+    user: SessionUserWire
+  }
+}
+
+type AuthMeResponseWire =
+  | {
+      data: {
+        user: SessionUserWire
+      }
+    }
+  | {
+      user: SessionUserWire
+    }
+
 type RegisterAuthPayload = {
   email: string
   username: string
@@ -17,6 +62,17 @@ type RegisterAuthResponse = {
   data: {
     user: SessionUser
     requiresEmailVerification: boolean
+    verificationEmailSent?: boolean
+  }
+}
+
+type RegisterAuthResponseWire = {
+  data: {
+    user: SessionUserWire
+    requiresEmailVerification?: boolean
+    requires_email_verification?: boolean
+    verificationEmailSent?: boolean
+    verification_email_sent?: boolean
   }
 }
 
@@ -41,20 +97,69 @@ type ResetPasswordPayload = {
 
 type GoogleOAuthIntent = 'signin' | 'signup'
 
-const registerWithPassword = async (payload: RegisterAuthPayload) => {
-  return apiPost<RegisterAuthResponse>('/auth/register', payload)
+const normalizeSessionUser = (user: SessionUserWire): SessionUser => {
+  const tier = user.tier
+  const tierMessageLimit = tier?.message_limit ?? tier?.messageLimit
+  const tierPeriodDays = tier?.period_days ?? tier?.periodDays
+  const normalizedTier =
+    tier && typeof tierMessageLimit === 'number' && typeof tierPeriodDays === 'number'
+      ? {
+          code: tier.code,
+          messageLimit: tierMessageLimit,
+          periodDays: tierPeriodDays,
+          label: tier.label ?? null
+        }
+      : null
+
+  return {
+    id: user.id,
+    email: user.email,
+    username: user.username,
+    role: user.role,
+    isEmailVerified: user.is_email_verified ?? user.isEmailVerified ?? false,
+    avatarUrl: user.avatar_url ?? user.avatarUrl ?? null,
+    unreadNotificationCount: user.unread_notification_count ?? user.unreadNotificationCount ?? 0,
+    createdAt: user.created_at ?? user.createdAt,
+    updatedAt: user.updated_at ?? user.updatedAt,
+    tierCode: user.tier_code ?? user.tierCode ?? null,
+    tier: normalizedTier
+  }
 }
 
-const loginWithPassword = async (payload: LoginAuthPayload) => {
-  return apiPost<AuthUserResponse>('/auth/login', payload)
+const registerWithPassword = async (payload: RegisterAuthPayload): Promise<RegisterAuthResponse> => {
+  const response = await apiPost<RegisterAuthResponseWire>('/auth/register', payload)
+
+  return {
+    data: {
+      user: normalizeSessionUser(response.data.user),
+      requiresEmailVerification:
+        response.data.requires_email_verification ?? response.data.requiresEmailVerification ?? false,
+      verificationEmailSent: response.data.verification_email_sent ?? response.data.verificationEmailSent
+    }
+  }
+}
+
+const loginWithPassword = async (payload: LoginAuthPayload): Promise<AuthUserResponse> => {
+  const response = await apiPost<AuthUserResponseWire>('/auth/login', payload)
+
+  return {
+    data: {
+      user: normalizeSessionUser(response.data.user)
+    }
+  }
 }
 
 const logoutSession = async () => {
-  return apiPost<{ data: { loggedOut: boolean } }>('/auth/logout')
+  return apiPost<{ data: { logged_out: boolean } }>('/auth/logout')
 }
 
 const getCurrentSessionUser = async () => {
-  return apiGet<AuthUserResponse>('/auth/me')
+  const response = await apiGet<AuthMeResponseWire>('/auth/me')
+  const responseUser = 'user' in response ? response.user : response.data.user
+
+  return {
+    user: normalizeSessionUser(responseUser)
+  }
 }
 
 type WebGlBridgeTokenResponse = {
@@ -65,22 +170,45 @@ type WebGlBridgeTokenResponse = {
   }
 }
 
+type WebGlBridgeTokenResponseWire = {
+  data: {
+    token: string
+    expiresAt?: string
+    expires_at?: string
+    tokenType?: 'Bearer'
+    token_type?: 'Bearer'
+  }
+}
+
 /** Short-lived API token for Unity WebGL (`Authorization: Bearer`). Requires cookie session. */
-const getWebGlBridgeToken = async () => {
-  return apiGet<WebGlBridgeTokenResponse>('/auth/webgl-token')
+const getWebGlBridgeToken = async (): Promise<WebGlBridgeTokenResponse> => {
+  const response = await apiGet<WebGlBridgeTokenResponseWire>('/auth/webgl-token')
+
+  return {
+    data: {
+      token: response.data.token,
+      expiresAt: response.data.expires_at ?? response.data.expiresAt ?? '',
+      tokenType: response.data.token_type ?? response.data.tokenType ?? 'Bearer'
+    }
+  }
 }
 
 const resendVerificationCode = async () => {
-  return apiPost<{ data: { sent: boolean; alreadyVerified?: boolean } }>('/auth/resend-verification', {})
+  const response = await apiPost<{ data: { sent: boolean; alreadyVerified?: boolean; already_verified?: boolean } }>(
+    '/auth/resend-verification',
+    {}
+  )
+
+  return {
+    data: {
+      sent: response.data.sent,
+      alreadyVerified: response.data.already_verified ?? response.data.alreadyVerified
+    }
+  }
 }
 
 const verifyEmailCode = async (payload: VerifyEmailCodePayload) => {
   return apiPost<{ data: { verified: boolean } }>('/auth/verify-email-code', payload)
-}
-
-const verifyEmailWithToken = async (token: string) => {
-  const query = new URLSearchParams({ token })
-  return apiGet<{ data: { verified: boolean } }>(`/auth/verify-email?${query.toString()}`)
 }
 
 const requestPasswordResetLink = async (payload: ForgotPasswordPayload) => {
@@ -114,7 +242,6 @@ export {
   requestPasswordResetLink,
   resendVerificationCode,
   resetPasswordWithToken,
-  verifyEmailWithToken,
   verifyEmailCode
 }
 export type {

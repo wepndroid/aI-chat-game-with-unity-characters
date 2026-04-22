@@ -1,26 +1,61 @@
 import type { Metadata } from 'next'
-import { Barlow_Condensed, Sora } from 'next/font/google'
+import { Inter, Sora } from 'next/font/google'
 import { AuthProvider } from '@/components/providers/auth-provider'
 import { MaintenanceProvider } from '@/components/providers/maintenance-provider'
+import { WebglWarmProvider } from '@/components/providers/webgl-warm-provider'
 import UnityScanReportListener from '@/components/providers/unity-scan-report-listener'
-import Footer from '@/components/shared/footer'
-import Header from '@/components/shared/header'
+import { ConditionalHeader, ConditionalFooter } from '@/components/shared/layout-wrapper'
+import { siteMetadataBase } from '@/lib/site'
 import './globals.css'
 
-const bodyFont = Sora({
+const bodyFont = Inter({
   subsets: ['latin'],
   variable: '--font-body'
 })
 
-const headingFont = Barlow_Condensed({
+const headingFont = Sora({
   subsets: ['latin'],
-  weight: ['400', '600', '700', '800'],
   variable: '--font-heading'
 })
 
 export const metadata: Metadata = {
-  title: 'SecretWaifu | Home Page',
-  description: 'AI Chat Game platform login and homepage preview'
+  metadataBase: siteMetadataBase,
+  title: {
+    default: 'SecretWaifu.com',
+    template: '%s | SecretWaifu.com'
+  },
+  description:
+    'Transcend reality in a living digital sanctuary with hand-crafted VRoid AI girlfriends, voice chat, speech-to-text, deep customization, VR support, and monthly updates.',
+  alternates: {
+    canonical: '/'
+  },
+  openGraph: {
+    type: 'website',
+    siteName: 'SecretWaifu.com',
+    title: 'SecretWaifu.com',
+    description:
+      'Transcend reality in a living digital sanctuary with hand-crafted VRoid AI girlfriends, voice chat, speech-to-text, deep customization, VR support, and monthly updates.',
+    url: '/',
+    images: [
+      {
+        url: '/images/Homepage.png',
+        width: 1200,
+        height: 630,
+        alt: 'SecretWaifu homepage preview'
+      }
+    ]
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'SecretWaifu.com',
+    description:
+      'Transcend reality in a living digital sanctuary with hand-crafted VRoid AI girlfriends, voice chat, speech-to-text, deep customization, VR support, and monthly updates.',
+    images: ['/images/Homepage.png']
+  },
+  icons: {
+    icon: '/favicon.ico',
+    shortcut: '/favicon.ico'
+  }
 }
 
 type RootLayoutProps = Readonly<{
@@ -30,16 +65,15 @@ type RootLayoutProps = Readonly<{
 const RootLayout = ({ children }: RootLayoutProps) => {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body
-        suppressHydrationWarning
-        className={`${bodyFont.variable} ${headingFont.variable} bg-[#030303] text-white antialiased`}
-      >
+      <body suppressHydrationWarning className={`${bodyFont.variable} ${headingFont.variable} bg-[#030303] text-white antialiased`}>
         <AuthProvider>
           <MaintenanceProvider>
-            <UnityScanReportListener />
-            <Header />
-            {children}
-            <Footer />
+            <WebglWarmProvider>
+              <UnityScanReportListener />
+              <ConditionalHeader />
+              {children}
+              <ConditionalFooter />
+            </WebglWarmProvider>
           </MaintenanceProvider>
         </AuthProvider>
       </body>

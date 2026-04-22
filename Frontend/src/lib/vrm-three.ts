@@ -16,6 +16,7 @@ export type VrmLoadedGltf = GLTF & {
 
 export type VrmRuntime = {
   GLTFLoader: typeof import('three/examples/jsm/loaders/GLTFLoader.js').GLTFLoader
+  MToonMaterialLoaderPlugin: typeof import('@pixiv/three-vrm').MToonMaterialLoaderPlugin
   VRMUtils: typeof import('@pixiv/three-vrm').VRMUtils
   VRMLoaderPlugin: typeof import('@pixiv/three-vrm').VRMLoaderPlugin
 }
@@ -24,12 +25,12 @@ export type VrmRuntime = {
  * Dynamic imports for three + @pixiv/three-vrm (keeps initial bundle small).
  */
 export async function loadVrmRuntime(): Promise<VrmRuntime> {
-  const [{ GLTFLoader }, { VRMUtils, VRMLoaderPlugin }] = await Promise.all([
+  const [{ GLTFLoader }, { MToonMaterialLoaderPlugin, VRMUtils, VRMLoaderPlugin }] = await Promise.all([
     import('three/examples/jsm/loaders/GLTFLoader.js'),
     import('@pixiv/three-vrm')
   ])
 
-  return { GLTFLoader, VRMUtils, VRMLoaderPlugin }
+  return { GLTFLoader, MToonMaterialLoaderPlugin, VRMUtils, VRMLoaderPlugin }
 }
 
 /**
@@ -38,7 +39,17 @@ export async function loadVrmRuntime(): Promise<VrmRuntime> {
 export function createVrmGLTFLoader(runtime: VrmRuntime) {
   const loader = new runtime.GLTFLoader()
   loader.crossOrigin = 'anonymous'
-  loader.register((parser) => new runtime.VRMLoaderPlugin(parser))
+  loader.register((parser) => {
+    const mtoonMaterialPlugin = new runtime.MToonMaterialLoaderPlugin(parser, {
+      // VRoid exports frequently rely on the older VRM0 shade behavior.
+      // Enabling this keeps the live preview closer to what users see in VRoid.
+      v0CompatShade: true
+    })
+
+    return new runtime.VRMLoaderPlugin(parser, {
+      mtoonMaterialPlugin
+    })
+  })
   return loader
 }
 
@@ -46,8 +57,17 @@ export function createVrmGLTFLoader(runtime: VrmRuntime) {
  * Mesh/skeleton optimization via @pixiv/three-vrm VRMUtils (combineSkeletons replaces deprecated removeUnnecessaryJoints).
  */
 export function optimizeVrmSceneForRendering(runtime: VrmRuntime, root: Object3D) {
-  runtime.VRMUtils.removeUnnecessaryVertices(root)
-  runtime.VRMUtils.combineSkeletons(root)
+  try {
+    runtime.VRMUtils.removeUnnecessaryVertices(root)
+  } catch (error) {
+    console.warn('[vrm-three] Skipped removeUnnecessaryVertices for this VRM', error)
+  }
+
+  try {
+    runtime.VRMUtils.combineSkeletons(root)
+  } catch (error) {
+    console.warn('[vrm-three] Skipped combineSkeletons for this VRM', error)
+  }
 }
 
 export function getVrmFromGltfUserData(gltf: VrmLoadedGltf): VRM | null {

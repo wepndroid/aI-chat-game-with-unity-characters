@@ -20,13 +20,16 @@ const AdminPageShell = ({
   const activeLabel = useMemo(() => {
     const labelMap: Record<AdminSidebarKey, string> = {
       dashboard: 'Dashboard',
+      'landing-pages': 'Landing Pages',
+      'legacy-import': 'Legacy Transfer',
       activity: 'Activity',
       users: 'Users',
       'community-vrms': 'Community VRMs',
       'official-vrms': 'Official VRMs',
       stories: 'Stories',
       'review-queue': 'Review Queue',
-      'global-settings': 'Global Settings'
+      'global-settings': 'Global Settings',
+      'image-lab': 'Image Lab'
     }
 
     return labelMap[activeKey]

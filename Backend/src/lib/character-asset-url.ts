@@ -1,4 +1,5 @@
 import { isIP } from 'node:net'
+import { isObjectStorageConfigured, parseObjectStorageVrmRef } from './object-storage'
 
 const UPLOAD_PATH_PREFIX = '/uploads/'
 
@@ -135,43 +136,96 @@ const isTrustedSelfHostedAssetUrl = (rawUrl: string) => {
   }
 }
 
-const assertSafeAssetUrl = (rawUrl: string | null | undefined, fieldLabel: string, allowedExtensions: string[]) => {
+type CharacterAssetUrlFieldKey = 'vroidFileUrl' | 'poseFileUrl' | 'previewImageUrl'
+
+class CharacterAssetUrlValidationError extends Error {
+  readonly code = 'INVALID_CHARACTER_ASSET_URL' as const
+
+  constructor(
+    public readonly fieldKey: CharacterAssetUrlFieldKey,
+    message: string
+  ) {
+    super(message)
+    this.name = 'CharacterAssetUrlValidationError'
+  }
+}
+
+const assertSafeAssetUrl = (
+  rawUrl: string | null | undefined,
+  fieldKey: CharacterAssetUrlFieldKey,
+  fieldLabel: string,
+  allowedExtensions: string[]
+) => {
   if (!rawUrl) {
     return
   }
 
   const normalizedUrl = rawUrl.trim()
 
+  if (fieldKey === 'vroidFileUrl') {
+    const objectKey = parseObjectStorageVrmRef(normalizedUrl)
+    if (objectKey) {
+      const normalizedPath = objectKey.toLowerCase()
+      if (!allowedExtensions.some((extension) => normalizedPath.endsWith(extension))) {
+        throw new CharacterAssetUrlValidationError(
+          fieldKey,
+          `${fieldLabel} must use one of: ${allowedExtensions.join(', ')}`
+        )
+      }
+      return
+    }
+  }
+
   if (isTrustedSelfHostedAssetUrl(normalizedUrl) || isDevLoopbackSelfHostedUpload(normalizedUrl)) {
+    if (fieldKey === 'vroidFileUrl') {
+      if (isObjectStorageConfigured()) {
+        throw new CharacterAssetUrlValidationError(
+          fieldKey,
+          'VRM file URL must use object storage or a safe external URL.'
+        )
+      }
+    }
+
     const parsedUrl = new URL(normalizedUrl)
     const normalizedPath = parsedUrl.pathname.toLowerCase()
 
     if (!allowedExtensions.some((extension) => normalizedPath.endsWith(extension))) {
-      throw new Error(`${fieldLabel} must use one of: ${allowedExtensions.join(', ')}`)
+      throw new CharacterAssetUrlValidationError(
+        fieldKey,
+        `${fieldLabel} must use one of: ${allowedExtensions.join(', ')}`
+      )
     }
 
     return
   }
 
   if (!isSafeExternalUrl(normalizedUrl)) {
-    throw new Error(`${fieldLabel} must be a safe public http(s) URL.`)
+    throw new CharacterAssetUrlValidationError(
+      fieldKey,
+      `${fieldLabel} must be a safe public http(s) URL.`
+    )
   }
 
   const parsedUrl = new URL(normalizedUrl)
   const normalizedPath = parsedUrl.pathname.toLowerCase()
 
   if (!allowedExtensions.some((extension) => normalizedPath.endsWith(extension))) {
-    throw new Error(`${fieldLabel} must use one of: ${allowedExtensions.join(', ')}`)
+    throw new CharacterAssetUrlValidationError(
+      fieldKey,
+      `${fieldLabel} must use one of: ${allowedExtensions.join(', ')}`
+    )
   }
 }
 
-const assertSafeCharacterAssetUrls = (payload: { vroidFileUrl?: string | null; previewImageUrl?: string | null }) => {
-  assertSafeAssetUrl(payload.vroidFileUrl, 'VRM file URL', ['.vrm'])
-  assertSafeAssetUrl(payload.previewImageUrl, 'Preview image URL', ['.png', '.jpg', '.jpeg', '.webp', '.gif'])
+const assertSafeCharacterAssetUrls = (payload: { vroidFileUrl?: string | null; poseFileUrl?: string | null; previewImageUrl?: string | null }) => {
+  assertSafeAssetUrl(payload.vroidFileUrl, 'vroidFileUrl', 'VRM file URL', ['.vrm'])
+  assertSafeAssetUrl(payload.poseFileUrl, 'poseFileUrl', 'Pose file URL', ['.vrma'])
+  assertSafeAssetUrl(payload.previewImageUrl, 'previewImageUrl', 'Preview image URL', ['.png', '.jpg', '.jpeg', '.webp', '.gif'])
 }
 
 export {
   assertSafeCharacterAssetUrls,
+  CharacterAssetUrlValidationError,
   isDevLoopbackSelfHostedUpload,
   isSafeExternalUrl,
   isTrustedSelfHostedAssetUrl,

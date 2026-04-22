@@ -6,12 +6,93 @@ import { Router } from 'express'
 import multer from 'multer'
 import { getRuntimeAdminSettings } from '../lib/runtime-admin-settings'
 import { requireAuth, requireVerifiedEmail } from '../middleware/auth-middleware'
+import {
+  isObjectStorageConfigured,
+  uploadVrmBufferToObjectStorage
+} from '../lib/object-storage'
 
 const characterAssetUploadRoutes = Router()
 
 const uploadsRoot = path.join(process.cwd(), 'uploads')
 
 fs.mkdirSync(uploadsRoot, { recursive: true })
+
+const GLB_HEADER_BYTES = 12
+const GLB_CHUNK_HEADER_BYTES = 8
+const GLB_JSON_CHUNK_TYPE = 0x4e4f534a // "JSON" little-endian
+const GLB_BINARY_MAGIC = 0x46546c67 // "glTF" little-endian
+const VRMA_EXTENSION_NAME = 'VRMC_vrm_animation'
+
+const parseVrmaJsonChunk = async (filePath: string) => {
+  const fileBuffer = await fs.promises.readFile(filePath)
+
+  if (fileBuffer.length < GLB_HEADER_BYTES) {
+    throw new Error('Pose file is too small to be a valid .vrma file.')
+  }
+
+  const magic = fileBuffer.readUInt32LE(0)
+  const version = fileBuffer.readUInt32LE(4)
+  const totalLength = fileBuffer.readUInt32LE(8)
+
+  if (magic !== GLB_BINARY_MAGIC) {
+    throw new Error('Pose file is not a valid glTF binary (.vrma).')
+  }
+
+  if (version < 2) {
+    throw new Error('Pose file uses an unsupported glTF version.')
+  }
+
+  if (totalLength !== fileBuffer.length) {
+    throw new Error('Pose file appears truncated or malformed.')
+  }
+
+  let offset = GLB_HEADER_BYTES
+  while (offset + GLB_CHUNK_HEADER_BYTES <= fileBuffer.length) {
+    const chunkLength = fileBuffer.readUInt32LE(offset)
+    const chunkType = fileBuffer.readUInt32LE(offset + 4)
+    const chunkStart = offset + GLB_CHUNK_HEADER_BYTES
+    const chunkEnd = chunkStart + chunkLength
+
+    if (chunkEnd > fileBuffer.length) {
+      throw new Error('Pose file chunk data is out of bounds.')
+    }
+
+    if (chunkType === GLB_JSON_CHUNK_TYPE) {
+      const jsonText = fileBuffer.toString('utf8', chunkStart, chunkEnd).replace(/\u0000+$/g, '')
+      try {
+        return JSON.parse(jsonText) as {
+          extensionsUsed?: unknown
+          extensionsRequired?: unknown
+          animations?: unknown
+        }
+      } catch {
+        throw new Error('Pose file contains invalid glTF JSON metadata.')
+      }
+    }
+
+    offset = chunkEnd
+  }
+
+  throw new Error('Pose file does not contain a glTF JSON chunk.')
+}
+
+const validateVrmaFile = async (filePath: string) => {
+  const jsonChunk = await parseVrmaJsonChunk(filePath)
+  const extensionsUsed = Array.isArray(jsonChunk.extensionsUsed) ? jsonChunk.extensionsUsed : []
+  const extensionsRequired = Array.isArray(jsonChunk.extensionsRequired) ? jsonChunk.extensionsRequired : []
+  const animations = Array.isArray(jsonChunk.animations) ? jsonChunk.animations : []
+
+  const hasVrmaExtension =
+    extensionsUsed.includes(VRMA_EXTENSION_NAME) || extensionsRequired.includes(VRMA_EXTENSION_NAME)
+
+  if (!hasVrmaExtension) {
+    throw new Error('Pose file is missing the VRM animation extension (VRMC_vrm_animation).')
+  }
+
+  if (animations.length === 0) {
+    throw new Error('Pose file has no animation tracks.')
+  }
+}
 
 const previewExtFromMime = (mime: string) => {
   if (mime === 'image/jpeg') {
@@ -44,6 +125,10 @@ const storage = multer.diskStorage({
       callback(null, `${id}.vrm`)
       return
     }
+    if (file.fieldname === 'pose') {
+      callback(null, `${id}.vrma`)
+      return
+    }
 
     if (file.fieldname === 'preview') {
       const fromName = path.extname(file.originalname).toLowerCase()
@@ -68,6 +153,14 @@ const upload = multer({
         return
       }
 
+      callback(null, true)
+      return
+    }
+    if (file.fieldname === 'pose') {
+      if (!file.originalname.toLowerCase().endsWith('.vrma')) {
+        callback(new Error('Pose upload must be a .vrma file.'))
+        return
+      }
       callback(null, true)
       return
     }
@@ -110,6 +203,7 @@ characterAssetUploadRoutes.post(
   (request, response, next) => {
     upload.fields([
       { name: 'vrm', maxCount: 1 },
+      { name: 'pose', maxCount: 1 },
       { name: 'preview', maxCount: 1 }
     ])(request, response, (error) => {
       if (error) {
@@ -125,11 +219,12 @@ characterAssetUploadRoutes.post(
   async (request, response) => {
     const fileMap = request.files as Record<string, Express.Multer.File[]> | undefined
     const vrmFile = fileMap?.vrm?.[0]
+    const poseFile = fileMap?.pose?.[0]
     const previewFile = fileMap?.preview?.[0]
 
-    if (!vrmFile && !previewFile) {
+    if (!vrmFile && !poseFile && !previewFile) {
       response.status(400).json({
-        message: 'Provide a VRM file and/or a preview image.'
+        message: 'Provide a VRM file, pose file, and/or a preview image.'
       })
       return
     }
@@ -146,6 +241,25 @@ characterAssetUploadRoutes.post(
         message: `VRM exceeds max size limit (${uploadLimits?.maxVrmSizeMb ?? 100}MB).`
       })
       return
+    }
+    if (poseFile && poseFile.size > maxVrmBytes) {
+      fs.unlink(poseFile.path, () => {})
+      response.status(400).json({
+        message: `Pose exceeds max size limit (${uploadLimits?.maxVrmSizeMb ?? 100}MB).`
+      })
+      return
+    }
+
+    if (poseFile) {
+      try {
+        await validateVrmaFile(poseFile.path)
+      } catch (error) {
+        fs.unlink(poseFile.path, () => {})
+        response.status(400).json({
+          message: error instanceof Error ? error.message : 'Pose file failed VRMA validation.'
+        })
+        return
+      }
     }
 
     if (previewFile && previewFile.size > maxPreviewBytes) {
@@ -165,10 +279,27 @@ characterAssetUploadRoutes.post(
     }
 
     const origin = resolvePublicOrigin(request)
-    const data: { vroidFileUrl?: string; previewImageUrl?: string } = {}
+    const data: { vroidFileUrl?: string; poseFileUrl?: string; previewImageUrl?: string } = {}
 
     if (vrmFile) {
-      data.vroidFileUrl = `${origin}/uploads/${vrmFile.filename}`
+      if (isObjectStorageConfigured()) {
+        try {
+          const vrmBuffer = await fs.promises.readFile(vrmFile.path)
+          const uploadedVrm = await uploadVrmBufferToObjectStorage({
+            fileName: vrmFile.filename,
+            fileContent: vrmBuffer,
+            contentType: vrmFile.mimetype || 'model/gltf-binary'
+          })
+          data.vroidFileUrl = uploadedVrm.reference
+        } finally {
+          fs.unlink(vrmFile.path, () => {})
+        }
+      } else {
+        data.vroidFileUrl = `${origin}/uploads/${vrmFile.filename}`
+      }
+    }
+    if (poseFile) {
+      data.poseFileUrl = `${origin}/uploads/${poseFile.filename}`
     }
 
     if (previewFile) {

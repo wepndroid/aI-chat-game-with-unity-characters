@@ -5,6 +5,7 @@ type CharacterListRecord = {
   slug: string
   name: string
   tagline: string | null
+  description: string | null
   status: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'
   visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED'
   officialListing: boolean
@@ -36,6 +37,7 @@ type CharacterDetailRecord = {
   firstMessage: string | null
   exampleDialogs: string | null
   vroidFileUrl: string | null
+  poseFileUrl: string | null
   previewImageUrl: string | null
   legacyFileHash: string | null
   legacyTier: number | null
@@ -103,6 +105,7 @@ type CreateCharacterPayload = {
   firstMessage?: string
   exampleDialogs?: string
   vroidFileUrl?: string
+  poseFileUrl?: string
   previewImageUrl?: string
   legacyFileHash?: string
   legacyTier?: number
@@ -124,6 +127,7 @@ type UpdateCharacterPayload = {
   firstMessage?: string | null
   exampleDialogs?: string | null
   vroidFileUrl?: string | null
+  poseFileUrl?: string | null
   previewImageUrl?: string | null
   legacyFileHash?: string | null
   legacyTier?: number | null
@@ -169,6 +173,7 @@ type CharacterMineRecord = {
   slug: string
   name: string
   tagline: string | null
+  description: string | null
   status: CharacterStatus
   visibility: CharacterVisibility
   isPatreonGated: boolean
@@ -190,6 +195,8 @@ type AdminReviewQueueRecord = {
   id: string
   slug: string
   name: string
+  vroidFileUrl: string | null
+  poseFileUrl: string | null
   previewImageUrl: string | null
   description: string | null
   createdAt: string
@@ -245,7 +252,23 @@ type CharacterChatStartResponse = {
 type CharacterAssetUploadResponse = {
   data: {
     vroidFileUrl?: string
+    poseFileUrl?: string
     previewImageUrl?: string
+  }
+}
+
+type GenerateCharacterPreviewResponse = {
+  data: {
+    previewImageUrl: string
+    cooldownSecondsRemaining: number
+    successfulGenerationsInWindow: number
+    instantGenerationsRemaining: number
+    debug?: {
+      isCooldownExempt: boolean
+      requestParameters: Record<string, unknown>
+      upstreamStatus: number
+      upstreamResponse: Record<string, unknown>
+    } | null
   }
 }
 
@@ -372,6 +395,10 @@ const uploadCharacterAssets = async (formData: FormData) => {
   return apiPostFormData<CharacterAssetUploadResponse>('/characters/assets/upload', formData)
 }
 
+const generateCharacterPreview = async (formData: FormData) => {
+  return apiPostFormData<GenerateCharacterPreviewResponse>('/characters/preview/generate', formData, 300000)
+}
+
 const listAdminReviewQueue = async () => {
   return apiGet<AdminReviewQueueResponse>('/admin/characters/review-queue?limit=100')
 }
@@ -392,6 +419,7 @@ const deleteCharacter = async (characterId: string) => {
 export {
   createCharacter,
   deleteCharacter,
+  generateCharacterPreview,
   getCharacterCardPersona,
   getCharacterDetail,
   listAdminReviewQueue,
@@ -411,6 +439,7 @@ export type {
   DeleteCharacterResponse,
   AdminReviewQueueRecord,
   CharacterDetailRecord,
+  GenerateCharacterPreviewResponse,
   CharacterListRecord,
   CharacterMineRecord,
   CharacterStatus,

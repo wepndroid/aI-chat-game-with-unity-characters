@@ -17,6 +17,7 @@ import {
   updateCharacterReview,
   type CharacterReviewRecord
 } from '@/lib/review-api'
+import { buildAiGirlfriendRouteKey } from '@/lib/ai-girlfriend-route'
 import {
   createVrmGLTFLoader,
   getVrmFromGltfUserData,
@@ -32,6 +33,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 type CharacterPageProps = {
   characterId?: string
+  initialCharacterRecord?: CharacterDetailRecord | null
 }
 
 const formatCompactNumber = (value: number) => {
@@ -39,14 +41,6 @@ const formatCompactNumber = (value: number) => {
     notation: 'compact',
     maximumFractionDigits: 1
   }).format(value)
-}
-
-const formatTierLabel = (tierCents: number | null) => {
-  if (!tierCents || tierCents <= 0) {
-    return 'Patreon tier required'
-  }
-
-  return `Requires EUR ${(tierCents / 100).toFixed(2)}+ tier`
 }
 
 const formatReviewRelativeLabel = (value: string) => {
@@ -102,14 +96,15 @@ const HeartStatIcon = ({ className = 'size-4' }: { className?: string }) => {
 
 const CharacterPreviewVisual = ({ previewImageUrl, characterName }: { previewImageUrl: string | null; characterName: string }) => {
   return (
-    <div className="relative mx-auto flex h-[430px] w-[225px] items-end justify-center overflow-hidden rounded-sm border border-white/10 bg-black">
+    <div className="relative flex h-full min-h-[530px] w-full items-end justify-center overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_50%_18%,rgba(255,255,255,0.11),transparent_28%),radial-gradient(circle_at_50%_100%,rgba(244,99,19,0.14),transparent_30%),linear-gradient(180deg,rgba(15,16,21,0.88),rgba(7,8,12,0.98))]">
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),transparent_28%,rgba(0,0,0,0.4)_100%)]" />
       {previewImageUrl ? (
         <Image
           src={previewImageUrl}
           alt={`${characterName} preview`}
           fill
           unoptimized
-          className="object-contain object-bottom"
+          className="object-contain object-bottom opacity-92 contrast-110"
         />
       ) : null}
       {!previewImageUrl ? (
@@ -127,12 +122,15 @@ const CharacterPreviewVisual = ({ previewImageUrl, characterName }: { previewIma
   )
 }
 
-const CharacterPage = ({ characterId }: CharacterPageProps) => {
+const CharacterPage = ({ characterId, initialCharacterRecord = null }: CharacterPageProps) => {
   const pathname = usePathname()
   const { sessionUser } = useAuth()
-  const [isLoading, setIsLoading] = useState(Boolean(characterId))
-  const [errorMessage, setErrorMessage] = useState<string | null>(characterId ? null : 'No character selected. Open one from the gallery.')
-  const [characterRecord, setCharacterRecord] = useState<CharacterDetailRecord | null>(null)
+  const initialCharacterRecordRef = useRef(initialCharacterRecord)
+  const [isLoading, setIsLoading] = useState(Boolean(characterId) && !initialCharacterRecord)
+  const [errorMessage, setErrorMessage] = useState<string | null>(
+    characterId ? null : 'No AI girlfriend selected. Open one from the gallery.'
+  )
+  const [characterRecord, setCharacterRecord] = useState<CharacterDetailRecord | null>(initialCharacterRecord)
   const [isThreePreviewOpen, setIsThreePreviewOpen] = useState(false)
   const [isThreePreviewLoading, setIsThreePreviewLoading] = useState(false)
   const [threePreviewLoadProgress, setThreePreviewLoadProgress] = useState<number | null>(null)
@@ -187,6 +185,10 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
       return
     }
 
+    if (initialCharacterRecordRef.current) {
+      return
+    }
+
     let isCancelled = false
 
     Promise.resolve().then(async () => {
@@ -218,7 +220,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
         }
 
         setCharacterRecord(null)
-        setErrorMessage(error instanceof Error ? error.message : 'Character was not found.')
+        setErrorMessage(error instanceof Error ? error.message : 'AI girlfriend was not found.')
       } finally {
         if (!isCancelled) {
           setIsLoading(false)
@@ -235,7 +237,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     if (!characterId) {
       setCharacterRecord(null)
       setIsLoading(false)
-      setErrorMessage('No character selected. Open one from the gallery.')
+      setErrorMessage('No AI girlfriend selected. Open one from the gallery.')
     }
   }, [characterId])
 
@@ -308,7 +310,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     } finally {
       setCommunityLoading(false)
     }
-  }, [storiesCharacterKey, communitySort, sessionUser?.id])
+  }, [storiesCharacterKey, communitySort])
 
   /** Initial load + when sort or route segment changes (e.g. returning from write-scenario). */
   useEffect(() => {
@@ -572,6 +574,15 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     let renderer: import('three').WebGLRenderer | null = null
     let vrmInstance: VRM | null = null
     let orbitControls: import('three/examples/jsm/controls/OrbitControls.js').OrbitControls | null = null
+    let previewCanvas: HTMLCanvasElement | null = null
+    const handleContextLost = (event: Event) => {
+      event.preventDefault()
+      setThreePreviewErrorMessage('3D preview lost its WebGL context while rendering this model.')
+      setIsThreePreviewLoading(false)
+    }
+    const handleContextRestored = () => {
+      setThreePreviewErrorMessage('3D preview recovered its WebGL context. Reload the page to retry this model.')
+    }
 
     const bootstrapPreview = async () => {
       setIsThreePreviewLoading(true)
@@ -610,16 +621,20 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
 
         const previewRenderer = new WebGLRenderer({
           antialias: true,
-          alpha: true
+          alpha: true,
+          powerPreference: 'high-performance'
         })
         renderer = previewRenderer
-        previewRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+        previewRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25))
         containerElement.innerHTML = ''
         const canvasElement = previewRenderer.domElement
+        previewCanvas = canvasElement
         canvasElement.style.display = 'block'
         canvasElement.style.width = '100%'
         canvasElement.style.height = '100%'
         containerElement.appendChild(canvasElement)
+        canvasElement.addEventListener('webglcontextlost', handleContextLost)
+        canvasElement.addEventListener('webglcontextrestored', handleContextRestored)
 
         orbitControls = new OrbitControls(camera, canvasElement)
         orbitControlsReference.current = orbitControls
@@ -767,17 +782,20 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
       }
     })
 
-    return () => {
-      isDisposed = true
-      window.cancelAnimationFrame(frameRequestId)
-      resizeObserver?.disconnect()
-      orbitControls?.dispose()
-      orbitControlsReference.current = null
-      orbitControls = null
-      renderer?.dispose()
-      containerElement.innerHTML = ''
-      vrmInstance = null
-    }
+        return () => {
+          isDisposed = true
+          window.cancelAnimationFrame(frameRequestId)
+          resizeObserver?.disconnect()
+          orbitControls?.dispose()
+          orbitControlsReference.current = null
+          orbitControls = null
+          previewCanvas?.removeEventListener('webglcontextlost', handleContextLost)
+          previewCanvas?.removeEventListener('webglcontextrestored', handleContextRestored)
+          renderer?.dispose()
+          containerElement.innerHTML = ''
+          vrmInstance = null
+          previewCanvas = null
+        }
   }, [canOpenThreePreview, characterRecord?.vroidFileUrl, isThreePreviewOpen, threePreviewContainerRevision])
 
   useEffect(() => {
@@ -793,74 +811,100 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     }
   }, [isThreePreviewExpanded])
 
+  const writeScenarioHref =
+    characterRecord && sessionUser && canUseCharacterActions
+      ? `/ai-girlfriends/${encodeURIComponent(buildAiGirlfriendRouteKey(characterRecord.name, characterRecord.id))}/write-scenario`
+      : null
+
   return (
-    <main className="relative overflow-x-hidden bg-[#030303] text-white">
-      <section className="relative border-b border-white/10 px-5 py-10 md:px-8">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(244,99,19,0.12),transparent_35%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:22px_22px] opacity-45" />
-
-        <div className="relative z-10 mx-auto w-full max-w-[1150px] pt-24">
-          <h1 className="text-center font-[family-name:var(--font-heading)] text-4xl font-semibold italic text-white md:text-[46px]">
-            {characterRecord ? `AI Girlfriend : ${characterRecord.name}` : 'AI Girlfriend'}
-          </h1>
-          {isLoading ? <p className="mt-4 text-center text-sm text-white/72">Loading character...</p> : null}
-          {!isLoading && errorMessage ? (
-            <div className="mx-auto mt-4 max-w-[760px] rounded-md border border-rose-300/20 bg-rose-300/10 px-4 py-3 text-center text-sm text-rose-100">
-              <p>{errorMessage}</p>
-              <Link href="/characters" className="mt-3 inline-flex text-xs font-semibold uppercase tracking-[0.08em] text-ember-200 hover:text-ember-100">
-                Browse Characters
-              </Link>
-            </div>
-          ) : null}
-
-          {!isLoading && !errorMessage && characterRecord ? (
-            <>
-            <div className="mt-10 grid gap-8 lg:grid-cols-[minmax(390px,480px)_minmax(0,1fr)] lg:items-start">
-              <div className="min-w-0">
-                <div className="relative min-h-[430px] overflow-hidden rounded-md border border-white/10 bg-[linear-gradient(90deg,#5d3b24_0%,#201817_38%,#0b1430_100%)]">
-                  <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(255,243,200,0.5),transparent_34%),radial-gradient(circle_at_26%_58%,rgba(255,255,255,0.16),transparent_26%),radial-gradient(circle_at_74%_58%,rgba(255,255,255,0.1),transparent_24%),linear-gradient(180deg,rgba(0,0,0,0)_58%,rgba(0,0,0,0.86)_100%)]" />
-                  {canUseCharacterActions ? (
+    <main className="relative min-h-screen overflow-x-hidden bg-[#050608] text-white">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_0%,rgba(255,122,36,0.12),transparent_28%),radial-gradient(circle_at_88%_8%,rgba(255,255,255,0.06),transparent_24%),radial-gradient(circle_at_50%_110%,rgba(244,99,19,0.12),transparent_32%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),transparent_18%,rgba(0,0,0,0.15)_100%)]" />
+      <section className="relative mx-auto w-full max-w-[1480px] px-4 pb-6 pt-24 sm:px-6 sm:pb-8 sm:pt-28 lg:px-8 lg:pb-10 lg:pt-32">
+        {isLoading ? (
+          <div className="mx-auto max-w-2xl rounded-[24px] border border-white/10 bg-white/[0.03] px-6 py-8 text-center text-sm text-white/70 shadow-[0_24px_70px_rgba(0,0,0,0.35)]">
+            Loading AI girlfriend...
+          </div>
+        ) : errorMessage ? (
+          <div className="mx-auto max-w-2xl rounded-[24px] border border-rose-300/20 bg-rose-300/10 px-6 py-8 text-center text-sm text-rose-100 shadow-[0_24px_70px_rgba(0,0,0,0.35)]">
+            <p>{errorMessage}</p>
+            <Link href="/ai-girlfriends" className="mt-4 inline-flex text-xs font-semibold uppercase tracking-[0.08em] text-ember-200 hover:text-ember-100">
+              Browse AI Girlfriends
+            </Link>
+          </div>
+        ) : characterRecord ? (
+          <div className="grid gap-8 lg:grid-cols-[430px_minmax(0,1fr)] xl:grid-cols-[460px_minmax(0,1fr)] xl:gap-10">
+            <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+              <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.03] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.35)]">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.08),transparent_36%)]" />
+                <div className="relative">
+                  <div className="absolute right-0 top-0 z-10 inline-flex overflow-hidden rounded-2xl border border-white/10 bg-black/45 p-1 backdrop-blur-md">
                     <button
                       type="button"
                       onClick={() => {
-                        setIsThreePreviewOpen((previousState) => {
-                          if (previousState) {
-                            setIsThreePreviewExpanded(false)
-                          }
-
-                          return !previousState
-                        })
+                        setIsThreePreviewOpen(false)
+                        setIsThreePreviewExpanded(false)
                       }}
-                      className="absolute right-4 top-4 z-[2] inline-flex h-9 items-center justify-center rounded-md border border-white/40 bg-white px-4 text-[8px] font-semibold uppercase tracking-[0.08em] text-[#1d1d1d]"
-                      aria-label="Open 3D preview"
-                      disabled={!canOpenThreePreview}
+                      className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] transition ${
+                        !isThreePreviewOpen ? 'bg-white/15 text-white' : 'text-white/55 hover:text-white/85'
+                      }`}
                     >
-                      {canOpenThreePreview ? (isThreePreviewOpen ? 'Close 3D Preview' : '3D Preview') : '3D Unavailable'}
+                      <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                        <path d="M4 5.5h8v8H4zM12 5.5h8v8h-8zM4 13.5h8v5H4zM12 13.5h8v5h-8z" strokeLinejoin="round" />
+                      </svg>
+                      2D
                     </button>
-                  ) : (
-                    <Link
-                      href="/members"
-                      className="absolute right-4 top-4 z-[2] inline-flex h-9 items-center justify-center rounded-md border border-ember-300/40 bg-ember-300/15 px-4 text-[8px] font-semibold uppercase tracking-[0.08em] text-ember-100"
-                      aria-label="Upgrade to unlock 3D preview"
-                    >
-                      Unlock Preview
-                    </Link>
-                  )}
+                    {canUseCharacterActions ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsThreePreviewOpen((previousState) => {
+                            if (previousState) {
+                              setIsThreePreviewExpanded(false)
+                            }
+
+                            return !previousState
+                          })
+                        }}
+                        className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] transition ${
+                          isThreePreviewOpen ? 'bg-white/15 text-white' : 'text-white/55 hover:text-white/85'
+                        }`}
+                        aria-label="Toggle 3D preview"
+                        disabled={!canOpenThreePreview}
+                      >
+                        <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                          <path d="m12 3.5 8 4.5-8 4.5-8-4.5 8-4.5Zm0 9 8-4.5v7L12 19l-8-4V8l8 4.5Z" strokeLinejoin="round" />
+                        </svg>
+                        3D Preview
+                      </button>
+                    ) : (
+                      <Link
+                        href="/members"
+                        className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-white/45 transition hover:text-white/85"
+                      >
+                        <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                          <path d="m12 3.5 8 4.5-8 4.5-8-4.5 8-4.5Zm0 9 8-4.5v7L12 19l-8-4V8l8 4.5Z" strokeLinejoin="round" />
+                        </svg>
+                        3D Preview
+                      </Link>
+                    )}
+                  </div>
 
                   {isThreePreviewOpen && canOpenThreePreview ? (
                     <div
                       className={
                         isThreePreviewExpanded
                           ? 'fixed inset-0 z-[100] flex flex-col items-center justify-center gap-3 bg-black/95 p-4'
-                          : 'absolute inset-0 z-[1] h-full w-full overflow-hidden bg-[#0f1117]'
+                          : 'relative z-[1] min-h-[530px] overflow-hidden rounded-[28px] border border-white/10 bg-[#0b0d12]'
                       }
                     >
                       {!isThreePreviewLoading && !threePreviewErrorMessage ? (
                         <button
                           type="button"
                           onClick={() => setIsThreePreviewExpanded((previousExpanded) => !previousExpanded)}
-                          className={`absolute left-3 z-[190] rounded-md border border-white/25 bg-black/55 px-3 py-1.5 text-[8px] font-semibold uppercase tracking-[0.08em] text-white/90 backdrop-blur-sm hover:bg-black/70 ${isThreePreviewExpanded ? 'top-[5.25rem]' : 'top-3'
-                            }`}
+                          className={`absolute left-3 z-[190] rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-white/90 backdrop-blur-sm hover:bg-black/75 ${
+                            isThreePreviewExpanded ? 'top-[5.25rem]' : 'top-3'
+                          }`}
                           aria-label={isThreePreviewExpanded ? 'Smaller preview' : 'Full screen 3D preview'}
                         >
                           {isThreePreviewExpanded ? 'Smaller' : 'Full view'}
@@ -868,20 +912,16 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                       ) : null}
                       <div
                         ref={previewContainerRef}
-                        className={
-                          isThreePreviewExpanded
-                            ? 'relative z-0 h-screen w-screen'
-                            : 'relative z-0 min-h-0 h-full w-full'
-                        }
+                        className={isThreePreviewExpanded ? 'relative z-0 h-screen w-screen' : 'relative z-0 h-full w-full min-h-[530px]'}
                       />
                       {isThreePreviewLoading ? (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/45 px-3 text-center text-[8px] font-semibold uppercase tracking-[0.08em] text-white/85">
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/45 px-3 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-white/85">
                           Loading 3D preview
-                          {threePreviewLoadProgress !== null ? `… ${threePreviewLoadProgress}%` : '…'}
+                          {threePreviewLoadProgress !== null ? `... ${threePreviewLoadProgress}%` : '...'}
                         </div>
                       ) : null}
                       {threePreviewErrorMessage ? (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/70 px-3 text-center text-[8px] font-semibold uppercase tracking-[0.08em] text-rose-200">
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/70 px-3 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-rose-200">
                           {threePreviewErrorMessage}
                         </div>
                       ) : null}
@@ -894,17 +934,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                             aria-label="Exit full view"
                             title="Exit full view"
                           >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              className="size-5"
-                              aria-hidden="true"
-                            >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-5" aria-hidden="true">
                               <path d="m15 18-6-6 6-6" />
                             </svg>
                           </button>
@@ -912,98 +942,89 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                       ) : null}
                     </div>
                   ) : (
-                    <div className="relative z-[1]">
-                      <CharacterPreviewVisual
-                        previewImageUrl={characterRecord.previewImageUrl}
-                        characterName={characterRecord.name}
-                      />
+                    <div className="relative z-[1] min-h-[530px]">
+                      <CharacterPreviewVisual previewImageUrl={characterRecord.previewImageUrl} characterName={characterRecord.name} />
                     </div>
                   )}
+
                   {canUseCharacterActions && !characterRecord.vroidFileUrl ? (
-                    <p className="mt-2 text-center text-[10px] text-white/45">
-                      3D preview needs a VRM on this character. Add a VRM URL or upload a file in Edit / Upload VRM, then refresh this page.
+                    <p className="mt-2 text-center text-[11px] text-white/45">
+                    3D preview needs a VRM on this AI girlfriend. Add a VRM URL or upload a file in Edit / Upload VRM, then refresh this page.
                     </p>
                   ) : null}
                 </div>
+              </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  {characterStats.map((statItem) => (
-                    <div key={statItem.id}>
-                      <CharacterStatTile icon={statItem.icon} value={statItem.value} label={statItem.label} />
+              <div className="grid grid-cols-2 gap-3">
+                {characterStats.map((statItem) => (
+                  <div key={statItem.id}>
+                    <CharacterStatTile icon={statItem.icon} value={statItem.value} label={statItem.label} />
+                  </div>
+                ))}
+              </div>
+
+              {!isViewerCharacterOwner && !sessionUser ? (
+                <Link
+                  href="/?openSignIn=1"
+                  className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[18px] border border-white/15 bg-white/[0.05] px-5 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white/85 transition hover:border-white/25 hover:bg-white/[0.08]"
+                >
+                  Sign in to comment and favorite
+                </Link>
+              ) : null}
+
+              <section className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5 shadow-[0_24px_70px_rgba(0,0,0,0.24)]">
+                <h3 className="font-[family-name:var(--font-heading)] text-[18px] font-semibold italic uppercase tracking-wide text-white">
+                  Character discussion
+                </h3>
+                {!isReviewsLoading && !reviewsErrorMessage ? (
+                  <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/40">
+                    {reviewList.length} comment{reviewList.length === 1 ? '' : 's'}
+                  </p>
+                ) : null}
+                {isReviewsLoading ? <p className="mt-3 text-sm text-white/70">Loading reviews...</p> : null}
+                {reviewsErrorMessage ? (
+                  <p className="mt-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/60">
+                    Comments are unavailable until this AI girlfriend is public.
+                  </p>
+                ) : null}
+
+                {!isReviewsLoading && !reviewsErrorMessage && reviewList.length === 0 ? (
+                  <p className="mt-3 text-sm text-white/70">No comments yet. Be the first to leave one.</p>
+                ) : null}
+
+                <div className="mt-3 space-y-2">
+                  {reviewList.map((review) => (
+                    <div key={review.id} className="rounded-xl border border-white/10 bg-black/25 p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-white/85">
+                        {review.user.username}
+                        <span className="ml-2 text-white/45">{formatReviewRelativeLabel(review.createdAt)}</span>
+                      </p>
+                      <p className="mt-2 whitespace-pre-wrap text-[14px] leading-6 text-white/65">{review.body}</p>
                     </div>
                   ))}
                 </div>
 
-                {!isViewerCharacterOwner && !sessionUser ? (
-                  <div className="mt-4">
-                    <Link
-                      href="/?openSignIn=1"
-                      className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/[0.06] px-5 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white/85 transition hover:border-white/30 hover:bg-white/[0.09]"
-                    >
-                      Sign in to comment and favorite
-                    </Link>
-                  </div>
-                ) : null}
-
-                <section className="mt-4 rounded-md border border-white/10 bg-[#121010] p-5">
-                  <h3 className="font-[family-name:var(--font-heading)] text-[18px] font-semibold italic uppercase tracking-wide text-white">
-                    Character discussion
-                  </h3>
-                  {!isReviewsLoading && !reviewsErrorMessage ? (
-                    <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40">
-                      {reviewList.length} comment{reviewList.length === 1 ? '' : 's'}
-                    </p>
-                  ) : null}
-                  {isReviewsLoading ? <p className="mt-3 text-xs text-white/70">Loading reviews...</p> : null}
-                  {reviewsErrorMessage ? (
-                    <p className="mt-3 rounded-md border border-white/10 bg-[#0e0b0b] px-3 py-2 text-xs text-white/60">
-                      Comments are unavailable until this character is public.
-                    </p>
-                  ) : null}
-
-                  {!isReviewsLoading && !reviewsErrorMessage && reviewList.length === 0 ? (
-                    <p className="mt-3 text-xs text-white/70">No comments yet. Be the first to leave one.</p>
-                  ) : null}
-
-                  <div className="mt-3 space-y-2">
-                    {reviewList.map((review) => (
-                      <div key={review.id} className="rounded-sm border border-white/10 bg-[#0d0d0d] p-3">
-                        <p className="text-[8px] font-semibold text-white/85">
-                          {review.user.username}
-                          <span className="ml-2 text-white/45">{formatReviewRelativeLabel(review.createdAt)}</span>
-                        </p>
-                        <p className="mt-2 whitespace-pre-wrap text-[11px] leading-[1.45] text-white/65">{review.body}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="mt-4 rounded-md border border-white/15 bg-black/20 p-3">
-                    <p className="text-[8px] font-semibold uppercase tracking-[0.09em] text-white/65">
+                {sessionUser ? (
+                  <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.09em] text-white/65">
                       {ownReview ? 'Update your comment' : 'Write a comment'}
                     </p>
-                    {!sessionUser ? (
-                      <p className="mt-2 text-[11px] leading-relaxed text-white/60">
-                        Please sign in to leave a comment.{' '}
-                        <Link href="/?openSignIn=1" className="font-semibold text-ember-200 underline-offset-2 hover:text-ember-100">
-                          Sign in
-                        </Link>
-                      </p>
-                    ) : !sessionUser.isEmailVerified ? (
-                      <p className="mt-2 text-[11px] leading-relaxed text-white/60">
+                    {!sessionUser.isEmailVerified ? (
+                      <p className="mt-2 text-[13px] leading-relaxed text-white/60">
                         Please verify your email before commenting.{' '}
                         <Link href="/profile" className="font-semibold text-ember-200 underline-offset-2 hover:text-ember-100">
                           Account
                         </Link>
                       </p>
                     ) : isViewerCharacterOwner ? (
-                      <p className="mt-2 text-[11px] leading-relaxed text-white/60">You cannot review your own character.</p>
+                      <p className="mt-2 text-[13px] leading-relaxed text-white/60">You cannot review your own AI girlfriend.</p>
                     ) : null}
                     <textarea
                       value={reviewInputBody}
                       onChange={(event) => setReviewInputBody(event.target.value)}
-                      placeholder="Discuss this character..."
+                    placeholder="Discuss this AI girlfriend..."
                       disabled={!canPostReview}
-                      className="mt-2 h-24 w-full resize-none rounded border border-white/20 bg-black px-3 py-2 text-xs text-white outline-none focus:border-ember-300 disabled:opacity-50"
+                      className="mt-2 h-24 w-full resize-none rounded-xl border border-white/15 bg-black px-3 py-2 text-sm text-white outline-none focus:border-ember-300 disabled:opacity-50"
                       aria-label="Review text"
                     />
                     <div className="mt-2 flex gap-2">
@@ -1011,7 +1032,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                         type="button"
                         onClick={handleSubmitReview}
                         disabled={isReviewSubmitting || !canPostReview}
-                        className="rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-black disabled:opacity-70"
+                        className="rounded-lg bg-gradient-to-r from-ember-400 to-ember-500 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-black disabled:opacity-70"
                         aria-label={ownReview ? 'Update comment' : 'Post comment'}
                       >
                         {isReviewSubmitting ? 'Saving...' : ownReview ? 'Update' : 'Post'}
@@ -1021,34 +1042,32 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                           type="button"
                           onClick={handleDeleteOwnReview}
                           disabled={isReviewSubmitting || !canPostReview}
-                          className="rounded-md border border-rose-300/35 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-rose-200 disabled:opacity-70"
+                          className="rounded-lg border border-rose-300/35 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-rose-200 disabled:opacity-70"
                           aria-label="Delete your review"
                         >
                           Delete
                         </button>
                       ) : null}
                     </div>
-                    {reviewActionMessage ? (
-                      <p className="mt-2 text-xs text-white/75">{reviewActionMessage}</p>
-                    ) : null}
-                  </div>
-                </section>
-              </div>
-
-              <div className="min-w-0">
-                {isPatreonGated && !canAccessGatedContent ? (
-                  <div className="mb-6 rounded-lg border border-amber-300/30 bg-amber-300/10 px-4 py-3 text-center">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-amber-100">
-                      {`Locked | ${formatTierLabel(characterRecord.gatedAccess.requiredTierCents)}`}
-                    </p>
-                    <Link
-                      href="/members"
-                      className="mt-3 inline-flex text-xs font-semibold text-amber-200 underline-offset-2 hover:text-amber-100"
-                    >
-                      Unlock with Patreon
-                    </Link>
+                    {reviewActionMessage ? <p className="mt-2 text-sm text-white/75">{reviewActionMessage}</p> : null}
                   </div>
                 ) : null}
+              </section>
+            </aside>
+
+            <section className="min-w-0 lg:pt-1">
+              <div className="flex flex-col gap-4">
+                <div className="max-w-4xl">
+                  <h1 className="font-[family-name:var(--font-heading)] text-[clamp(1.9rem,2.8vw,3rem)] font-semibold italic leading-none text-white">
+                    AI Girlfriend : <span className="text-ember-300">{characterRecord.name}</span>
+                  </h1>
+                  <p className="mt-3 max-w-2xl text-[15px] leading-7 text-white/65">
+                    Select a scenario below to start your immersive chat experience.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-7 border-t border-white/10 pt-7">
                 <CharacterCommunityStories
                   character={characterRecord}
                   stories={communityStories}
@@ -1059,11 +1078,7 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                   officialPlayHref={officialScenarioPlayHref}
                   buildScenarioPlayHref={buildScenarioPlayHref}
                   viewerUserId={sessionUser?.id ?? null}
-                  writeStoryHref={
-                    isViewerCharacterOwner
-                      ? `/characters/${encodeURIComponent(characterRecord.slug || characterRecord.id)}/write-scenario`
-                      : null
-                  }
+                  writeStoryHref={writeScenarioHref}
                   onPlayIntent={() => {
                     void recordCharacterChatStart(characterRecord.id)
                       .then((payload) => {
@@ -1079,18 +1094,18 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
                   storyHeartSubmittingId={storyHeartSubmittingId}
                 />
               </div>
-            </div>
-            </>
-          ) : null}
-        </div>
+            </section>
+          </div>
+        ) : null}
       </section>
 
       {heartToast ? (
         <div
-          className={`fixed bottom-6 right-6 z-[200] max-w-[min(calc(100vw-2rem),22rem)] rounded-lg border px-4 py-3 text-sm shadow-[0_12px_40px_rgba(0,0,0,0.45)] ${heartToast.variant === 'error'
+          className={`fixed bottom-6 right-6 z-[200] max-w-[min(calc(100vw-2rem),22rem)] rounded-xl border px-4 py-3 text-sm shadow-[0_12px_40px_rgba(0,0,0,0.45)] ${
+            heartToast.variant === 'error'
               ? 'border-rose-300/35 bg-[#1c1012] text-rose-100'
               : 'border-emerald-300/35 bg-[#0f1614] text-emerald-100'
-            }`}
+          }`}
           role={heartToast.variant === 'error' ? 'alert' : 'status'}
           aria-live={heartToast.variant === 'error' ? 'assertive' : 'polite'}
         >
@@ -1100,5 +1115,4 @@ const CharacterPage = ({ characterId }: CharacterPageProps) => {
     </main>
   )
 }
-
 export default CharacterPage

@@ -1,4 +1,32 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
+import { absoluteUrl } from '@/lib/site'
+
+export async function generateMetadata(): Promise<Metadata> {
+  const title = 'Downloads'
+  const description =
+    'Download SecretWaifu for Windows and play the AI anime girlfriend experience on desktop with the latest build links and update notes.'
+
+  return {
+    title,
+    description,
+    alternates: {
+      canonical: '/download'
+    },
+    openGraph: {
+      title: `${title} | SecretWaifu.com`,
+      description,
+      url: absoluteUrl('/download'),
+      images: ['/images/Upload-VRM.png']
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: `${title} | SecretWaifu.com`,
+      description,
+      images: ['/images/Upload-VRM.png']
+    }
+  }
+}
 
 type DownloadPlatformItem = {
   id: string

@@ -3,8 +3,7 @@
 import { useAuth } from '@/components/providers/auth-provider'
 import AccountSideMenu from '@/components/shared/account-side-menu'
 import MaintenanceWorkspaceGate from '@/components/shared/maintenance-workspace-gate'
-import DashboardStatCard from '@/components/ui-elements/dashboard-stat-card'
-import MembershipEntitlementRow, { type MembershipEntitlementRecord } from '@/components/ui-elements/membership-entitlement-row'
+import type { MembershipEntitlementRecord } from '@/components/ui-elements/membership-entitlement-row'
 import MembershipStatusPill, { type MembershipConnectionStatus } from '@/components/ui-elements/membership-status-pill'
 import MembershipTierCard from '@/components/ui-elements/membership-tier-card'
 import { apiGet, apiPost } from '@/lib/api-client'
@@ -173,7 +172,6 @@ const MembershipPage = () => {
   const [lastSyncLabel, setLastSyncLabel] = useState('Never')
   const [periodEndLabel, setPeriodEndLabel] = useState('No active billing period')
   const [entitlementRecords, setEntitlementRecords] = useState<MembershipEntitlementRecord[]>([])
-  const [syncCount, setSyncCount] = useState(0)
   const [membershipMessage, setMembershipMessage] = useState<string | null>(null)
 
   useEffect(() => {
@@ -207,14 +205,19 @@ const MembershipPage = () => {
     const payload = await apiGet<{ data: PatreonStatusApiResponse }>('/patreon/status')
     const statusData = payload.data
 
+    /** Only show a paid tier when Patreon is linked and Patreon reports an active membership — avoids "Unlocked / Tier 2" while disconnected. */
+    const tierForDisplay =
+      statusData.linked && statusData.membershipStatus === 'active_patron'
+        ? mapTierFromCents(statusData.tierCents)
+        : 'free'
+
     setIsPatreonLinked(statusData.linked)
-    setCurrentTier(mapTierFromCents(statusData.tierCents))
+    setCurrentTier(tierForDisplay)
     setConnectionStatus(mapMembershipStatusToChip(statusData.linked, statusData.membershipStatus))
     setLastSyncLabel(formatDateLabel(statusData.lastCheckedAt, 'Never'))
     setPeriodEndLabel(formatDateLabel(statusData.nextChargeDate, 'No active billing period'))
     const mappedEntitlements = mapEntitlements(statusData.entitlements)
     setEntitlementRecords(mappedEntitlements.length > 0 ? mappedEntitlements : buildDerivedEntitlementFromPatreonStatus(statusData))
-    setSyncCount((previousCount) => previousCount + 1)
   }, [sessionUser])
 
   useEffect(() => {
@@ -332,8 +335,11 @@ const MembershipPage = () => {
   }, [entitlementRecords])
 
   const hasActiveMembershipAccess = useMemo(() => {
+    if (connectionStatus !== 'active') {
+      return false
+    }
     return activeEntitlementCount > 0 || currentTier !== 'free'
-  }, [activeEntitlementCount, currentTier])
+  }, [connectionStatus, activeEntitlementCount, currentTier])
 
   const membershipAccessState = useMemo<MembershipAccessState>(() => {
     if (connectionStatus === 'syncing') {
@@ -351,13 +357,6 @@ const MembershipPage = () => {
     return 'connected-inactive'
   }, [connectionStatus, hasActiveMembershipAccess, isPatreonLinked])
 
-  const membershipStateLabelMap: Record<MembershipAccessState, string> = {
-    'not-connected': 'Not Connected',
-    'connected-inactive': 'Connected But Inactive',
-    'active-entitlement': 'Active Entitlement',
-    'sync-in-progress': 'Sync In Progress'
-  }
-
   const membershipStateDescriptionMap: Record<MembershipAccessState, string> = {
     'not-connected': 'Connect Patreon to sync your tier and unlock gated content.',
     'connected-inactive': 'Patreon is linked, but no active entitlement is currently available for this account.',
@@ -370,14 +369,8 @@ const MembershipPage = () => {
 
   const tierLabelMap: Record<MembershipTier, string> = {
     free: 'Free',
-    just_models_900: 'Just Our Models',
-    secretwaifu_1650: 'SecretWaifu Access'
-  }
-
-  const tierPriceLabelMap: Record<MembershipTier, string> = {
-    free: '$0 / month',
-    just_models_900: 'EUR 9.00 / month (+VAT)',
-    secretwaifu_1650: 'EUR 16.50 / month (+VAT)'
+    just_models_900: 'Basic',
+    secretwaifu_1650: 'Premium'
   }
 
   const accessTierHelperTextMap: Record<MembershipTier, string> = {
@@ -403,214 +396,181 @@ const MembershipPage = () => {
   }
   const supportActionHref = membershipAccessState === 'connected-inactive' ? secretwaifuTierUrl : patreonExternalUrl
   const isSupportActionExternal = supportActionHref.startsWith('http')
+  const connectButtonLabel = isPatreonLinked ? 'Reconnect Patreon' : 'Connect Patreon'
+  const connectButtonClassName = isPatreonLinked
+    ? 'inline-flex h-9 items-center justify-center gap-2 rounded-full border border-white/16 bg-white/[0.03] px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-white transition hover:border-ember-300 hover:text-ember-200 disabled:cursor-not-allowed disabled:opacity-50'
+    : 'inline-flex h-9 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-ember-400 via-ember-500 to-[#ff7a2f] px-4 text-[10px] font-bold uppercase tracking-[0.14em] text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70'
+  const connectionHint = !sessionUser
+    ? 'Sign in to connect your Patreon account.'
+    : !sessionUser.isEmailVerified
+      ? 'Verify your email on the Account page before connecting Patreon.'
+      : hasActiveMembershipAccess
+        ? 'Your account is ready. Recheck after plan changes if you need to refresh access.'
+        : 'Connect Patreon once, then refresh here whenever your tier changes.'
 
   return (
     <main className="relative overflow-x-hidden bg-[#030303] text-white">
       <section className="relative min-h-[calc(100vh-150px)] border-b border-white/10 px-5 py-10 md:px-8">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_44%_0%,rgba(244,99,19,0.12),transparent_38%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.09)_1px,transparent_1px)] [background-size:22px_22px] opacity-50" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_0%,rgba(244,99,19,0.18),transparent_34%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_85%_12%,rgba(255,132,71,0.12),transparent_28%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),transparent_24%,transparent_72%,rgba(255,255,255,0.02))]" />
+        <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:22px_22px] opacity-35" />
 
         <div className="relative z-10 mx-auto w-full max-w-[1150px] pt-24">
-          <h1 className="text-center font-[family-name:var(--font-heading)] text-4xl font-normal italic leading-none text-white md:text-5xl">
-            Membership
-          </h1>
-          <p className="mx-auto mt-3 max-w-[780px] text-center text-sm leading-7 text-white/70">
-            Connect Patreon, verify your tier, and keep entitlement access synced for gated characters and member-only content.
-          </p>
-          {membershipMessage ? (
-            <p className="mx-auto mt-3 max-w-[780px] rounded-md border border-ember-300/30 bg-ember-300/10 px-4 py-2 text-center text-xs uppercase tracking-[0.08em] text-ember-100">
-              {membershipMessage}
-            </p>
-          ) : null}
-
           <div className="mt-10 grid min-w-0 gap-8 lg:grid-cols-[380px_1fr] lg:items-start">
             <AccountSideMenu activeKey="membership" />
 
             <MaintenanceWorkspaceGate>
-            <div className="space-y-5">
-              <article className="rounded-xl border border-white/10 bg-[#151214]/95 p-5">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/55">Provider</p>
-                    <p className="mt-1 font-[family-name:var(--font-heading)] text-[22px] font-normal italic leading-none text-white">Patreon OAuth</p>
-                  </div>
-                  <MembershipStatusPill status={connectionStatus} />
+            <div className="space-y-6">
+              <section className="relative overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(140deg,rgba(29,18,18,0.98),rgba(10,10,12,0.94))] px-6 py-8 shadow-[0_28px_90px_rgba(0,0,0,0.38)] md:px-8 md:py-10">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_10%,rgba(244,99,19,0.18),transparent_30%)]" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_85%_0%,rgba(255,255,255,0.06),transparent_26%)]" />
+                <div className="relative">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-ember-200/85">Membership</p>
+                  <h1 className="mt-3 font-[family-name:var(--font-heading)] text-[32px] font-normal italic leading-none text-white md:text-[38px]">
+                    Membership
+                  </h1>
                 </div>
+              </section>
 
-                <div className="mt-4 grid gap-2 text-xs uppercase tracking-[0.08em] text-white/65 sm:grid-cols-2">
-                  <p>Current Tier: {tierLabelMap[currentTier]}</p>
-                  <p>Price: {tierPriceLabelMap[currentTier]}</p>
-                  <p>Last Sync: {lastSyncLabel}</p>
-                  <p>Current Period Ends: {periodEndLabel}</p>
-                </div>
-                <div className="mt-4 rounded-md border border-white/10 bg-[#0f0d10] px-3 py-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ember-200">
-                    {membershipStateLabelMap[membershipAccessState]}
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-white/75">{membershipStateDescriptionMap[membershipAccessState]}</p>
-                </div>
-
-                <div className="mt-5 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={handleConnectPatreon}
-                    disabled={!sessionUser || !sessionUser.isEmailVerified || connectionStatus === 'syncing'}
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
-                    aria-label="Connect Patreon and verify membership"
-                  >
-                    <span>{isPatreonLinked ? 'Reconnect Patreon' : 'Connect Patreon'}</span>
-                    <PatreonIcon className="size-[15px]" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleRecheckMembership}
-                    disabled={!isPatreonLinked || connectionStatus === 'syncing'}
-                    className="inline-flex h-10 items-center justify-center rounded-md border border-white/20 px-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-white transition hover:border-ember-300 hover:text-ember-200 disabled:cursor-not-allowed disabled:opacity-50"
-                    aria-label="Refresh membership status from Patreon"
-                  >
-                    Recheck Tier
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleDisconnectPatreon}
-                    disabled={!isPatreonLinked || connectionStatus === 'syncing'}
-                    className="inline-flex h-10 items-center justify-center rounded-md border border-rose-300/35 px-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-rose-100 transition hover:border-rose-200 disabled:cursor-not-allowed disabled:opacity-50"
-                    aria-label="Disconnect Patreon account"
-                  >
-                    Disconnect
-                  </button>
-
-                  <Link
-                    href={supportActionHref}
-                    target={isSupportActionExternal ? '_blank' : undefined}
-                    rel={isSupportActionExternal ? 'noreferrer' : undefined}
-                    className="inline-flex h-10 items-center justify-center rounded-md border border-white/20 px-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-white/85 transition hover:border-ember-300 hover:text-ember-200"
-                    aria-label="Open membership plans and support page"
-                  >
-                    {membershipAccessState === 'connected-inactive' ? 'Upgrade Tier' : 'Open Patreon'}
-                  </Link>
-                </div>
-                {!sessionUser ? (
-                  <p className="mt-3 text-[11px] uppercase tracking-[0.08em] text-amber-100">
-                    Sign in to connect Patreon.
-                  </p>
-                ) : null}
-                {sessionUser && !sessionUser.isEmailVerified ? (
-                  <p className="mt-3 text-[11px] uppercase tracking-[0.08em] text-amber-100">
-                    Verify your email on the Account page before connecting Patreon.
-                  </p>
-                ) : null}
-              </article>
-
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <DashboardStatCard
-                  value={isPatreonLinked ? 'Linked' : 'Not linked'}
-                  label="Patreon Connection"
-                  helperText="OAuth state for this account"
-                  isEmphasized={isPatreonLinked}
-                />
-                <DashboardStatCard
-                  value={tierLabelMap[currentTier]}
-                  label="Current Tier"
-                  helperText={tierPriceLabelMap[currentTier]}
-                  isEmphasized={currentTier === 'secretwaifu_1650'}
-                />
-                <DashboardStatCard
-                  value={activeEntitlementCount.toString()}
-                  label="Active Entitlements"
-                  helperText="Used for server-side access checks"
-                />
-                <DashboardStatCard
-                  value={gatedAccessLabel}
-                  label="Gated Access"
-                  helperText={currentTier === 'free' ? accessStateHelperText : accessTierHelperTextMap[currentTier]}
-                  isEmphasized={activeEntitlementCount > 0}
-                />
-              </div>
-
-              <div className="grid gap-3 xl:grid-cols-3">
+              <div className="grid gap-4 xl:grid-cols-3">
                 <MembershipTierCard
                   tierName="Free"
                   monthlyPriceLabel="$0 / month"
-                  summary="Base access plan for public website and character browsing."
+                  summary="A simple starting point for trying the platform and building your own experience."
                   benefitList={[
-                    'Browse approved public VRoid gallery',
-                    'View character pages and gallery',
-                    'Submit public reviews and hearts',
-                    'Use account profile and favorites'
+                    '10 messages per month',
+                    'Upload custom characters',
+                    'Core website account features'
                   ]}
+                  accentTone="slate"
                   isCurrentTier={currentTier === 'free'}
                   footerLabel={getTierFooterLabel('free')}
                 />
                 <MembershipTierCard
-                  tierName="Just Our Models"
-                  monthlyPriceLabel="EUR 9.00 / month (plus VAT)"
-                  summary="Models-only plan for character packs and community updates."
+                  tierName="Basic"
+                  monthlyPriceLabel="$7.99 / month"
+                  summary="For regular users who want a generous message cap and the key community perks."
                   benefitList={[
-                    'Access to the Patreon character pack',
+                    '1,000 messages per month',
+                    'Limited in-game voice functionality',
+                    'Upload custom characters',
+                    'Core website account features',
                     'Monthly character poll',
-                    'Developer blog',
-                    'Patreon exclusive posts and messages',
-                    'Discord access'
+                    'Discord title'
                   ]}
                   noteList={[]}
                   ctaLabel="Select"
                   ctaHref={modelsTierUrl}
+                  accentTone="amber"
                   isCurrentTier={currentTier === 'just_models_900'}
                   footerLabel={getTierFooterLabel('just_models_900')}
                 />
                 <MembershipTierCard
-                  tierName="SecretWaifu Access"
-                  monthlyPriceLabel="EUR 16.50 / month (plus VAT)"
-                  summary="Full access plan with game access and premium Patreon perks."
+                  tierName="Premium"
+                  monthlyPriceLabel="$12.99 / month"
+                  summary="The full experience with unlimited chatting, richer voice features, and premium extras."
                   benefitList={[
-                    'Access to Hey Waifu',
-                    'Full library access',
-                    'Patreon exclusive clothed and nude character pack',
-                    'Patreon exclusive posts and messages',
-                    'Patreon exclusive character polls',
-                    'Discord access'
+                    'Unlimited messages per month',
+                    'Unlimited character voice functionality',
+                    'Unique NSFW voices',
+                    'Upload custom characters',
+                    'Core website account features',
+                    'Monthly character poll',
+                    'Discord title'
                   ]}
                   ctaLabel="Select"
                   ctaHref={secretwaifuTierUrl}
+                  accentTone="rose"
                   isMostPopular
                   isCurrentTier={currentTier === 'secretwaifu_1650'}
                   footerLabel={getTierFooterLabel('secretwaifu_1650')}
                 />
               </div>
 
-              <article className="rounded-xl border border-white/10 bg-[#151214]/95 p-5">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h2 className="font-[family-name:var(--font-heading)] text-[25px] font-normal italic leading-none text-white">Entitlements</h2>
-                    <p className="mt-1 text-xs uppercase tracking-[0.09em] text-white/55">
-                      Server-side permissions snapshot synced from Patreon
-                    </p>
+              <section className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(18,16,18,0.95))] p-4 md:p-5">
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/52">Account Status</p>
+                  <MembershipStatusPill status={connectionStatus} />
+                </div>
+                <p className="mt-3 font-[family-name:var(--font-heading)] text-[24px] italic leading-none text-white">
+                  {gatedAccessLabel} for {tierLabelMap[currentTier]}
+                </p>
+                <p className="mt-2 max-w-[620px] text-[13px] leading-6 text-white/66">
+                  {membershipStateDescriptionMap[membershipAccessState]}
+                </p>
+
+                <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                  <div className="rounded-[18px] border border-white/8 bg-black/20 px-3 py-2.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">Plan</p>
+                    <p className="mt-1.5 text-[13px] font-semibold text-white">{tierLabelMap[currentTier]}</p>
                   </div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-white/60">Sync Count: {syncCount}</p>
+                  <div className="rounded-[18px] border border-white/8 bg-black/20 px-3 py-2.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">Last Check</p>
+                    <p className="mt-1.5 text-[13px] font-semibold text-white">{lastSyncLabel}</p>
+                  </div>
+                  <div className="rounded-[18px] border border-white/8 bg-black/20 px-3 py-2.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">Billing</p>
+                    <p className="mt-1.5 text-[13px] font-semibold text-white">{periodEndLabel}</p>
+                  </div>
                 </div>
 
-                <div className="mt-4 hidden rounded-lg border border-white/10 bg-[#0f0e10] px-3 py-2 text-[11px] uppercase tracking-[0.09em] text-white/60 sm:grid sm:grid-cols-[1.4fr_0.8fr_0.9fr_0.7fr]">
-                  <p>Feature Key</p>
-                  <p>Source</p>
-                  <p>Valid Until</p>
-                  <p>Status</p>
+                {membershipMessage ? (
+                  <p className="mt-4 rounded-[18px] border border-ember-300/25 bg-ember-300/10 px-3 py-2.5 text-[13px] leading-5 text-ember-100">
+                    {membershipMessage}
+                  </p>
+                ) : null}
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleConnectPatreon}
+                    disabled={!sessionUser || !sessionUser.isEmailVerified || connectionStatus === 'syncing'}
+                    className={connectButtonClassName}
+                    aria-label="Connect Patreon and verify membership"
+                  >
+                    <span>{connectButtonLabel}</span>
+                    <PatreonIcon className="size-[13px]" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleRecheckMembership}
+                    disabled={!isPatreonLinked || connectionStatus === 'syncing'}
+                    className="inline-flex h-9 items-center justify-center rounded-full border border-white/16 bg-white/[0.03] px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-white transition hover:border-ember-300 hover:text-ember-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label="Refresh membership status from Patreon"
+                  >
+                    Refresh Status
+                  </button>
+
+                  <Link
+                    href={supportActionHref}
+                    target={isSupportActionExternal ? '_blank' : undefined}
+                    rel={isSupportActionExternal ? 'noreferrer' : undefined}
+                    className="inline-flex h-9 items-center justify-center rounded-full border border-white/14 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/88 transition hover:border-ember-300 hover:text-ember-200"
+                    aria-label="Open membership plans and support page"
+                  >
+                    {membershipAccessState === 'connected-inactive' ? 'Upgrade Plan' : 'View Patreon'}
+                  </Link>
+
+                  {isPatreonLinked ? (
+                    <button
+                      type="button"
+                      onClick={handleDisconnectPatreon}
+                      disabled={connectionStatus === 'syncing'}
+                      className="inline-flex h-9 items-center justify-center rounded-full border border-rose-300/28 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-rose-100 transition hover:border-rose-200 disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label="Disconnect Patreon account"
+                    >
+                      Disconnect
+                    </button>
+                  ) : null}
                 </div>
 
-                <div className="mt-2 space-y-2">
-                  {entitlementRecords.length === 0 ? (
-                    <p className="rounded-md border border-white/10 bg-[#141214]/60 px-3 py-2 text-xs text-white/65">
-                      No entitlement grants are currently stored for this account.
-                    </p>
-                  ) : (
-                    entitlementRecords.map((entitlementItem) => (
-                      <MembershipEntitlementRow key={entitlementItem.id} entitlementRecord={entitlementItem} />
-                    ))
-                  )}
-                </div>
-              </article>
+                <p className="mt-3 text-[11px] leading-5 text-white/58">{connectionHint}</p>
+                <p className="mt-1.5 text-[11px] leading-5 text-white/50">
+                  {currentTier === 'free' ? accessStateHelperText : accessTierHelperTextMap[currentTier]}
+                </p>
+              </section>
             </div>
             </MaintenanceWorkspaceGate>
           </div>

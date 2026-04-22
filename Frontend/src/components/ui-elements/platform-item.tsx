@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import type { MouseEvent } from 'react'
 
 type PlatformIconType = 'browser' | 'windows' | 'pcvr' | 'exe'
 
@@ -7,6 +8,7 @@ type PlatformItemProps = {
   iconType: PlatformIconType
   href: string
   ariaLabel: string
+  onLinkClick?: (event: MouseEvent<HTMLAnchorElement>) => void
 }
 
 type PlatformIconProps = {
@@ -16,7 +18,15 @@ type PlatformIconProps = {
 const PlatformIcon = ({ iconType }: PlatformIconProps) => {
   if (iconType === 'browser') {
     return (
-      <svg viewBox="0 0 24 24" className="h-7 w-7 text-white/85" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <svg
+        viewBox="0 0 24 24"
+        className="h-5 w-5 text-white/85"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        aria-hidden="true"
+        suppressHydrationWarning
+      >
         <circle cx="12" cy="12" r="9" />
         <circle cx="12" cy="12" r="3.5" />
         <path d="M19.6 8.5H12" strokeLinecap="round" />
@@ -29,7 +39,7 @@ const PlatformIcon = ({ iconType }: PlatformIconProps) => {
   if (iconType === 'windows') {
     /** Windows 2x2 panes matching provided reference shape. */
     return (
-      <svg viewBox="0 0 24 24" className="h-7 w-7 text-white/90" fill="currentColor" aria-hidden="true">
+      <svg viewBox="0 0 24 24" className="h-5 w-5 text-white/90" fill="currentColor" aria-hidden="true" suppressHydrationWarning>
         <rect x="4.2" y="4.4" width="6.9" height="6.4" />
         <rect x="12.9" y="4.4" width="6.9" height="6.4" />
         <rect x="4.2" y="12.8" width="6.9" height="6.4" />
@@ -40,7 +50,15 @@ const PlatformIcon = ({ iconType }: PlatformIconProps) => {
 
   if (iconType === 'pcvr') {
     return (
-      <svg viewBox="0 0 24 24" className="h-7 w-7 text-white/88" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <svg
+        viewBox="0 0 24 24"
+        className="h-5 w-5 text-white/88"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        aria-hidden="true"
+        suppressHydrationWarning
+      >
         <path
           d="M6.2 6.6h11.6c1.2 0 2.1.9 2.2 2.1l.2 2.6M4 11.3l.2-2.6c.1-1.2 1-2.1 2.2-2.1"
           strokeLinecap="round"
@@ -62,7 +80,15 @@ const PlatformIcon = ({ iconType }: PlatformIconProps) => {
      * as a continuous ∞ — not a single wavy stroke.
      */
     return (
-      <svg viewBox="0 0 24 24" className="h-7 w-7 text-white/88" fill="none" stroke="currentColor" strokeWidth="1.85" aria-hidden="true">
+      <svg
+        viewBox="0 0 24 24"
+        className="h-5 w-5 text-white/88"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.85"
+        aria-hidden="true"
+        suppressHydrationWarning
+      >
         <path
           d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 1 0 0-8c-2 0-4 1.33-6 4Z"
           strokeLinecap="round"
@@ -73,7 +99,7 @@ const PlatformIcon = ({ iconType }: PlatformIconProps) => {
   }
 
   return (
-    <svg viewBox="0 0 24 24" className="h-7 w-7 text-white/85" aria-hidden="true">
+    <svg viewBox="0 0 24 24" className="h-5 w-5 text-white/85" aria-hidden="true" suppressHydrationWarning>
       <path
         d="M5.2 13.2C5.2 10.9 6.8 9.2 8.8 9.2C10.4 9.2 11.6 10.2 12 11.7C12.4 10.2 13.6 9.2 15.2 9.2C17.2 9.2 18.8 10.9 18.8 13.2C18.8 15.4 17.2 17.1 15.2 17.1C13.6 17.1 12.4 16.1 12 14.7C11.6 16.1 10.4 17.1 8.8 17.1C6.8 17.1 5.2 15.4 5.2 13.2Z"
         fill="none"
@@ -86,10 +112,10 @@ const PlatformIcon = ({ iconType }: PlatformIconProps) => {
   )
 }
 
-const PlatformItem = ({ label, iconType, href, ariaLabel }: PlatformItemProps) => {
+const PlatformItem = ({ label, iconType, href, ariaLabel, onLinkClick }: PlatformItemProps) => {
   const isExternal = href.startsWith('http://') || href.startsWith('https://')
   const tileClassName =
-    'group relative flex h-[50px] w-[56px] items-center justify-center overflow-hidden rounded-[13px] border-[2px] border-white/80 bg-black/12 transition group-hover:border-ember-300/90 group-hover:bg-black/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember-300'
+    'group relative flex h-[46px] w-[52px] items-center justify-center overflow-hidden rounded-[14px] border-[2px] border-white/80 bg-black/12 transition group-hover:border-ember-300/90 group-hover:bg-black/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember-300 sm:h-[35px] sm:w-[39px] sm:rounded-[10px]'
 
   const inner = (
     <>
@@ -101,21 +127,21 @@ const PlatformItem = ({ label, iconType, href, ariaLabel }: PlatformItemProps) =
   )
 
   const wrapperClassName =
-    'group flex flex-col items-center rounded-md p-0.5 transition hover:text-ember-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember-300'
+    'group flex min-w-[52px] flex-col items-center rounded-xl p-1 transition hover:text-ember-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember-300 sm:min-w-[39px] sm:rounded-md sm:p-0.5'
 
   if (isExternal) {
     return (
       <a href={href} target="_blank" rel="noreferrer" className={wrapperClassName} aria-label={ariaLabel}>
         <span className={tileClassName}>{inner}</span>
-        <span className="mt-1 text-[9px] font-bold uppercase tracking-[0.07em] text-white/95 group-hover:underline">{label}</span>
+        <span className="mt-1 block text-center text-[12px] font-medium uppercase tracking-[0.08em] text-white/78 group-hover:underline sm:mt-0.5 sm:text-[10px] sm:font-normal sm:text-white/70">{label}</span>
       </a>
     )
   }
 
   return (
-    <Link href={href} className={wrapperClassName} aria-label={ariaLabel}>
+    <Link href={href} onClick={onLinkClick} className={wrapperClassName} aria-label={ariaLabel}>
       <span className={tileClassName}>{inner}</span>
-      <span className="mt-1 text-[9px] font-bold uppercase tracking-[0.07em] text-white/95 group-hover:underline">{label}</span>
+      <span className="mt-1 block text-center text-[12px] font-medium uppercase tracking-[0.08em] text-white/78 group-hover:underline sm:mt-0.5 sm:text-[10px] sm:font-normal sm:text-white/70">{label}</span>
     </Link>
   )
 }

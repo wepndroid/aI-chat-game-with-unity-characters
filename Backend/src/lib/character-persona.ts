@@ -1,8 +1,8 @@
 import type { Character, CharacterCard } from '@prisma/client'
 
-type CharacterPersonaPick = Pick<
+type CharacterVisualPick = Pick<
   Character,
-  'fullName' | 'description' | 'personality' | 'scenario' | 'firstMessage' | 'exampleDialogs'
+  'fullName' | 'description'
 >
 
 type CharacterCardPersonaPick = Pick<
@@ -11,20 +11,30 @@ type CharacterCardPersonaPick = Pick<
 >
 
 /**
- * PDF: persona lives on CharacterCard when present; falls back to legacy Character columns.
+ * Phase-1 strict mode: persona fields are sourced from CharacterCard only.
+ * Character columns remain visual metadata and legacy compatibility only.
  */
 export const resolvePersonaFields = (
-  character: CharacterPersonaPick,
+  character: CharacterVisualPick,
   card: CharacterCardPersonaPick | null
-): CharacterPersonaPick & { characterCardId: string | null; characterCardIsPublic: boolean | null } => {
+): {
+  fullName: string | null
+  description: string | null
+  personality: string | null
+  scenario: string | null
+  firstMessage: string | null
+  exampleDialogs: string | null
+  characterCardId: string | null
+  characterCardIsPublic: boolean | null
+} => {
   if (!card) {
     return {
       fullName: character.fullName,
       description: character.description,
-      personality: character.personality,
-      scenario: character.scenario,
-      firstMessage: character.firstMessage,
-      exampleDialogs: character.exampleDialogs,
+      personality: null,
+      scenario: null,
+      firstMessage: null,
+      exampleDialogs: null,
       characterCardId: null,
       characterCardIsPublic: null
     }
@@ -33,10 +43,10 @@ export const resolvePersonaFields = (
   return {
     fullName: card.fullName ?? character.fullName,
     description: card.description ?? character.description,
-    personality: card.personality ?? character.personality,
-    scenario: card.scenario ?? character.scenario,
-    firstMessage: card.firstMessage ?? character.firstMessage,
-    exampleDialogs: card.exampleDialogs ?? character.exampleDialogs,
+    personality: card.personality ?? null,
+    scenario: card.scenario ?? null,
+    firstMessage: card.firstMessage ?? null,
+    exampleDialogs: card.exampleDialogs ?? null,
     characterCardId: card.id,
     characterCardIsPublic: card.isPublic
   }
