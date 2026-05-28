@@ -88,7 +88,7 @@ const requireAdmin = (request: Request, response: Response, next: NextFunction) 
 const requireVerifiedEmail = (request: Request, response: Response, next: NextFunction) => {
   requireAuth(request, response, () => {
     if (!request.authUser?.isEmailVerified) {
-      sendApiError(response, 403, 'FORBIDDEN', 'Email verification required.')
+      sendApiError(response, 403, 'EMAIL_VERIFICATION_REQUIRED', 'Email verification required.')
       return
     }
 

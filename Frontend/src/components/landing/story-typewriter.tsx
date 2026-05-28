@@ -29,9 +29,12 @@ const StoryTypewriter = () => {
           setDisplayText(currentStory.slice(0, charIndex.current))
         }, TYPING_SPEED)
         return () => clearTimeout(timeout)
-      } else {
-        setPhase('pausing')
       }
+
+      const timeout = setTimeout(() => {
+        setPhase('pausing')
+      }, 0)
+      return () => clearTimeout(timeout)
     }
 
     if (phase === 'pausing') {
@@ -48,11 +51,14 @@ const StoryTypewriter = () => {
           setDisplayText(currentStory.slice(0, charIndex.current))
         }, DELETING_SPEED)
         return () => clearTimeout(timeout)
-      } else {
+      }
+
+      const timeout = setTimeout(() => {
         const nextIndex = (storyIndex + 1) % stories.length
         setStoryIndex(nextIndex)
         setPhase('typing')
-      }
+      }, 0)
+      return () => clearTimeout(timeout)
     }
   }, [displayText, phase, storyIndex])
 

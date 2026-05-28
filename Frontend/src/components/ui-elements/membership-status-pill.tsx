@@ -1,4 +1,4 @@
-type MembershipConnectionStatus = 'not-connected' | 'syncing' | 'active' | 'expired' | 'canceled'
+type MembershipConnectionStatus = 'not-connected' | 'connected' | 'syncing' | 'active' | 'expired' | 'canceled'
 
 type MembershipStatusPillProps = {
   status: MembershipConnectionStatus
@@ -6,6 +6,7 @@ type MembershipStatusPillProps = {
 
 const statusLabelMap: Record<MembershipConnectionStatus, string> = {
   'not-connected': 'Not Connected',
+  connected: 'Connected',
   syncing: 'Syncing',
   active: 'Active',
   expired: 'Expired',
@@ -14,6 +15,7 @@ const statusLabelMap: Record<MembershipConnectionStatus, string> = {
 
 const statusClassNameMap: Record<MembershipConnectionStatus, string> = {
   'not-connected': 'border-white/20 bg-white/5 text-white/75',
+  connected: 'border-sky-300/35 bg-sky-300/10 text-sky-100',
   syncing: 'border-amber-300/45 bg-amber-300/10 text-amber-100',
   active: 'border-emerald-300/45 bg-emerald-300/10 text-emerald-100',
   expired: 'border-rose-300/45 bg-rose-300/10 text-rose-100',

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import type { MouseEvent } from 'react'
+import type { FocusEvent, MouseEvent, PointerEvent, TouchEvent } from 'react'
 
 type CtaLinkButtonProps = {
   href: string
@@ -8,6 +8,9 @@ type CtaLinkButtonProps = {
   ariaLabel: string
   iconType?: 'download' | 'chrome'
   onClick?: (event: MouseEvent<HTMLAnchorElement>) => void
+  onFocus?: (event: FocusEvent<HTMLAnchorElement>) => void
+  onPointerEnter?: (event: PointerEvent<HTMLAnchorElement>) => void
+  onTouchStart?: (event: TouchEvent<HTMLAnchorElement>) => void
 }
 
 const DownloadTrayIcon = ({ className }: { className?: string }) => {
@@ -50,9 +53,19 @@ const ChromeMonochromeIcon = ({ className }: { className?: string }) => {
   )
 }
 
-const CtaLinkButton = ({ href, label, variant, ariaLabel, iconType = 'download', onClick }: CtaLinkButtonProps) => {
+const CtaLinkButton = ({
+  href,
+  label,
+  variant,
+  ariaLabel,
+  iconType = 'download',
+  onClick,
+  onFocus,
+  onPointerEnter,
+  onTouchStart
+}: CtaLinkButtonProps) => {
   const baseClassName =
-    'inline-flex min-h-[52px] w-full items-center justify-center gap-2.5 rounded-xl px-5 text-[15px] font-bold uppercase tracking-[0.07em] transition sm:min-h-[48px] sm:w-1/2 sm:rounded-md sm:text-sm'
+    'inline-flex min-h-[46px] w-full items-center justify-center gap-2 rounded-xl px-4 text-[13px] font-bold uppercase tracking-[0.06em] transition sm:min-h-[48px] sm:w-1/2 sm:rounded-md sm:px-5 sm:text-sm'
 
   const variantClassName =
     variant === 'light'
@@ -80,6 +93,9 @@ const CtaLinkButton = ({ href, label, variant, ariaLabel, iconType = 'download',
         rel="noreferrer"
         className={`${baseClassName} ${variantClassName}`}
         aria-label={ariaLabel}
+        onFocus={onFocus}
+        onPointerEnter={onPointerEnter}
+        onTouchStart={onTouchStart}
       >
         {content}
       </a>
@@ -87,7 +103,15 @@ const CtaLinkButton = ({ href, label, variant, ariaLabel, iconType = 'download',
   }
 
   return (
-    <Link href={href} onClick={onClick} className={`${baseClassName} ${variantClassName}`} aria-label={ariaLabel}>
+    <Link
+      href={href}
+      onClick={onClick}
+      onFocus={onFocus}
+      onPointerEnter={onPointerEnter}
+      onTouchStart={onTouchStart}
+      className={`${baseClassName} ${variantClassName}`}
+      aria-label={ariaLabel}
+    >
       {content}
     </Link>
   )

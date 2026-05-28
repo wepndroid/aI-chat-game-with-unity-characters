@@ -1,4 +1,5 @@
 import AdminVrmStatusPill, { type AdminVrmVisibilityStatus } from '@/components/ui-elements/admin-vrm-status-pill'
+import { formatCompactCount } from '@/lib/format-compact-count'
 
 type AdminCommunityVrmRecord = {
   id: string
@@ -6,7 +7,7 @@ type AdminCommunityVrmRecord = {
   name: string
   uploader: string
   hearts: number
-  chats: number
+  messages: number
   status: AdminVrmVisibilityStatus
 }
 
@@ -22,7 +23,7 @@ const HeartIcon = () => {
   )
 }
 
-const ChatIcon = () => {
+const MessageIcon = () => {
   return (
     <svg viewBox="0 0 24 24" className="size-3.5" fill="currentColor">
       <path d="M5.5 5.7h13a2.8 2.8 0 0 1 2.8 2.8v6.4a2.8 2.8 0 0 1-2.8 2.8h-7l-3.6 3.1v-3.1H5.5a2.8 2.8 0 0 1-2.8-2.8V8.5a2.8 2.8 0 0 1 2.8-2.8Z" />
@@ -74,11 +75,11 @@ const AdminCommunityVrmRow = ({ vrmRecord }: AdminCommunityVrmRowProps) => {
         <div className="inline-flex items-center gap-3">
           <span className="inline-flex items-center gap-1 text-xs font-normal text-pink-400">
             <HeartIcon />
-            {vrmRecord.hearts}
+            {formatCompactCount(vrmRecord.hearts)}
           </span>
           <span className="inline-flex items-center gap-1 text-xs font-normal text-[#a8b6d0]">
-            <ChatIcon />
-            {vrmRecord.chats}
+            <MessageIcon />
+            {formatCompactCount(vrmRecord.messages)}
           </span>
         </div>
       </td>

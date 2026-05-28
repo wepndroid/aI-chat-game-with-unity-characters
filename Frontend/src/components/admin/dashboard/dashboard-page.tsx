@@ -29,6 +29,10 @@ type DashboardOverviewPayload = {
         users: number
       }>
     }
+    signupTrends: {
+      daily: SignupTrendPeriod[]
+      monthly: SignupTrendPeriod[]
+    }
     recentActivity: Array<{
       id: string
       message: string
@@ -38,6 +42,14 @@ type DashboardOverviewPayload = {
     updatedAt: string
   }
 }
+
+type SignupTrendPeriod = {
+  periodKey: string
+  signups: number
+  cumulativeUsers: number
+}
+
+type SignupTrendGranularity = 'daily' | 'monthly'
 
 type KpiRecord = {
   id: string
@@ -58,6 +70,15 @@ const formatCompactNumber = (value: number) =>
 
 const formatTodayUserDelta = (value: number) =>
   new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value)
+
+const formatSignupPeriodLabel = (periodKey: string, granularity: SignupTrendGranularity) => {
+  const date = new Date(`${periodKey}${granularity === 'monthly' ? '-01' : ''}T00:00:00Z`)
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    ...(granularity === 'daily' ? { day: 'numeric' } : { year: '2-digit' })
+  }).format(date)
+}
 
 const formatTierLabel = (tierCents: number) => {
   if (tierCents <= 0) {
@@ -162,11 +183,132 @@ const ActiveChatsIcon = () => {
   )
 }
 
+const SignupTrendChart = ({
+  periods,
+  granularity,
+  onGranularityChange
+}: {
+  periods: SignupTrendPeriod[]
+  granularity: SignupTrendGranularity
+  onGranularityChange: (nextValue: SignupTrendGranularity) => void
+}) => {
+  const chartWidth = 720
+  const chartHeight = 270
+  const padding = { top: 22, right: 28, bottom: 42, left: 42 }
+  const innerWidth = chartWidth - padding.left - padding.right
+  const innerHeight = chartHeight - padding.top - padding.bottom
+  const maxSignups = Math.max(...periods.map((period) => period.signups), 0)
+  const minCumulativeUsers = Math.min(...periods.map((period) => period.cumulativeUsers), 0)
+  const maxCumulativeUsers = Math.max(...periods.map((period) => period.cumulativeUsers), 0)
+  const cumulativeRange = Math.max(1, maxCumulativeUsers - minCumulativeUsers)
+  const barGap = 5
+  const barWidth = periods.length > 0 ? Math.max(6, (innerWidth - barGap * (periods.length - 1)) / periods.length) : 0
+  const totalSignups = periods.reduce((sum, period) => sum + period.signups, 0)
+  const averageSignups = periods.length > 0 ? totalSignups / periods.length : 0
+  const endingUsers = periods[periods.length - 1]?.cumulativeUsers ?? 0
+  const linePoints = periods
+    .map((period, index) => {
+      const x = padding.left + index * (barWidth + barGap) + barWidth / 2
+      const y = padding.top + innerHeight - ((period.cumulativeUsers - minCumulativeUsers) / cumulativeRange) * innerHeight
+      return `${x},${y}`
+    })
+    .join(' ')
+
+  return (
+    <section className="mt-5 rounded-2xl border border-white/10 bg-[#0c0f14]/95 p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold text-white">User Signups</h2>
+          <p className="mt-1 text-sm text-white/55">New accounts plus the running total for the selected period.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-black/15 p-1">
+          {(['daily', 'monthly'] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                granularity === option ? 'bg-white text-[#0c0f14]' : 'text-white/65 hover:bg-white/10 hover:text-white'
+              }`}
+              onClick={() => onGranularityChange(option)}
+            >
+              {option === 'daily' ? 'Daily' : 'Monthly'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border border-white/10 bg-[#11161e]/80 px-4 py-3">
+          <p className="text-[10px] uppercase tracking-[0.08em] text-white/45">Signups</p>
+          <p className="mt-1 text-xl font-semibold text-white">{formatCompactNumber(totalSignups)}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-[#11161e]/80 px-4 py-3">
+          <p className="text-[10px] uppercase tracking-[0.08em] text-white/45">Avg / Period</p>
+          <p className="mt-1 text-xl font-semibold text-white">{formatCompactNumber(averageSignups)}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-[#11161e]/80 px-4 py-3">
+          <p className="text-[10px] uppercase tracking-[0.08em] text-white/45">Total Users</p>
+          <p className="mt-1 text-xl font-semibold text-white">{formatCompactNumber(endingUsers)}</p>
+        </div>
+      </div>
+
+      <div className="mt-4 overflow-x-auto rounded-2xl border border-white/10 bg-[#11161e]/80 p-3">
+        {periods.length === 0 ? (
+          <div className="flex min-h-[250px] items-center justify-center text-sm text-white/55">No signup data yet.</div>
+        ) : (
+          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="min-w-[720px] text-white" role="img" aria-label="User signup trend chart">
+            {[0, 0.5, 1].map((step) => {
+              const y = padding.top + innerHeight - innerHeight * step
+              const labelValue = maxSignups * step
+
+              return (
+                <g key={step}>
+                  <line x1={padding.left} x2={chartWidth - padding.right} y1={y} y2={y} stroke="rgba(255,255,255,0.08)" />
+                  <text x={padding.left - 8} y={y + 3} textAnchor="end" className="fill-white/40 text-[9px]">
+                    {formatCompactNumber(labelValue)}
+                  </text>
+                </g>
+              )
+            })}
+            {periods.map((period, index) => {
+              const x = padding.left + index * (barWidth + barGap)
+              const barHeight = maxSignups > 0 ? (period.signups / maxSignups) * innerHeight : 0
+              const y = padding.top + innerHeight - barHeight
+              const shouldShowLabel = periods.length <= 12 || index % Math.ceil(periods.length / 6) === 0
+
+              return (
+                <g key={period.periodKey}>
+                  <title>
+                    {formatSignupPeriodLabel(period.periodKey, granularity)}: {formatCompactNumber(period.signups)} signups, {formatCompactNumber(period.cumulativeUsers)} total users
+                  </title>
+                  <rect x={x} y={y} width={barWidth} height={barHeight} rx={3} className="fill-sky-300/75 transition hover:fill-sky-200" />
+                  {shouldShowLabel ? (
+                    <text x={x + barWidth / 2} y={chartHeight - 18} textAnchor="middle" className="fill-white/40 text-[9px]">
+                      {formatSignupPeriodLabel(period.periodKey, granularity)}
+                    </text>
+                  ) : null}
+                </g>
+              )
+            })}
+            {linePoints ? <polyline points={linePoints} fill="none" stroke="rgb(52 211 153)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /> : null}
+            <line x1={padding.left} x2={chartWidth - padding.right} y1={padding.top + innerHeight} y2={padding.top + innerHeight} stroke="rgba(255,255,255,0.18)" />
+          </svg>
+        )}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-white/45">
+        <span className="inline-flex items-center gap-2"><span className="h-2 w-3 rounded-sm bg-sky-300/75" /> New signups</span>
+        <span className="inline-flex items-center gap-2"><span className="h-0.5 w-4 rounded-full bg-emerald-400" /> Total users</span>
+      </div>
+    </section>
+  )
+}
+
 const DashboardPage = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [overview, setOverview] = useState<DashboardOverviewPayload['data'] | null>(null)
   const [reviewQueue, setReviewQueue] = useState<AdminReviewQueueRecord[]>([])
+  const [signupTrendGranularity, setSignupTrendGranularity] = useState<SignupTrendGranularity>('daily')
 
   useEffect(() => {
     let isCancelled = false
@@ -296,6 +438,12 @@ const DashboardPage = () => {
           />
         ))}
       </div>
+
+      <SignupTrendChart
+        periods={overview?.signupTrends[signupTrendGranularity] ?? []}
+        granularity={signupTrendGranularity}
+        onGranularityChange={setSignupTrendGranularity}
+      />
 
       <section className="mt-5 rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-4 py-5 sm:px-6">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

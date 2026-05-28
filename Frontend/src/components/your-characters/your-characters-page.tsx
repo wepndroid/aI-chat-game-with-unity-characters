@@ -8,6 +8,7 @@ import MyCharacterCard, { type CharacterModerationStatus, type MyCharacterCardRe
 import SearchField from '@/components/ui-elements/search-field'
 import SelectField from '@/components/ui-elements/select-field'
 import { listMyCharacters, submitCharacterForReview, type CharacterMineRecord } from '@/lib/character-api'
+import { formatCompactCount } from '@/lib/format-compact-count'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 
@@ -72,11 +73,14 @@ const toCardRecord = (characterRecord: CharacterMineRecord): MyCharacterCardReco
     title: characterRecord.name,
     summary: characterRecord.tagline?.trim() || 'No tagline yet. Update this character to improve discoverability.',
     moderationStatus: mappedStatus,
+    visibility: characterRecord.visibility,
     moderationRejectReason: characterRecord.moderationRejectReason,
     updatedAtLabel: formatRelativeTimeLabel(characterRecord.updatedAt),
-    views: characterRecord.viewsCount,
+    messages: characterRecord.messageCount,
     hearts: characterRecord.heartsCount,
-    previewImageUrl: characterRecord.previewImageUrl
+    previewImageUrl: characterRecord.previewImageUrl,
+    cardThumbnailDesktopUrl: characterRecord.cardThumbnailDesktopUrl,
+    cardThumbnailMobileUrl: characterRecord.cardThumbnailMobileUrl
   }
 }
 
@@ -194,14 +198,14 @@ const YourCharactersPage = () => {
     const approvedCount = characterRecords.filter((characterItem) => characterItem.moderationStatus === 'approved').length
     const pendingCount = characterRecords.filter((characterItem) => characterItem.moderationStatus === 'pending').length
     const requiresActionCount = characterRecords.filter((characterItem) => characterItem.moderationStatus === 'draft' || characterItem.moderationStatus === 'rejected').length
-    const totalViews = characterRecords.reduce((sum, characterItem) => sum + characterItem.views, 0)
+    const totalMessages = characterRecords.reduce((sum, characterItem) => sum + characterItem.messages, 0)
 
     return {
       totalCount,
       approvedCount,
       pendingCount,
       requiresActionCount,
-      totalViews
+      totalMessages
     }
   }, [characterRecords])
 
@@ -228,7 +232,7 @@ const YourCharactersPage = () => {
                 <DashboardStatCard value={dashboardStats.totalCount.toString()} label="Total Characters" helperText="All drafts and published entries" />
                 <DashboardStatCard value={dashboardStats.approvedCount.toString()} label="Approved" helperText="Visible in public gallery" />
                 <DashboardStatCard value={dashboardStats.pendingCount.toString()} label="Pending Review" helperText="Waiting for admin/moderator decision" isEmphasized />
-                <DashboardStatCard value={dashboardStats.totalViews.toLocaleString()} label="Views" helperText="Total views across all your characters" />
+                <DashboardStatCard value={formatCompactCount(dashboardStats.totalMessages)} label="Messages" helperText="Total visible messages across your characters" />
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-[#161213]/95 p-4 md:p-6">

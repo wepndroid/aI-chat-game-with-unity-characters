@@ -5,8 +5,12 @@ import AccountSideMenu from '@/components/shared/account-side-menu'
 import MaintenanceWorkspaceGate from '@/components/shared/maintenance-workspace-gate'
 import type { MembershipEntitlementRecord } from '@/components/ui-elements/membership-entitlement-row'
 import MembershipStatusPill, { type MembershipConnectionStatus } from '@/components/ui-elements/membership-status-pill'
-import MembershipTierCard from '@/components/ui-elements/membership-tier-card'
 import { apiGet, apiPost } from '@/lib/api-client'
+import {
+  trackPatreonConnectStartEvent,
+  trackPatreonDisconnectEvent,
+  trackPatreonSyncEvent
+} from '@/lib/google-analytics-events'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
@@ -19,7 +23,7 @@ const PatreonIcon = ({ className = 'size-4' }: { className?: string }) => (
   </svg>
 )
 
-type MembershipTier = 'free' | 'just_models_900' | 'secretwaifu_1650'
+type MembershipTier = 'free' | 'basic' | 'premium'
 type PatreonEntitlementApiRecord = {
   id: string
   tierCode: string
@@ -32,6 +36,8 @@ type PatreonStatusApiResponse = {
   linked: boolean
   membershipStatus: string
   tierCents: number
+  effectiveTierCode: MembershipTier | 'admin'
+  hasMemberBenefits: boolean
   patreonUserId: string | null
   lastCheckedAt: string | null
   nextChargeDate: string | null
@@ -39,6 +45,16 @@ type PatreonStatusApiResponse = {
 }
 
 type MembershipAccessState = 'not-connected' | 'connected-inactive' | 'active-entitlement' | 'sync-in-progress'
+
+const secretWaifuAccessBenefits = [
+  'Unlimited messages per month',
+  'Unlimited character voice functionality',
+  'Unique NSFW voices',
+  'Upload custom characters',
+  'Core website account features',
+  'Monthly character poll',
+  'Discord title'
+]
 
 const formatDateLabel = (value: string | null, fallbackLabel: string) => {
   if (!value) {
@@ -54,13 +70,13 @@ const formatDateLabel = (value: string | null, fallbackLabel: string) => {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(parsedDate)
 }
 
-const mapTierFromCents = (tierCents: number): MembershipTier => {
-  if (tierCents >= 1650) {
-    return 'secretwaifu_1650'
+const mapEffectiveTierForDisplay = (tierCode: PatreonStatusApiResponse['effectiveTierCode']): MembershipTier => {
+  if (tierCode === 'admin' || tierCode === 'premium') {
+    return 'premium'
   }
 
-  if (tierCents >= 900) {
-    return 'just_models_900'
+  if (tierCode === 'basic') {
+    return 'basic'
   }
 
   return 'free'
@@ -83,7 +99,7 @@ const mapMembershipStatusToChip = (linked: boolean, membershipStatus: string): M
     return 'expired'
   }
 
-  return 'not-connected'
+  return 'connected'
 }
 
 const mapEntitlements = (entitlements: PatreonEntitlementApiRecord[]): MembershipEntitlementRecord[] => {
@@ -97,18 +113,16 @@ const mapEntitlements = (entitlements: PatreonEntitlementApiRecord[]): Membershi
 }
 
 const buildDerivedEntitlementFromPatreonStatus = (statusData: PatreonStatusApiResponse): MembershipEntitlementRecord[] => {
-  const isAccountActive = statusData.linked && statusData.membershipStatus === 'active_patron' && statusData.tierCents > 0
+  const isAccountActive = statusData.linked && statusData.hasMemberBenefits
 
   if (!isAccountActive) {
     return []
   }
 
-  const derivedFeatureKey = statusData.tierCents >= 1650 ? 'secretwaifu_access' : statusData.tierCents >= 900 ? 'just_models' : 'patreon_active'
-
   return [
     {
       id: 'derived-patreon-account-tier',
-      featureKey: derivedFeatureKey,
+      featureKey: statusData.effectiveTierCode,
       sourceProvider: 'patreon',
       validUntilLabel: formatDateLabel(statusData.nextChargeDate, 'Active'),
       status: 'active'
@@ -163,9 +177,7 @@ const mapMembershipActionErrorMessage = (rawMessage: string | null): string | nu
 
 const MembershipPage = () => {
   const { sessionUser, isAuthLoading } = useAuth()
-  const patreonExternalUrl = process.env.NEXT_PUBLIC_PATREON_URL ?? 'https://www.patreon.com'
-  const modelsTierUrl = process.env.NEXT_PUBLIC_PATREON_TIER_MODELS_URL ?? patreonExternalUrl
-  const secretwaifuTierUrl = process.env.NEXT_PUBLIC_PATREON_TIER_SECRETWAIFU_URL ?? patreonExternalUrl
+  const membershipUpgradeUrl = 'https://patreon.squircle.games/membership'
   const [connectionStatus, setConnectionStatus] = useState<MembershipConnectionStatus>('not-connected')
   const [currentTier, setCurrentTier] = useState<MembershipTier>('free')
   const [isPatreonLinked, setIsPatreonLinked] = useState(false)
@@ -206,10 +218,7 @@ const MembershipPage = () => {
     const statusData = payload.data
 
     /** Only show a paid tier when Patreon is linked and Patreon reports an active membership — avoids "Unlocked / Tier 2" while disconnected. */
-    const tierForDisplay =
-      statusData.linked && statusData.membershipStatus === 'active_patron'
-        ? mapTierFromCents(statusData.tierCents)
-        : 'free'
+    const tierForDisplay = statusData.hasMemberBenefits ? mapEffectiveTierForDisplay(statusData.effectiveTierCode) : 'free'
 
     setIsPatreonLinked(statusData.linked)
     setCurrentTier(tierForDisplay)
@@ -257,6 +266,7 @@ const MembershipPage = () => {
         throw new Error('Unable to start Patreon connection.')
       }
 
+      trackPatreonConnectStartEvent()
       const patreonWindow = window.open(payload.data.authorizationUrl, '_blank', 'noopener,noreferrer')
 
       if (!patreonWindow) {
@@ -297,8 +307,10 @@ const MembershipPage = () => {
       await apiPost<{ data: unknown }>('/patreon/sync')
 
       await loadMembershipStatus()
+      trackPatreonSyncEvent('success')
       setMembershipMessage('Membership synced successfully.')
     } catch (error) {
+      trackPatreonSyncEvent('failed')
       setConnectionStatus('expired')
       const rawMessage = error instanceof Error ? error.message : null
       setMembershipMessage(mapMembershipActionErrorMessage(rawMessage))
@@ -316,6 +328,7 @@ const MembershipPage = () => {
 
       await apiPost<{ data: unknown }>('/patreon/disconnect')
 
+      trackPatreonDisconnectEvent('success')
       setIsPatreonLinked(false)
       setCurrentTier('free')
       setConnectionStatus('not-connected')
@@ -324,6 +337,7 @@ const MembershipPage = () => {
       setEntitlementRecords([])
       setMembershipMessage('Patreon account disconnected.')
     } catch (error) {
+      trackPatreonDisconnectEvent('failed')
       setConnectionStatus('canceled')
       const rawMessage = error instanceof Error ? error.message : null
       setMembershipMessage(mapMembershipActionErrorMessage(rawMessage))
@@ -358,44 +372,14 @@ const MembershipPage = () => {
   }, [connectionStatus, hasActiveMembershipAccess, isPatreonLinked])
 
   const membershipStateDescriptionMap: Record<MembershipAccessState, string> = {
-    'not-connected': 'Connect Patreon to sync your tier and unlock gated content.',
-    'connected-inactive': 'Patreon is linked, but no active entitlement is currently available for this account.',
-    'active-entitlement': 'Your Patreon entitlement is active. Gated characters and member features are unlocked.',
+    'not-connected': 'Buy SecretWaifu Access, then connect Patreon to sync your subscription.',
+    'connected-inactive': 'Patreon is linked, but no active SecretWaifu Access subscription is currently available for this account.',
+    'active-entitlement': 'Your SecretWaifu Access subscription is active. Member features are unlocked.',
     'sync-in-progress': 'We are syncing your Patreon membership data with the backend.'
   }
 
-  const gatedAccessLabel = hasActiveMembershipAccess ? 'Unlocked' : 'Locked'
-  const accessStateHelperText = hasActiveMembershipAccess ? 'Patreon content is available now' : 'Link Patreon to unlock gated content'
-
-  const tierLabelMap: Record<MembershipTier, string> = {
-    free: 'Free',
-    just_models_900: 'Basic',
-    secretwaifu_1650: 'Premium'
-  }
-
-  const accessTierHelperTextMap: Record<MembershipTier, string> = {
-    free: 'Link Patreon and subscribe to unlock paid plans',
-    just_models_900: 'Tier 1 active: models pack and polls',
-    secretwaifu_1650: 'Tier 2 active: full SecretWaifu access'
-  }
-  const tierRankMap: Record<MembershipTier, number> = {
-    free: 0,
-    just_models_900: 1,
-    secretwaifu_1650: 2
-  }
-  const currentTierRank = tierRankMap[currentTier]
-  const getTierFooterLabel = (tier: MembershipTier) => {
-    const tierRank = tierRankMap[tier]
-    if (tierRank === currentTierRank) {
-      return 'Current tier'
-    }
-    if (tierRank > currentTierRank) {
-      return 'Upgrade available'
-    }
-    return 'Included in your tier'
-  }
-  const supportActionHref = membershipAccessState === 'connected-inactive' ? secretwaifuTierUrl : patreonExternalUrl
-  const isSupportActionExternal = supportActionHref.startsWith('http')
+  const accessStatusLabel = hasActiveMembershipAccess ? 'Active Access' : 'Access Required'
+  const shouldShowMembershipPurchaseCta = !hasActiveMembershipAccess
   const connectButtonLabel = isPatreonLinked ? 'Reconnect Patreon' : 'Connect Patreon'
   const connectButtonClassName = isPatreonLinked
     ? 'inline-flex h-9 items-center justify-center gap-2 rounded-full border border-white/16 bg-white/[0.03] px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-white transition hover:border-ember-300 hover:text-ember-200 disabled:cursor-not-allowed disabled:opacity-50'
@@ -406,7 +390,7 @@ const MembershipPage = () => {
       ? 'Verify your email on the Account page before connecting Patreon.'
       : hasActiveMembershipAccess
         ? 'Your account is ready. Recheck after plan changes if you need to refresh access.'
-        : 'Connect Patreon once, then refresh here whenever your tier changes.'
+        : 'Buy SecretWaifu Access, connect Patreon once, then refresh here whenever your subscription changes.'
 
   return (
     <main className="relative overflow-x-hidden bg-[#030303] text-white">
@@ -433,60 +417,62 @@ const MembershipPage = () => {
                 </div>
               </section>
 
-              <div className="grid gap-4 xl:grid-cols-3">
-                <MembershipTierCard
-                  tierName="Free"
-                  monthlyPriceLabel="$0 / month"
-                  summary="A simple starting point for trying the platform and building your own experience."
-                  benefitList={[
-                    '10 messages per month',
-                    'Upload custom characters',
-                    'Core website account features'
-                  ]}
-                  accentTone="slate"
-                  isCurrentTier={currentTier === 'free'}
-                  footerLabel={getTierFooterLabel('free')}
-                />
-                <MembershipTierCard
-                  tierName="Basic"
-                  monthlyPriceLabel="$7.99 / month"
-                  summary="For regular users who want a generous message cap and the key community perks."
-                  benefitList={[
-                    '1,000 messages per month',
-                    'Limited in-game voice functionality',
-                    'Upload custom characters',
-                    'Core website account features',
-                    'Monthly character poll',
-                    'Discord title'
-                  ]}
-                  noteList={[]}
-                  ctaLabel="Select"
-                  ctaHref={modelsTierUrl}
-                  accentTone="amber"
-                  isCurrentTier={currentTier === 'just_models_900'}
-                  footerLabel={getTierFooterLabel('just_models_900')}
-                />
-                <MembershipTierCard
-                  tierName="Premium"
-                  monthlyPriceLabel="$12.99 / month"
-                  summary="The full experience with unlimited chatting, richer voice features, and premium extras."
-                  benefitList={[
-                    'Unlimited messages per month',
-                    'Unlimited character voice functionality',
-                    'Unique NSFW voices',
-                    'Upload custom characters',
-                    'Core website account features',
-                    'Monthly character poll',
-                    'Discord title'
-                  ]}
-                  ctaLabel="Select"
-                  ctaHref={secretwaifuTierUrl}
-                  accentTone="rose"
-                  isMostPopular
-                  isCurrentTier={currentTier === 'secretwaifu_1650'}
-                  footerLabel={getTierFooterLabel('secretwaifu_1650')}
-                />
-              </div>
+              <section className="relative overflow-hidden rounded-[28px] border border-fuchsia-300/18 bg-[linear-gradient(135deg,rgba(217,70,239,0.12),rgba(244,99,19,0.10),rgba(19,17,18,0.96))] p-6 shadow-[0_24px_70px_rgba(0,0,0,0.32)] md:p-8">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.08),transparent_32%)]" />
+                <div className="absolute -right-10 top-8 h-36 w-36 rounded-full bg-fuchsia-200/10 blur-3xl" />
+                <div className="relative">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ember-200/70">One Membership</p>
+                      <h2 className="mt-3 font-[family-name:var(--font-heading)] text-[34px] font-normal italic leading-none text-white">
+                        SecretWaifu Access
+                      </h2>
+                    </div>
+                    <span className="rounded-full border border-ember-200/35 bg-ember-200/12 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ember-100">
+                      {accessStatusLabel}
+                    </span>
+                  </div>
+
+                  <p className="mt-4 max-w-[650px] text-sm leading-6 text-white/72">
+                    One subscription unlocks the full SecretWaifu experience while we keep membership simple.
+                  </p>
+
+                  <ul className="mt-6 grid gap-2.5 md:grid-cols-2">
+                    {secretWaifuAccessBenefits.map((benefitItem, index) => (
+                      <li
+                        key={benefitItem}
+                        className={`flex items-start gap-3 rounded-[18px] px-3 py-3 text-[13px] text-white/84 ${
+                          index < 3
+                            ? 'bg-[linear-gradient(135deg,rgba(217,70,239,0.14),rgba(255,153,102,0.08))] font-semibold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
+                            : 'bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))]'
+                        }`}
+                      >
+                        <span className="mt-[6px] inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-gradient-to-r from-fuchsia-200 via-pink-200 to-amber-100" aria-hidden="true" />
+                        <span>{benefitItem}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                </div>
+              </section>
+
+              {shouldShowMembershipPurchaseCta ? (
+                <section className="rounded-[24px] border border-ember-300/24 bg-[linear-gradient(135deg,rgba(244,99,19,0.13),rgba(18,16,18,0.95))] p-5">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ember-200/75">Ready to unlock access?</p>
+                  <p className="mt-2 max-w-[620px] text-sm leading-6 text-white/70">
+                    Buy SecretWaifu Access, then connect Patreon here so your account can sync the active subscription.
+                  </p>
+                  <Link
+                    href={membershipUpgradeUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-4 inline-flex h-11 w-full items-center justify-center rounded-full bg-gradient-to-r from-ember-400 via-ember-500 to-[#ff7a2f] px-5 text-[11px] font-bold uppercase tracking-[0.14em] text-black transition hover:brightness-110 sm:w-auto"
+                    aria-label="Buy SecretWaifu Access"
+                  >
+                    Buy SecretWaifu Access
+                  </Link>
+                </section>
+              ) : null}
 
               <section className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(18,16,18,0.95))] p-4 md:p-5">
                 <div className="flex flex-wrap items-center gap-3">
@@ -494,7 +480,7 @@ const MembershipPage = () => {
                   <MembershipStatusPill status={connectionStatus} />
                 </div>
                 <p className="mt-3 font-[family-name:var(--font-heading)] text-[24px] italic leading-none text-white">
-                  {gatedAccessLabel} for {tierLabelMap[currentTier]}
+                  {accessStatusLabel}
                 </p>
                 <p className="mt-2 max-w-[620px] text-[13px] leading-6 text-white/66">
                   {membershipStateDescriptionMap[membershipAccessState]}
@@ -503,7 +489,7 @@ const MembershipPage = () => {
                 <div className="mt-4 grid gap-2 sm:grid-cols-3">
                   <div className="rounded-[18px] border border-white/8 bg-black/20 px-3 py-2.5">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">Plan</p>
-                    <p className="mt-1.5 text-[13px] font-semibold text-white">{tierLabelMap[currentTier]}</p>
+                    <p className="mt-1.5 text-[13px] font-semibold text-white">SecretWaifu Access</p>
                   </div>
                   <div className="rounded-[18px] border border-white/8 bg-black/20 px-3 py-2.5">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">Last Check</p>
@@ -543,16 +529,6 @@ const MembershipPage = () => {
                     Refresh Status
                   </button>
 
-                  <Link
-                    href={supportActionHref}
-                    target={isSupportActionExternal ? '_blank' : undefined}
-                    rel={isSupportActionExternal ? 'noreferrer' : undefined}
-                    className="inline-flex h-9 items-center justify-center rounded-full border border-white/14 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/88 transition hover:border-ember-300 hover:text-ember-200"
-                    aria-label="Open membership plans and support page"
-                  >
-                    {membershipAccessState === 'connected-inactive' ? 'Upgrade Plan' : 'View Patreon'}
-                  </Link>
-
                   {isPatreonLinked ? (
                     <button
                       type="button"
@@ -567,9 +543,6 @@ const MembershipPage = () => {
                 </div>
 
                 <p className="mt-3 text-[11px] leading-5 text-white/58">{connectionHint}</p>
-                <p className="mt-1.5 text-[11px] leading-5 text-white/50">
-                  {currentTier === 'free' ? accessStateHelperText : accessTierHelperTextMap[currentTier]}
-                </p>
               </section>
             </div>
             </MaintenanceWorkspaceGate>

@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
 import { Inter, Sora } from 'next/font/google'
+import GoogleAnalytics from '@/components/analytics/google-analytics'
 import { AuthProvider } from '@/components/providers/auth-provider'
 import { MaintenanceProvider } from '@/components/providers/maintenance-provider'
-import { WebglWarmProvider } from '@/components/providers/webgl-warm-provider'
+import { WebglPreloadProvider } from '@/components/providers/webgl-preload-provider'
 import UnityScanReportListener from '@/components/providers/unity-scan-report-listener'
 import { ConditionalHeader, ConditionalFooter } from '@/components/shared/layout-wrapper'
 import { siteMetadataBase } from '@/lib/site'
@@ -66,14 +67,15 @@ const RootLayout = ({ children }: RootLayoutProps) => {
   return (
     <html lang="en" suppressHydrationWarning>
       <body suppressHydrationWarning className={`${bodyFont.variable} ${headingFont.variable} bg-[#030303] text-white antialiased`}>
+        <GoogleAnalytics />
         <AuthProvider>
           <MaintenanceProvider>
-            <WebglWarmProvider>
+            <WebglPreloadProvider>
               <UnityScanReportListener />
               <ConditionalHeader />
               {children}
               <ConditionalFooter />
-            </WebglWarmProvider>
+            </WebglPreloadProvider>
           </MaintenanceProvider>
         </AuthProvider>
       </body>

@@ -3,12 +3,41 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { optionalAuth, requireAdmin, requireAuth, requireVerifiedEmail } from '../middleware/auth-middleware'
 import { decodeOffsetCursor, encodeOffsetCursor, sendApiData, sendApiError } from '../lib/api-contract'
+import { assertSafeCharacterAssetUrls, CharacterAssetUrlValidationError } from '../lib/character-asset-url'
 import { combineScenarioFields } from '../lib/combine-scenario-body'
 import { prisma } from '../lib/prisma'
+import { emailAdminsReviewQueue, notifyAdminsReviewQueueBestEffort } from '../lib/notify-admins-review-queue'
 import { storyScenarioTypeSchema } from '../lib/story-scenario-type'
-import { resolveCharacterAccess } from '../services/character-access-service'
+import { resolveCharacterAccess } from '../services/character/character-access-policy'
+import { resolveCharacterStoryAvailability } from '../services/character/character-story-availability-service'
+import {
+  clearCharacterDefaultStory,
+  clearDefaultIfStoryBecameNonPlayable,
+  setCharacterDefaultStory
+} from '../services/story/story-default-service'
+import { isPlayableStory } from '../services/story/story-default-policy'
+import { resolveStoryOriginForAuthor } from '../services/story/story-origin-policy'
+import {
+  characterStoryCatalogSelectFields,
+  toCharacterStoryCatalogPayload
+} from '../services/story/character-story-catalog-payload'
+import {
+  buildPublicStoryCatalogWhere,
+  buildCharacterStoryCatalogWhere,
+  canReadStoryWithCharacterAsViewer
+} from '../services/story/story-visibility-policy'
+import { tryDeleteTrustedUploadFile } from '../lib/delete-local-upload-file'
+import { enqueueUploadedVoiceProviderRegistration } from '../lib/tts-provider-uploaded-voice-alias'
+import { getUploadRelativePathFromUrl } from '../lib/upload-paths'
 
 const storyRoutes = Router()
+
+const enqueueVoiceFileUrlProviderRegistration = async (voiceFileUrl: string | null | undefined) => {
+  const relativePath = getUploadRelativePathFromUrl(voiceFileUrl)
+  if (relativePath) {
+    await enqueueUploadedVoiceProviderRegistration(relativePath)
+  }
+}
 
 /** Express may pass repeated query keys as string[]; strip to a single value for Zod. */
 const firstQueryValue = (value: unknown): unknown => {
@@ -48,11 +77,11 @@ const trimOrNull = (value: string | null | undefined) => {
 
 const extractCharacterIdCandidateFromRouteKey = (value: string) => {
   const trimmed = value.trim()
-  const firstDashIndex = trimmed.indexOf('-')
-  if (firstDashIndex <= 0) {
+  const lastDashIndex = trimmed.lastIndexOf('-')
+  if (lastDashIndex <= 0 || lastDashIndex >= trimmed.length - 1) {
     return null
   }
-  return trimmed.slice(0, firstDashIndex)
+  return trimmed.slice(lastDashIndex + 1)
 }
 
 const resolveCharacterByRouteKey = async (characterRouteKey: string) => {
@@ -72,8 +101,7 @@ const resolveCharacterByRouteKey = async (characterRouteKey: string) => {
       ownerId: true,
       status: true,
       visibility: true,
-      isPatreonGated: true,
-      minimumTierCents: true
+      isPatreonGated: true
     }
   })
 }
@@ -85,6 +113,18 @@ const orderStoryObject = <T extends { id: string; character?: unknown }>(story: 
   }
   return { id, character, ...rest }
 }
+
+const addStoryDefaultMetadata = <
+  T extends {
+    id: string
+    character?: { defaultStoryId?: string | null } | null
+  }
+>(
+  story: T
+) => ({
+  ...story,
+  isDefault: Boolean(story.character?.defaultStoryId && story.character.defaultStoryId === story.id)
+})
 
 const toPhase1CreatePayload = (rawBody: Record<string, unknown>) => {
   const promptDescription = firstQueryValue(rawBody.promptDescription) ?? firstQueryValue(rawBody.prompt_description)
@@ -105,7 +145,9 @@ const toPhase1CreatePayload = (rawBody: Record<string, unknown>) => {
     personality: firstQueryValue(rawBody.personality),
     scenario,
     firstMessage: firstQueryValue(rawBody.firstMessage) ?? firstQueryValue(rawBody.first_message),
-    exampleDialogs: firstQueryValue(rawBody.exampleDialogs) ?? firstQueryValue(rawBody.example_dialogs)
+    exampleDialogs: firstQueryValue(rawBody.exampleDialogs) ?? firstQueryValue(rawBody.example_dialogs),
+    voiceFileUrl: firstQueryValue(rawBody.voiceFileUrl) ?? firstQueryValue(rawBody.voice_file_url),
+    voiceFileName: firstQueryValue(rawBody.voiceFileName) ?? firstQueryValue(rawBody.voice_file_name)
   }
 }
 
@@ -120,7 +162,6 @@ const toPhase1UpdatePayload = (rawBody: Record<string, unknown>) => {
     title: firstQueryValue(rawBody.title),
     scenarioStory: firstQueryValue(rawBody.scenarioStory) ?? promptDescription,
     scenarioChat: firstQueryValue(rawBody.scenarioChat) ?? scenario,
-    characterId: firstQueryValue(rawBody.characterId) ?? firstQueryValue(rawBody.character_id),
     scenarioType: firstQueryValue(rawBody.scenarioType),
     publicationStatus: firstQueryValue(rawBody.publicationStatus),
     isPublic,
@@ -128,7 +169,9 @@ const toPhase1UpdatePayload = (rawBody: Record<string, unknown>) => {
     personality: firstQueryValue(rawBody.personality),
     scenario,
     firstMessage: firstQueryValue(rawBody.firstMessage) ?? firstQueryValue(rawBody.first_message),
-    exampleDialogs: firstQueryValue(rawBody.exampleDialogs) ?? firstQueryValue(rawBody.example_dialogs)
+    exampleDialogs: firstQueryValue(rawBody.exampleDialogs) ?? firstQueryValue(rawBody.example_dialogs),
+    voiceFileUrl: firstQueryValue(rawBody.voiceFileUrl) ?? firstQueryValue(rawBody.voice_file_url),
+    voiceFileName: firstQueryValue(rawBody.voiceFileName) ?? firstQueryValue(rawBody.voice_file_name)
   }
 }
 
@@ -144,7 +187,7 @@ const createStorySchema = z
   .object({
     title: z.string().trim().max(200),
     /** Left column on scenario cards: setting / narrative (plain text). */
-    scenarioStory: z.string().max(12000),
+    scenarioStory: z.string().max(8000),
     /** Right column: dialogue and stage direction (mini-markup: `"…"`, `**…**`, `*…*`). */
     scenarioChat: z.string().max(12000),
     characterId: z.string().min(1),
@@ -152,17 +195,23 @@ const createStorySchema = z
     /** Omit or `PUBLISHED` = publish rules; `DRAFT` = save without listing publicly. */
     publicationStatus: z.enum(['DRAFT', 'PUBLISHED']).optional(),
     isPublic: z.boolean().optional(),
-    promptDescription: z.string().max(12000).optional(),
-    personality: z.string().max(12000).optional(),
-    scenario: z.string().max(12000).optional(),
+    promptDescription: z.string().max(5000).optional(),
+    personality: z.string().max(8000).optional(),
+    scenario: z.string().max(8000).optional(),
     firstMessage: z.string().max(50000).optional(),
-    exampleDialogs: z.string().max(12000).optional()
+    exampleDialogs: z.string().max(12000).optional(),
+    voiceFileUrl: z.string().url().optional(),
+    voiceFileName: z.string().trim().max(255).optional()
   })
   .strict()
   .superRefine((data, ctx) => {
     const title = data.title.trim()
+    const description = (data.promptDescription ?? '').trim()
+    const personality = (data.personality ?? '').trim()
     const story = data.scenarioStory.trim()
+    const scenario = (data.scenario ?? data.scenarioStory).trim()
     const chat = data.scenarioChat.trim()
+    const firstMessage = (data.firstMessage ?? '').trim()
     const effectivePublication = data.publicationStatus ?? (data.isPublic === false ? 'DRAFT' : 'PUBLISHED')
     const isDraft = effectivePublication === 'DRAFT'
     const combined = combineScenarioFields(data.scenarioStory, data.scenarioChat)
@@ -178,6 +227,18 @@ const createStorySchema = z
     if (isDraft) {
       if (title.length < 1) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Title is required.', path: ['title'] })
+      }
+      if (description.length < 1) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Description is required.', path: ['promptDescription'] })
+      }
+      if (personality.length < 1) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Personality is required.', path: ['personality'] })
+      }
+      if (scenario.length < 1) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Scenario is required.', path: ['scenarioStory'] })
+      }
+      if (firstMessage.length < 1) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'First message is required.', path: ['firstMessage'] })
       }
       if (story.length < 1 && chat.length < 1) {
         ctx.addIssue({
@@ -201,38 +262,36 @@ const createStorySchema = z
           path: ['scenarioStory']
         })
       }
-      if (chat.length < 10) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Chat & explanation must be at least 10 characters.',
-          path: ['scenarioChat']
-        })
+      if (description.length < 1) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Description is required.', path: ['promptDescription'] })
       }
-    }
-
-    if (effectivePublication === 'PUBLISHED' && !data.scenarioType) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Story category is required to publish.',
-        path: ['scenarioType']
-      })
+      if (personality.length < 1) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Personality is required.', path: ['personality'] })
+      }
+      if (scenario.length < 1) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Scenario is required.', path: ['scenarioStory'] })
+      }
+      if (firstMessage.length < 1) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'First message is required.', path: ['firstMessage'] })
+      }
     }
   })
 
 const updateStorySchema = z
   .object({
     title: z.string().trim().max(200).optional(),
-    scenarioStory: z.string().trim().max(12000).optional(),
+    scenarioStory: z.string().trim().max(8000).optional(),
     scenarioChat: z.string().trim().max(12000).optional(),
-    characterId: z.string().min(1).optional(),
     scenarioType: storyScenarioTypeSchema.nullable().optional(),
     publicationStatus: z.enum(['DRAFT', 'PUBLISHED']).optional(),
     isPublic: z.boolean().optional(),
-    promptDescription: z.string().trim().max(12000).nullable().optional(),
-    personality: z.string().trim().max(12000).nullable().optional(),
-    scenario: z.string().trim().max(12000).nullable().optional(),
+    promptDescription: z.string().trim().max(5000).nullable().optional(),
+    personality: z.string().trim().max(8000).nullable().optional(),
+    scenario: z.string().trim().max(8000).nullable().optional(),
     firstMessage: z.string().trim().max(50000).nullable().optional(),
-    exampleDialogs: z.string().trim().max(12000).nullable().optional()
+    exampleDialogs: z.string().trim().max(12000).nullable().optional(),
+    voiceFileUrl: z.string().url().nullable().optional(),
+    voiceFileName: z.string().trim().max(255).nullable().optional()
   })
   .strict()
   .refine((payload) => Object.keys(payload).length > 0, {
@@ -296,6 +355,18 @@ const adminModerateStorySchema = z
     }
   })
 
+const adminSetStoryOriginSchema = z
+  .object({
+    origin: z.enum(['OFFICIAL', 'COMMUNITY'])
+  })
+  .strict()
+
+const adminSetDefaultStorySchema = z
+  .object({
+    storyId: z.string().min(1)
+  })
+  .strict()
+
 /** List view: no full body in JSON (only bodyPreview) to avoid leaking long private text in feed responses. */
 const storyListSelectFields = {
   id: true,
@@ -307,6 +378,7 @@ const storyListSelectFields = {
   exampleDialogs: true,
   scenarioStory: true,
   scenarioChat: true,
+  origin: true,
   publicationStatus: true,
   moderationStatus: true,
   moderationRejectReason: true,
@@ -314,6 +386,8 @@ const storyListSelectFields = {
   likesCount: true,
   characterId: true,
   scenarioType: true,
+  voiceFileUrl: true,
+  voiceFileName: true,
   createdAt: true,
   updatedAt: true,
   body: true,
@@ -328,7 +402,8 @@ const storyListSelectFields = {
       id: true,
       name: true,
       slug: true,
-      previewImageUrl: true
+      previewImageUrl: true,
+      defaultStoryId: true
     }
   }
 } as const
@@ -344,6 +419,7 @@ const storySelectFields = {
   scenarioStory: true,
   scenarioChat: true,
   body: true,
+  origin: true,
   publicationStatus: true,
   moderationStatus: true,
   moderationRejectReason: true,
@@ -351,6 +427,8 @@ const storySelectFields = {
   likesCount: true,
   characterId: true,
   scenarioType: true,
+  voiceFileUrl: true,
+  voiceFileName: true,
   createdAt: true,
   updatedAt: true,
   author: {
@@ -364,47 +442,23 @@ const storySelectFields = {
       id: true,
       name: true,
       slug: true,
-      previewImageUrl: true
+      previewImageUrl: true,
+      defaultStoryId: true
     }
   }
 } as const
 
-/** Public catalog: global feeds allow legacy `NONE`; character page is moderator-approved only. */
-const buildPublicCatalogWhere = (input: {
-  characterId?: string
-  searchTerm?: string
-}): Prisma.StoryPostWhereInput => {
-  const moderationClause: Prisma.StoryPostWhereInput = input.characterId
-    ? { moderationStatus: 'APPROVED' }
-    : {
-        OR: [{ moderationStatus: 'APPROVED' }, { moderationStatus: 'NONE' }]
-      }
-
-  const andParts: Prisma.StoryPostWhereInput[] = [{ publicationStatus: 'PUBLISHED' }, moderationClause]
-
-  if (input.characterId) {
-    andParts.push({ characterId: input.characterId })
+const storyVisibilitySelectFields = {
+  ...storySelectFields,
+  character: {
+    select: {
+      ...storySelectFields.character.select,
+      ownerId: true,
+      status: true,
+      visibility: true
+    }
   }
-
-  if (input.searchTerm?.trim()) {
-    const term = input.searchTerm.trim()
-    andParts.push({
-      OR: [
-        { title: { contains: term } },
-        { body: { contains: term } },
-        { promptDescription: { contains: term } },
-        { personality: { contains: term } },
-        { scenario: { contains: term } },
-        { firstMessage: { contains: term } },
-        { exampleDialogs: { contains: term } },
-        { scenarioStory: { contains: term } },
-        { scenarioChat: { contains: term } }
-      ]
-    })
-  }
-
-  return { AND: andParts }
-}
+} as const
 
 storyRoutes.get('/characters/:characterId/stories', optionalAuth, async (request, response, next) => {
   try {
@@ -422,7 +476,8 @@ storyRoutes.get('/characters/:characterId/stories', optionalAuth, async (request
       authUser
         ? {
             userId: authUser.userId,
-            role: authUser.role
+            role: authUser.role,
+            isEmailVerified: authUser.isEmailVerified
           }
         : null,
       {
@@ -430,8 +485,7 @@ storyRoutes.get('/characters/:characterId/stories', optionalAuth, async (request
         ownerId: character.ownerId,
         status: character.status,
         visibility: character.visibility,
-        isPatreonGated: character.isPatreonGated,
-        minimumTierCents: character.minimumTierCents
+        isPatreonGated: character.isPatreonGated
       }
     )
 
@@ -440,39 +494,51 @@ storyRoutes.get('/characters/:characterId/stories', optionalAuth, async (request
       return
     }
 
-    if (!access.canAccessPatreonGatedContent) {
-      sendApiError(response, 403, 'FORBIDDEN', 'Your membership tier does not allow this character.')
-      return
-    }
-
     const offset = decodeOffsetCursor(query.cursor)
     const orderBy: Prisma.StoryPostOrderByWithRelationInput[] =
       query.sort === 'likes'
         ? [{ likesCount: 'desc' }, { publishedAt: 'desc' }, { createdAt: 'desc' }]
         : [{ publishedAt: 'desc' }, { createdAt: 'desc' }]
+    const storyAvailability = await resolveCharacterStoryAvailability(character.id)
+    const defaultStoryId = storyAvailability.defaultStoryId
+    const catalogWhere = buildCharacterStoryCatalogWhere(
+      character.id,
+      authUser
+        ? {
+            userId: authUser.userId,
+            role: authUser.role
+          }
+        : null
+    )
+    const defaultStoryRow =
+      defaultStoryId && offset === 0
+        ? await prisma.storyPost.findFirst({
+            where: {
+              AND: [catalogWhere, { id: defaultStoryId }]
+            },
+            select: characterStoryCatalogSelectFields
+          })
+        : null
+    const normalOffset = defaultStoryId && offset > 0 ? offset - 1 : offset
+    const nonDefaultTake = defaultStoryRow ? query.limit : query.limit + 1
 
     const storyRows = await prisma.storyPost.findMany({
-      where: buildPublicCatalogWhere({
-        characterId: character.id
-      }),
-      skip: offset,
-      take: query.limit + 1,
+      where: defaultStoryId
+        ? {
+            AND: [catalogWhere, { id: { not: defaultStoryId } }]
+          }
+        : catalogWhere,
+      skip: normalOffset,
+      take: nonDefaultTake,
       orderBy: orderBy.length === 1 ? orderBy[0]! : orderBy,
-      select: {
-        id: true,
-        title: true,
-        promptDescription: true,
-        personality: true,
-        scenario: true,
-        firstMessage: true,
-        scenarioType: true,
-        publishedAt: true,
-        likesCount: true
-      }
+      select: characterStoryCatalogSelectFields
     })
 
-    const pageRows = storyRows.slice(0, query.limit)
-    const hasMore = storyRows.length > query.limit
+    const pageRows = defaultStoryRow
+      ? [defaultStoryRow, ...storyRows.slice(0, Math.max(0, query.limit - 1))]
+      : storyRows.slice(0, query.limit)
+    const nonDefaultPageCount = defaultStoryRow ? pageRows.length - 1 : pageRows.length
+    const hasMore = defaultStoryRow ? storyRows.length > nonDefaultPageCount : storyRows.length > query.limit
     const nextCursor = hasMore ? encodeOffsetCursor(offset + pageRows.length) : null
 
     let likedStoryIds = new Set<string>()
@@ -497,20 +563,15 @@ storyRoutes.get('/characters/:characterId/stories', optionalAuth, async (request
         character: {
           id: character.id,
           slug: character.slug,
-          name: character.name
+          name: character.name,
+          default_story_id: defaultStoryId
         },
-        stories: pageRows.map((story) => ({
-          id: story.id,
-          title: story.title,
-          prompt_description: story.promptDescription,
-          personality: story.personality,
-          scenario: story.scenario,
-          first_message: story.firstMessage,
-          scenario_type: story.scenarioType,
-          published_at: story.publishedAt?.toISOString() ?? null,
-          likes_count: story.likesCount,
-          has_liked: likedStoryIds.has(story.id)
-        }))
+        stories: pageRows.map((story) =>
+          toCharacterStoryCatalogPayload(story, {
+            hasLiked: likedStoryIds.has(story.id),
+            isDefault: story.id === defaultStoryId
+          })
+        )
       },
       {
         page: {
@@ -592,7 +653,13 @@ storyRoutes.get('/stories', optionalAuth, async (request, response, next) => {
 
       where = { AND: mineParts }
     } else {
-      where = buildPublicCatalogWhere({
+      where = buildPublicStoryCatalogWhere({
+        actor: authUser
+          ? {
+              userId: authUser.userId,
+              role: authUser.role
+            }
+          : null,
         characterId: resolvedCharacterIdForFilter,
         searchTerm: query.search
       })
@@ -639,7 +706,7 @@ storyRoutes.get('/stories', optionalAuth, async (request, response, next) => {
       const isPublic = story.publicationStatus === 'PUBLISHED' && story.moderationStatus === 'APPROVED'
 
       const withPreview = {
-        ...orderStoryObject(rest),
+        ...orderStoryObject(addStoryDefaultMetadata(rest)),
         bodyPreview,
         // Phase-1 spec compatibility (`public_summary`, `is_public`).
         public_summary: bodyPreview,
@@ -729,10 +796,10 @@ storyRoutes.get('/admin/stories', requireAdmin, async (request, response, next) 
       const combined =
         combineScenarioFields(story.scenarioStory ?? '', story.scenarioChat ?? '').trim() || story.body
       const bodyPreview = combined.length > 400 ? `${combined.slice(0, 400)}...` : combined
-      const { body: _omit, characterId: _omitCharacterId, ...rest } = story
+      const { body: _omit, ...rest } = story
 
       return {
-        ...orderStoryObject(rest),
+        ...orderStoryObject(addStoryDefaultMetadata(rest)),
         bodyPreview
       }
     })
@@ -789,7 +856,7 @@ storyRoutes.get('/stories/:storyId', optionalAuth, async (request, response, nex
 
     const story = await prisma.storyPost.findUnique({
       where: { id: storyId },
-      select: storySelectFields
+      select: storyVisibilitySelectFields
     })
 
     if (!story) {
@@ -797,20 +864,30 @@ storyRoutes.get('/stories/:storyId', optionalAuth, async (request, response, nex
       return
     }
 
-    if (story.publicationStatus === 'DRAFT' && story.author.id !== authUser?.userId) {
+    const viewer = authUser
+      ? {
+          userId: authUser.userId,
+          role: authUser.role
+        }
+      : null
+
+    if (
+      !canReadStoryWithCharacterAsViewer(
+        {
+          authorId: story.author.id,
+          publicationStatus: story.publicationStatus,
+          moderationStatus: story.moderationStatus,
+          character: story.character
+        },
+        viewer
+      )
+    ) {
       response.status(404).json({ message: 'Story not found.' })
       return
     }
 
     const isAuthor = authUser?.userId === story.author.id
     const isAdminViewer = authUser?.role === 'ADMIN'
-
-    if (story.publicationStatus === 'PUBLISHED' && story.moderationStatus !== 'APPROVED') {
-      if (!isAuthor && !isAdminViewer) {
-        response.status(404).json({ message: 'Story not found.' })
-        return
-      }
-    }
 
     if (
       isAuthor &&
@@ -829,8 +906,17 @@ storyRoutes.get('/stories/:storyId', optionalAuth, async (request, response, nex
     }
 
     const showModerationMeta = Boolean(isAuthor || isAdminViewer)
+    const {
+      ownerId: _omitCharacterOwnerId,
+      status: _omitCharacterStatus,
+      visibility: _omitCharacterVisibility,
+      defaultStoryId: _omitCharacterDefaultStoryId,
+      ...responseCharacter
+    } = story.character
     const sanitizedStory = {
       ...story,
+      character: responseCharacter,
+      isDefault: Boolean(story.character.defaultStoryId && story.character.defaultStoryId === story.id),
       moderationRejectReason:
         showModerationMeta && story.moderationStatus === 'REJECTED' ? story.moderationRejectReason : null
     }
@@ -883,6 +969,21 @@ storyRoutes.post('/stories', requireAuth, async (request, response, next) => {
         : {}
     const payload = createStorySchema.parse(toPhase1CreatePayload(rawBody))
 
+    try {
+      assertSafeCharacterAssetUrls({
+        voiceFileUrl: payload.voiceFileUrl
+      })
+    } catch (error) {
+      if (error instanceof CharacterAssetUrlValidationError) {
+        response.status(400).json({
+          message: error.message,
+          code: error.code,
+          field: error.fieldKey
+        })
+        return
+      }
+      throw error
+    }
     const character = await prisma.character.findUnique({
       where: { id: payload.characterId },
       select: {
@@ -890,8 +991,7 @@ storyRoutes.post('/stories', requireAuth, async (request, response, next) => {
         ownerId: true,
         status: true,
         visibility: true,
-        isPatreonGated: true,
-        minimumTierCents: true
+        isPatreonGated: true
       }
     })
 
@@ -903,18 +1003,14 @@ storyRoutes.post('/stories', requireAuth, async (request, response, next) => {
     const characterAccess = await resolveCharacterAccess(
       {
         userId: authUser.userId,
-        role: authUser.role
+        role: authUser.role,
+        isEmailVerified: authUser.isEmailVerified
       },
       character
     )
 
     if (!characterAccess.canReadCharacter) {
       response.status(404).json({ message: 'Character not found.' })
-      return
-    }
-
-    if (!characterAccess.canAccessPatreonGatedContent) {
-      response.status(403).json({ message: 'Your membership tier does not allow this character.' })
       return
     }
 
@@ -929,9 +1025,11 @@ storyRoutes.post('/stories', requireAuth, async (request, response, next) => {
     const body = combineScenarioFields(scenarioStory, scenarioChat)
     const promptDescription = trimOrNull(payload.promptDescription) ?? trimOrNull(scenarioStory)
     const personality = trimOrNull(payload.personality)
-    const scenario = trimOrNull(payload.scenario) ?? trimOrNull(scenarioChat)
+    const scenario = trimOrNull(payload.scenario) ?? trimOrNull(scenarioStory)
     const firstMessage = trimOrNull(payload.firstMessage)
     const exampleDialogs = trimOrNull(payload.exampleDialogs)
+
+    await enqueueVoiceFileUrlProviderRegistration(payload.voiceFileUrl)
 
     const story = await prisma.storyPost.create({
       data: {
@@ -947,6 +1045,9 @@ storyRoutes.post('/stories', requireAuth, async (request, response, next) => {
         body,
         characterId: payload.characterId,
         scenarioType: payload.scenarioType ?? null,
+        voiceFileUrl: payload.voiceFileUrl ?? null,
+        voiceFileName: payload.voiceFileName ?? null,
+        origin: resolveStoryOriginForAuthor(authUser.role),
         publicationStatus,
         moderationStatus,
         moderationRejectReason: null,
@@ -955,11 +1056,23 @@ storyRoutes.post('/stories', requireAuth, async (request, response, next) => {
       select: storySelectFields
     })
 
+    if (story.publicationStatus === 'PUBLISHED' && story.moderationStatus === 'PENDING') {
+      const reviewQueueNotification = {
+        kind: 'story_submitted',
+        title: 'New story submitted for review',
+        body: `${story.title.trim()} — submitted by a creator and awaiting moderation.`,
+        href: '/admin/stories'
+      }
+
+      void notifyAdminsReviewQueueBestEffort(reviewQueueNotification)
+      void emailAdminsReviewQueue(reviewQueueNotification)
+    }
+
     const combined = combineScenarioFields(story.scenarioStory ?? '', story.scenarioChat ?? '').trim() || story.body
     const bodyPreview = combined.length > 280 ? `${combined.slice(0, 280)}...` : combined
     const isPublic = story.publicationStatus === 'PUBLISHED' && story.moderationStatus === 'APPROVED'
     const { characterId: _omitCharacterId, ...storyWithoutCharacterId } = story
-    const orderedStory = orderStoryObject(storyWithoutCharacterId)
+    const orderedStory = orderStoryObject(addStoryDefaultMetadata(storyWithoutCharacterId))
 
     response.status(201).json({
       data: {
@@ -989,6 +1102,21 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
         : {}
     const payload = updateStorySchema.parse(toPhase1UpdatePayload(rawBody))
 
+    try {
+      assertSafeCharacterAssetUrls({
+        voiceFileUrl: payload.voiceFileUrl
+      })
+    } catch (error) {
+      if (error instanceof CharacterAssetUrlValidationError) {
+        response.status(400).json({
+          message: error.message,
+          code: error.code,
+          field: error.fieldKey
+        })
+        return
+      }
+      throw error
+    }
     const existing = await prisma.storyPost.findUnique({
       where: { id: storyId },
       select: {
@@ -1007,7 +1135,9 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
         publicationStatus: true,
         publishedAt: true,
         moderationStatus: true,
-        moderationRejectReason: true
+        moderationRejectReason: true,
+        voiceFileUrl: true,
+        voiceFileName: true
       }
     })
 
@@ -1018,15 +1148,6 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
 
     if (existing.authorId !== authUser.userId && authUser.role !== 'ADMIN') {
       response.status(403).json({ message: 'You can only edit your own stories.' })
-      return
-    }
-
-    if (
-      existing.publicationStatus === 'PUBLISHED' &&
-      existing.moderationStatus === 'APPROVED' &&
-      authUser.role !== 'ADMIN'
-    ) {
-      response.status(403).json({ message: 'Approved live scenarios cannot be edited.' })
       return
     }
 
@@ -1070,9 +1191,9 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
     const mergedScenario = trimOrNull(
       payload.scenario !== undefined
         ? payload.scenario
-        : incomingScenarioChat !== undefined
-          ? incomingScenarioChat
-          : existing.scenario ?? existing.scenarioChat
+        : incomingScenarioStory !== undefined
+          ? incomingScenarioStory
+          : existing.scenario ?? existing.scenarioStory
     )
     const mergedFirstMessage =
       payload.firstMessage !== undefined ? trimOrNull(payload.firstMessage) : trimOrNull(existing.firstMessage)
@@ -1090,19 +1211,31 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
         response.status(400).json({ message: 'Story setup must be at least 30 characters to publish.' })
         return
       }
-      if (mergedChat.length < 10) {
-        response.status(400).json({ message: 'Chat & explanation must be at least 10 characters to publish.' })
-        return
-      }
     } else {
       if (nextTitle.length < 1) {
         response.status(400).json({ message: 'Title is required.' })
         return
       }
-      if (mergedStory.length < 1 && mergedChat.length < 1) {
-        response.status(400).json({ message: 'Add a story setup and/or chat preview.' })
-        return
-      }
+    }
+
+    if (!mergedPromptDescription) {
+      response.status(400).json({ message: 'Description is required.' })
+      return
+    }
+
+    if (!mergedPersonality) {
+      response.status(400).json({ message: 'Personality is required.' })
+      return
+    }
+
+    if (!mergedScenario) {
+      response.status(400).json({ message: 'Scenario is required.' })
+      return
+    }
+
+    if (!mergedFirstMessage) {
+      response.status(400).json({ message: 'First message is required.' })
+      return
     }
 
     if (nextBody.length > 20000) {
@@ -1110,25 +1243,7 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
       return
     }
 
-    if (payload.characterId) {
-      const character = await prisma.character.findUnique({
-        where: { id: payload.characterId },
-        select: { id: true, ownerId: true }
-      })
-
-      const allowedOwnerId = existing.authorId
-      const editorOwnsCharacter = Boolean(character && character.ownerId === authUser.userId)
-      const adminLinksAuthorCharacter =
-        authUser.role === 'ADMIN' && Boolean(character && character.ownerId === allowedOwnerId)
-
-      if (!character || (!editorOwnsCharacter && !adminLinksAuthorCharacter)) {
-        response.status(400).json({ message: 'Character not found or cannot be linked to this story.' })
-        return
-      }
-    }
-
-    const mergedCharacterId =
-      payload.characterId !== undefined ? payload.characterId : existing.characterId
+    const mergedCharacterId = existing.characterId
     const mergedScenarioType =
       payload.scenarioType !== undefined ? payload.scenarioType : existing.scenarioType ?? null
 
@@ -1142,6 +1257,8 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
     const existingExampleDialogs = trimOrNull(existing.exampleDialogs)
     const existingCharacterId = existing.characterId
     const existingScenarioType = existing.scenarioType ?? null
+    const existingVoiceFileUrl = existing.voiceFileUrl ?? null
+    const existingVoiceFileName = existing.voiceFileName ?? null
 
     const contentChanged =
       nextTitle !== existingTitleTrim ||
@@ -1153,27 +1270,26 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
       mergedFirstMessage !== existingFirstMessage ||
       mergedExampleDialogs !== existingExampleDialogs ||
       mergedCharacterId !== existingCharacterId ||
-      (mergedScenarioType ?? null) !== existingScenarioType
+      (mergedScenarioType ?? null) !== existingScenarioType ||
+      (payload.voiceFileUrl !== undefined && (payload.voiceFileUrl ?? null) !== existingVoiceFileUrl) ||
+      (payload.voiceFileName !== undefined && (payload.voiceFileName ?? null) !== existingVoiceFileName)
 
     const isOwnStory = existing.authorId === authUser.userId
     const adminEditsForeignStory = authUser.role === 'ADMIN' && !isOwnStory
-
-    if (nextPublication === 'PUBLISHED' && !mergedScenarioType) {
-      response.status(400).json({
-        message: 'Story category is required to publish.'
-      })
-      return
-    }
 
     const updateData: Record<string, unknown> = {}
 
     if (payload.title !== undefined) updateData.title = payload.title.trim()
     if (incomingScenarioStory !== undefined) {
       updateData.scenarioStory = mergedStory
-      updateData.promptDescription = mergedPromptDescription
     }
     if (incomingScenarioChat !== undefined) {
       updateData.scenarioChat = mergedChat
+    }
+    if (payload.promptDescription !== undefined || incomingScenarioStory !== undefined) {
+      updateData.promptDescription = mergedPromptDescription
+    }
+    if (payload.scenario !== undefined || incomingScenarioStory !== undefined) {
       updateData.scenario = mergedScenario
     }
     if (incomingScenarioStory !== undefined || incomingScenarioChat !== undefined) {
@@ -1182,8 +1298,9 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
     if (payload.personality !== undefined) updateData.personality = mergedPersonality
     if (payload.firstMessage !== undefined) updateData.firstMessage = mergedFirstMessage
     if (payload.exampleDialogs !== undefined) updateData.exampleDialogs = mergedExampleDialogs
-    if (payload.characterId !== undefined) updateData.characterId = payload.characterId
     if (payload.scenarioType !== undefined) updateData.scenarioType = payload.scenarioType
+    if (payload.voiceFileUrl !== undefined) updateData.voiceFileUrl = payload.voiceFileUrl
+    if (payload.voiceFileName !== undefined) updateData.voiceFileName = payload.voiceFileName
     const hasPublicationChangeInput = payload.publicationStatus !== undefined || payload.isPublic !== undefined
     if (hasPublicationChangeInput) {
       updateData.publicationStatus = nextPublication
@@ -1230,17 +1347,49 @@ storyRoutes.patch('/stories/:storyId', requireVerifiedEmail, async (request, res
       updateData.moderationRejectReason = null
     }
 
+    if (payload.voiceFileUrl !== undefined) {
+      await enqueueVoiceFileUrlProviderRegistration(payload.voiceFileUrl)
+    }
+
     const updated = await prisma.storyPost.update({
       where: { id: storyId },
       data: updateData,
       select: storySelectFields
     })
 
+    if (!isPlayableStory(updated)) {
+      await clearDefaultIfStoryBecameNonPlayable(updated.id)
+    }
+
+    if (
+      payload.voiceFileUrl !== undefined &&
+      existingVoiceFileUrl &&
+      existingVoiceFileUrl !== payload.voiceFileUrl
+    ) {
+      await tryDeleteTrustedUploadFile(existingVoiceFileUrl)
+    }
+
+    if (
+      updated.publicationStatus === 'PUBLISHED' &&
+      updated.moderationStatus === 'PENDING' &&
+      (existing.publicationStatus !== 'PUBLISHED' || existing.moderationStatus !== 'PENDING')
+    ) {
+      const reviewQueueNotification = {
+        kind: 'story_submitted',
+        title: 'Story submitted for review',
+        body: `${updated.title.trim()} needs admin moderation before it is public.`,
+        href: '/admin/stories'
+      }
+
+      void notifyAdminsReviewQueueBestEffort(reviewQueueNotification)
+      void emailAdminsReviewQueue(reviewQueueNotification)
+    }
+
     const combined = combineScenarioFields(updated.scenarioStory ?? '', updated.scenarioChat ?? '').trim() || updated.body
     const bodyPreview = combined.length > 280 ? `${combined.slice(0, 280)}...` : combined
     const isPublic = updated.publicationStatus === 'PUBLISHED' && updated.moderationStatus === 'APPROVED'
     const { characterId: _omitCharacterId, ...updatedWithoutCharacterId } = updated
-    const orderedStory = orderStoryObject(updatedWithoutCharacterId)
+    const orderedStory = orderStoryObject(addStoryDefaultMetadata(updatedWithoutCharacterId))
 
     response.json({
       data: {
@@ -1267,7 +1416,19 @@ storyRoutes.delete('/stories/:storyId', requireVerifiedEmail, async (request, re
 
     const existing = await prisma.storyPost.findUnique({
       where: { id: storyId },
-      select: { authorId: true }
+      select: {
+        authorId: true,
+        voiceFileUrl: true,
+        _count: {
+          select: {
+            chatSessions: true,
+            pendingTurns: true,
+            unityLaunchContexts: true,
+            likes: true,
+            defaultForCharacters: true
+          }
+        }
+      }
     })
 
     if (!existing) {
@@ -1280,7 +1441,21 @@ storyRoutes.delete('/stories/:storyId', requireVerifiedEmail, async (request, re
       return
     }
 
+    if (
+      existing._count.defaultForCharacters > 0 ||
+      existing._count.chatSessions > 0 ||
+      existing._count.pendingTurns > 0 ||
+      existing._count.unityLaunchContexts > 0 ||
+      existing._count.likes > 0
+    ) {
+      response.status(409).json({
+        message: 'Stories with defaults, likes, sessions, or runtime history cannot be deleted. Unpublish or moderate the story instead.'
+      })
+      return
+    }
+
     await prisma.storyPost.delete({ where: { id: storyId } })
+    await tryDeleteTrustedUploadFile(existing.voiceFileUrl)
 
     response.json({ message: 'Story deleted.' })
   } catch (error) {
@@ -1345,7 +1520,93 @@ storyRoutes.post('/admin/stories/:storyId/moderate', requireAdmin, async (reques
       select: storySelectFields
     })
 
+    await clearDefaultIfStoryBecameNonPlayable(storyId)
+
     response.json({ data: updated })
+  } catch (error) {
+    next(error)
+  }
+})
+
+storyRoutes.patch('/admin/stories/:storyId/origin', requireAdmin, async (request, response, next) => {
+  try {
+    const authUser = request.authUser
+
+    if (!authUser || authUser.role !== 'ADMIN') {
+      response.status(403).json({ message: 'Forbidden.' })
+      return
+    }
+
+    const { storyId } = storyParamsSchema.parse(request.params)
+    const payload = adminSetStoryOriginSchema.parse(request.body)
+
+    const updated = await prisma.storyPost.update({
+      where: { id: storyId },
+      data: { origin: payload.origin },
+      select: storySelectFields
+    })
+
+    response.json({ data: addStoryDefaultMetadata(updated) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+storyRoutes.put('/admin/characters/:characterId/default-story', requireAdmin, async (request, response, next) => {
+  try {
+    const authUser = request.authUser
+
+    if (!authUser || authUser.role !== 'ADMIN') {
+      response.status(403).json({ message: 'Forbidden.' })
+      return
+    }
+
+    const { characterId } = characterStoriesParamsSchema.parse(request.params)
+    const payload = adminSetDefaultStorySchema.parse(request.body)
+    const character = await prisma.character.findUnique({
+      where: { id: characterId },
+      select: { id: true }
+    })
+
+    if (!character) {
+      response.status(404).json({ message: 'Character not found.' })
+      return
+    }
+
+    const result = await setCharacterDefaultStory(characterId, payload.storyId)
+    if (!result.ok) {
+      response.status(result.status).json({ message: result.message })
+      return
+    }
+
+    response.json({ data: { characterId, defaultStoryId: result.defaultStoryId } })
+  } catch (error) {
+    next(error)
+  }
+})
+
+storyRoutes.delete('/admin/characters/:characterId/default-story', requireAdmin, async (request, response, next) => {
+  try {
+    const authUser = request.authUser
+
+    if (!authUser || authUser.role !== 'ADMIN') {
+      response.status(403).json({ message: 'Forbidden.' })
+      return
+    }
+
+    const { characterId } = characterStoriesParamsSchema.parse(request.params)
+    const character = await prisma.character.findUnique({
+      where: { id: characterId },
+      select: { id: true }
+    })
+
+    if (!character) {
+      response.status(404).json({ message: 'Character not found.' })
+      return
+    }
+
+    await clearCharacterDefaultStory(characterId)
+    response.json({ data: { characterId, defaultStoryId: null } })
   } catch (error) {
     next(error)
   }

@@ -7,22 +7,9 @@ import { type AdminOfficialVrmStatus } from '@/components/ui-elements/admin-offi
 import { deleteCharacter, listCharacters, type CharacterListRecord } from '@/lib/character-api'
 import { ADMIN_OVERVIEW_REFRESH_EVENT } from '@/lib/admin-overview-events'
 import { apiPost } from '@/lib/api-client'
+import { formatCompactCount } from '@/lib/format-compact-count'
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
-
-const formatCompactMetric = (value: number) => {
-  if (value >= 1_000_000) {
-    const formatted = (value / 1_000_000).toFixed(1)
-    return formatted.endsWith('.0') ? `${Math.round(value / 1_000_000)}M` : `${formatted}M`
-  }
-
-  if (value >= 1_000) {
-    const formatted = (value / 1_000).toFixed(1)
-    return formatted.endsWith('.0') ? `${Math.round(value / 1_000)}K` : `${formatted}K`
-  }
-
-  return String(value)
-}
 
 const formatReleaseDateLabel = (isoValue: string) => {
   const parsedMs = Date.parse(isoValue)
@@ -64,8 +51,8 @@ const toOfficialVrmRecord = (characterRecord: CharacterListRecord): AdminOfficia
     code: characterRecord.slug.toUpperCase(),
     name: characterRecord.name,
     tagline: taglineText.length > 0 ? taglineText : '—',
-    hearts: formatCompactMetric(characterRecord.heartsCount),
-    views: formatCompactMetric(characterRecord.viewsCount),
+    hearts: formatCompactCount(characterRecord.heartsCount),
+    messages: formatCompactCount(characterRecord.messageCount),
     status: mapCharacterStatusToPillStatus(characterRecord),
     releaseDate: formatReleaseDateLabel(characterRecord.createdAt),
     previewImageUrl: characterRecord.previewImageUrl

@@ -1,4 +1,5 @@
 import type { UserRole } from '@prisma/client'
+import type { GameAccessRequestContext } from '../lib/game-access'
 
 declare global {
   namespace Express {
@@ -12,6 +13,7 @@ declare global {
             sessionId: string
           }
         | undefined
+      gameAccessContext?: GameAccessRequestContext | undefined
     }
   }
 }

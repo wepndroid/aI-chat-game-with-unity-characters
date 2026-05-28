@@ -59,16 +59,20 @@ type RuntimeAdminSettingsResponse = {
       patreonClientId: string
       patreonClientSecret: string
       patreonRedirectUri: string
+      emailProvider: 'smtp' | 'mailgun'
       smtpHost: string
       smtpPort: number
       smtpUser: string
       smtpPass: string
       smtpFrom: string
+      mailgunDomain: string
+      mailgunApiKey: string
+      mailgunRegion: 'us' | 'eu'
     }
   }
 }
 
-type RuntimeAdminSettingsPatchPayload = RuntimeAdminSettingsResponse['data']
+type RuntimeAdminSettingsPatchPayload = Omit<RuntimeAdminSettingsResponse['data'], 'apiKeys'>
 
 const sectionClassName = 'mt-6 rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-4 py-5 sm:px-6'
 const labelClassName = 'text-xs font-semibold uppercase tracking-[0.08em] text-white/65'
@@ -131,11 +135,15 @@ const applyGlobalSettingsToForm = (
     setPatreonClientId: (v: string) => void
     setPatreonClientSecret: (v: string) => void
     setPatreonRedirectUri: (v: string) => void
+    setEmailProvider: (v: 'smtp' | 'mailgun') => void
     setSmtpHost: (v: string) => void
     setSmtpPort: (v: string) => void
     setSmtpUser: (v: string) => void
     setSmtpPass: (v: string) => void
     setSmtpFrom: (v: string) => void
+    setMailgunDomain: (v: string) => void
+    setMailgunApiKey: (v: string) => void
+    setMailgunRegion: (v: 'us' | 'eu') => void
   }
 ) => {
   setters.setMaxVrmSizeMb(String(settings.uploadLimits.maxVrmSizeMb))
@@ -174,11 +182,15 @@ const applyGlobalSettingsToForm = (
   setters.setPatreonClientId(settings.apiKeys.patreonClientId)
   setters.setPatreonClientSecret(settings.apiKeys.patreonClientSecret)
   setters.setPatreonRedirectUri(settings.apiKeys.patreonRedirectUri)
+  setters.setEmailProvider(settings.apiKeys.emailProvider)
   setters.setSmtpHost(settings.apiKeys.smtpHost)
   setters.setSmtpPort(String(settings.apiKeys.smtpPort))
   setters.setSmtpUser(settings.apiKeys.smtpUser)
   setters.setSmtpPass(settings.apiKeys.smtpPass)
   setters.setSmtpFrom(settings.apiKeys.smtpFrom)
+  setters.setMailgunDomain(settings.apiKeys.mailgunDomain)
+  setters.setMailgunApiKey(settings.apiKeys.mailgunApiKey)
+  setters.setMailgunRegion(settings.apiKeys.mailgunRegion)
 }
 
 const EyeIcon = ({ className = 'size-5' }: { className?: string }) => (
@@ -273,14 +285,19 @@ const GlobalSettingsPage = () => {
   const [patreonClientId, setPatreonClientId] = useState('')
   const [patreonClientSecret, setPatreonClientSecret] = useState('')
   const [patreonRedirectUri, setPatreonRedirectUri] = useState('')
+  const [emailProvider, setEmailProvider] = useState<'smtp' | 'mailgun'>('smtp')
   const [smtpHost, setSmtpHost] = useState('')
   const [smtpPort, setSmtpPort] = useState('587')
   const [smtpUser, setSmtpUser] = useState('')
   const [smtpPass, setSmtpPass] = useState('')
   const [smtpFrom, setSmtpFrom] = useState('')
+  const [mailgunDomain, setMailgunDomain] = useState('')
+  const [mailgunApiKey, setMailgunApiKey] = useState('')
+  const [mailgunRegion, setMailgunRegion] = useState<'us' | 'eu'>('us')
   const [showGoogleSecret, setShowGoogleSecret] = useState(false)
   const [showPatreonSecret, setShowPatreonSecret] = useState(false)
   const [showSmtpPass, setShowSmtpPass] = useState(false)
+  const [showMailgunApiKey, setShowMailgunApiKey] = useState(false)
 
   useEffect(() => {
     let isCancelled = false
@@ -327,11 +344,15 @@ const GlobalSettingsPage = () => {
           setPatreonClientId,
           setPatreonClientSecret,
           setPatreonRedirectUri,
+          setEmailProvider,
           setSmtpHost,
           setSmtpPort,
           setSmtpUser,
           setSmtpPass,
-          setSmtpFrom
+          setSmtpFrom,
+          setMailgunDomain,
+          setMailgunApiKey,
+          setMailgunRegion
         })
       } catch (error) {
         if (!isCancelled) setErrorMessage(error instanceof Error ? error.message : 'Failed to load global settings.')
@@ -396,19 +417,6 @@ const GlobalSettingsPage = () => {
             adminBypass: true,
             readOnlyMode: maintenanceReadOnlyMode,
             blockedRoutePrefixes: []
-          },
-          apiKeys: {
-            googleClientId: googleClientId.trim(),
-            googleClientSecret: googleClientSecret.trim(),
-            googleRedirectUri: googleRedirectUri.trim(),
-            patreonClientId: patreonClientId.trim(),
-            patreonClientSecret: patreonClientSecret.trim(),
-            patreonRedirectUri: patreonRedirectUri.trim(),
-            smtpHost: smtpHost.trim(),
-            smtpPort: Number(smtpPort),
-            smtpUser: smtpUser.trim(),
-            smtpPass: smtpPass.trim(),
-            smtpFrom: smtpFrom.trim()
           }
         }
         const saved = await apiPatch<RuntimeAdminSettingsResponse>('/admin/global-settings', payload)
@@ -451,11 +459,15 @@ const GlobalSettingsPage = () => {
           setPatreonClientId,
           setPatreonClientSecret,
           setPatreonRedirectUri,
+          setEmailProvider,
           setSmtpHost,
           setSmtpPort,
           setSmtpUser,
           setSmtpPass,
-          setSmtpFrom
+          setSmtpFrom,
+          setMailgunDomain,
+          setMailgunApiKey,
+          setMailgunRegion
         })
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Failed to save global settings.')
@@ -470,7 +482,7 @@ const GlobalSettingsPage = () => {
       <h1 className="font-[family-name:var(--font-heading)] text-[22px] font-normal leading-tight text-white sm:text-[26px] md:text-[29px] md:leading-none">
         Global Settings
       </h1>
-      <p className="mt-2 text-sm text-[#95a6c1]">Manage upload policy, request/session limits, feature switches, maintenance mode, and API keys.</p>
+      <p className="mt-2 text-sm text-[#95a6c1]">Manage upload policy, request/session limits, feature switches, maintenance mode, and credential status.</p>
       {isLoading ? <p className="mt-4 text-sm text-white/70">Loading settings...</p> : null}
       {errorMessage ? <p className="mt-4 rounded-md border border-rose-300/30 bg-rose-300/10 px-3 py-2 text-sm text-rose-100">{errorMessage}</p> : null}
       {successMessage ? <p className="mt-4 rounded-md border border-emerald-300/30 bg-emerald-300/10 px-3 py-2 text-sm text-emerald-100">{successMessage}</p> : null}
@@ -576,44 +588,75 @@ const GlobalSettingsPage = () => {
       </section>
 
       <section className={sectionClassName}>
-        <h2 className="font-[family-name:var(--font-heading)] text-[21px] font-normal leading-none text-white">API keys</h2>
-        <p className={hintClassName}>Leave secret fields blank to keep existing value.</p>
+        <h2 className="font-[family-name:var(--font-heading)] text-[21px] font-normal leading-none text-white">Credential status</h2>
+        <p className={hintClassName}>Credentials are managed through the server environment. This page only shows masked current values.</p>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label><span className={labelClassName}>Google client ID</span><input className={inputClassName} value={googleClientId} onChange={(event) => setGoogleClientId(event.target.value)} /></label>
-          <label><span className={labelClassName}>Google redirect URI</span><input className={inputClassName} value={googleRedirectUri} onChange={(event) => setGoogleRedirectUri(event.target.value)} /></label>
+          <label><span className={labelClassName}>Google client ID</span><input className={inputClassName} value={googleClientId} onChange={(event) => setGoogleClientId(event.target.value)} disabled /></label>
+          <label><span className={labelClassName}>Google redirect URI</span><input className={inputClassName} value={googleRedirectUri} onChange={(event) => setGoogleRedirectUri(event.target.value)} disabled /></label>
           <SecretField
-            label="Google client secret (replace)"
+            label="Google client secret"
             value={googleClientSecret}
             onChange={setGoogleClientSecret}
             visible={showGoogleSecret}
             onToggleVisible={() => setShowGoogleSecret((previous) => !previous)}
-            disabled={!isEditing || isLoading || isSaving}
+            disabled
           />
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label><span className={labelClassName}>Patreon client ID</span><input className={inputClassName} value={patreonClientId} onChange={(event) => setPatreonClientId(event.target.value)} /></label>
-          <label><span className={labelClassName}>Patreon redirect URI</span><input className={inputClassName} value={patreonRedirectUri} onChange={(event) => setPatreonRedirectUri(event.target.value)} /></label>
+          <label><span className={labelClassName}>Patreon client ID</span><input className={inputClassName} value={patreonClientId} onChange={(event) => setPatreonClientId(event.target.value)} disabled /></label>
+          <label><span className={labelClassName}>Patreon redirect URI</span><input className={inputClassName} value={patreonRedirectUri} onChange={(event) => setPatreonRedirectUri(event.target.value)} disabled /></label>
           <SecretField
-            label="Patreon client secret (replace)"
+            label="Patreon client secret"
             value={patreonClientSecret}
             onChange={setPatreonClientSecret}
             visible={showPatreonSecret}
             onToggleVisible={() => setShowPatreonSecret((previous) => !previous)}
-            disabled={!isEditing || isLoading || isSaving}
+            disabled
           />
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label><span className={labelClassName}>SMTP host</span><input className={inputClassName} value={smtpHost} onChange={(event) => setSmtpHost(event.target.value)} /></label>
-          <label><span className={labelClassName}>SMTP port</span><input className={inputClassName} value={smtpPort} onChange={(event) => setSmtpPort(event.target.value)} /></label>
-          <label><span className={labelClassName}>SMTP user</span><input className={inputClassName} value={smtpUser} onChange={(event) => setSmtpUser(event.target.value)} /></label>
-          <label><span className={labelClassName}>SMTP from</span><input className={inputClassName} value={smtpFrom} onChange={(event) => setSmtpFrom(event.target.value)} /></label>
+          <label>
+            <span className={labelClassName}>Email provider</span>
+            <select className={inputClassName} value={emailProvider} onChange={(event) => setEmailProvider(event.target.value as 'smtp' | 'mailgun')} disabled>
+              <option value="mailgun">Mailgun API</option>
+              <option value="smtp">SMTP</option>
+            </select>
+          </label>
+          <label>
+            <span className={labelClassName}>From address</span>
+            <input className={inputClassName} value={smtpFrom} onChange={(event) => setSmtpFrom(event.target.value)} disabled />
+            <p className={hintClassName}>Used by both SMTP and Mailgun sends.</p>
+          </label>
+        </div>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label><span className={labelClassName}>Mailgun domain</span><input className={inputClassName} value={mailgunDomain} onChange={(event) => setMailgunDomain(event.target.value)} placeholder="mg.yourdomain.com" disabled /></label>
+          <label>
+            <span className={labelClassName}>Mailgun region</span>
+            <select className={inputClassName} value={mailgunRegion} onChange={(event) => setMailgunRegion(event.target.value as 'us' | 'eu')} disabled>
+              <option value="us">US</option>
+              <option value="eu">EU</option>
+            </select>
+          </label>
           <SecretField
-            label="SMTP password (replace)"
+            label="Mailgun API key"
+            value={mailgunApiKey}
+            onChange={setMailgunApiKey}
+            visible={showMailgunApiKey}
+            onToggleVisible={() => setShowMailgunApiKey((previous) => !previous)}
+            disabled
+          />
+        </div>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label><span className={labelClassName}>SMTP host</span><input className={inputClassName} value={smtpHost} onChange={(event) => setSmtpHost(event.target.value)} disabled /></label>
+          <label><span className={labelClassName}>SMTP port</span><input className={inputClassName} value={smtpPort} onChange={(event) => setSmtpPort(event.target.value)} disabled /></label>
+          <label><span className={labelClassName}>SMTP user</span><input className={inputClassName} value={smtpUser} onChange={(event) => setSmtpUser(event.target.value)} disabled /></label>
+          <SecretField
+            label="SMTP password"
             value={smtpPass}
             onChange={setSmtpPass}
             visible={showSmtpPass}
             onToggleVisible={() => setShowSmtpPass((previous) => !previous)}
-            disabled={!isEditing || isLoading || isSaving}
+            disabled
           />
         </div>
       </section>

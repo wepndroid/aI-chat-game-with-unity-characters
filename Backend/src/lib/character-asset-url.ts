@@ -136,7 +136,14 @@ const isTrustedSelfHostedAssetUrl = (rawUrl: string) => {
   }
 }
 
-type CharacterAssetUrlFieldKey = 'vroidFileUrl' | 'poseFileUrl' | 'previewImageUrl'
+type CharacterAssetUrlFieldKey =
+  | 'vroidFileUrl'
+  | 'poseFileUrl'
+  | 'previewImageUrl'
+  | 'voiceFileUrl'
+  | 'thumbnailReferenceImageUrl'
+  | 'cardThumbnailDesktopUrl'
+  | 'cardThumbnailMobileUrl'
 
 class CharacterAssetUrlValidationError extends Error {
   readonly code = 'INVALID_CHARACTER_ASSET_URL' as const
@@ -206,6 +213,13 @@ const assertSafeAssetUrl = (
     )
   }
 
+  if (fieldKey === 'voiceFileUrl') {
+    throw new CharacterAssetUrlValidationError(
+      fieldKey,
+      'Voice file URL must use a SecretWaifu-hosted upload. External WAV URLs cannot be used for runtime TTS.'
+    )
+  }
+
   const parsedUrl = new URL(normalizedUrl)
   const normalizedPath = parsedUrl.pathname.toLowerCase()
 
@@ -217,10 +231,37 @@ const assertSafeAssetUrl = (
   }
 }
 
-const assertSafeCharacterAssetUrls = (payload: { vroidFileUrl?: string | null; poseFileUrl?: string | null; previewImageUrl?: string | null }) => {
+const assertSafeCharacterAssetUrls = (payload: {
+  vroidFileUrl?: string | null
+  poseFileUrl?: string | null
+  previewImageUrl?: string | null
+  voiceFileUrl?: string | null
+  thumbnailReferenceImageUrl?: string | null
+  cardThumbnailDesktopUrl?: string | null
+  cardThumbnailMobileUrl?: string | null
+}) => {
   assertSafeAssetUrl(payload.vroidFileUrl, 'vroidFileUrl', 'VRM file URL', ['.vrm'])
   assertSafeAssetUrl(payload.poseFileUrl, 'poseFileUrl', 'Pose file URL', ['.vrma'])
   assertSafeAssetUrl(payload.previewImageUrl, 'previewImageUrl', 'Preview image URL', ['.png', '.jpg', '.jpeg', '.webp', '.gif'])
+  assertSafeAssetUrl(payload.voiceFileUrl, 'voiceFileUrl', 'Voice file URL', ['.wav'])
+  assertSafeAssetUrl(
+    payload.thumbnailReferenceImageUrl,
+    'thumbnailReferenceImageUrl',
+    'Thumbnail reference image URL',
+    ['.png', '.jpg', '.jpeg', '.webp', '.gif']
+  )
+  assertSafeAssetUrl(
+    payload.cardThumbnailDesktopUrl,
+    'cardThumbnailDesktopUrl',
+    'Desktop card thumbnail URL',
+    ['.png', '.jpg', '.jpeg', '.webp', '.gif']
+  )
+  assertSafeAssetUrl(
+    payload.cardThumbnailMobileUrl,
+    'cardThumbnailMobileUrl',
+    'Mobile card thumbnail URL',
+    ['.png', '.jpg', '.jpeg', '.webp', '.gif']
+  )
 }
 
 export {

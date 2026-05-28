@@ -1,5 +1,4 @@
-import { createHash, createHmac } from 'node:crypto'
-import { EntitlementStatus } from '@prisma/client'
+import { createHash } from 'node:crypto'
 import { Router } from 'express'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma'
@@ -21,71 +20,23 @@ const legacyVerifyCodeQuerySchema = z.object({
   code: z.string().trim().min(1)
 })
 
-const mapEntitlementTierCodeToCents = (tierCode: string) => {
-  if (tierCode === 'secretwaifu_access') {
-    return 1650
-  }
-
-  if (tierCode === 'just_models') {
-    return 900
-  }
-
-  const explicitAmountMatch = tierCode.match(/(\d{3,5})/)
-
-  if (!explicitAmountMatch) {
-    return 0
-  }
-
-  const parsedTierCents = Number.parseInt(explicitAmountMatch[1], 10)
-
-  if (Number.isNaN(parsedTierCents)) {
-    return 0
-  }
-
-  return parsedTierCents
-}
-
-const resolveBestPatreonTierCents = (payload: { accountTierCents: number; entitlementTierCodes: string[] }) => {
-  const entitlementTierCents = payload.entitlementTierCodes.reduce((highestTierCents, tierCode) => {
-    return Math.max(highestTierCents, mapEntitlementTierCodeToCents(tierCode))
-  }, 0)
-
-  return Math.max(payload.accountTierCents, entitlementTierCents)
-}
-
-const resolveLegacyTier = (payload: { legacyTier: number | null; isPatreonGated: boolean; minimumTierCents: number | null }) => {
+const resolveLegacyTier = (payload: { legacyTier: number | null; isPatreonGated: boolean }) => {
   if (typeof payload.legacyTier === 'number') {
     return payload.legacyTier
   }
 
-  if (!payload.isPatreonGated) {
-    return 0
-  }
-
-  const minimumTierCents = payload.minimumTierCents ?? 0
-
-  if (minimumTierCents >= 1500) {
-    return 2
-  }
-
-  return 1
+  return payload.isPatreonGated ? 1 : 0
 }
 
 const resolveLegacyHeyWaifu = (payload: {
   legacyHeyWaifu: number | null
   isPatreonGated: boolean
-  minimumTierCents: number | null
 }) => {
   if (typeof payload.legacyHeyWaifu === 'number') {
     return payload.legacyHeyWaifu
   }
 
-  if (!payload.isPatreonGated) {
-    return 0
-  }
-
-  const minimumTierCents = payload.minimumTierCents ?? 0
-  return minimumTierCents >= 1500 ? 1 : 0
+  return payload.isPatreonGated ? 1 : 0
 }
 
 const tryExtractFileHashFromVroidUrl = (vroidFileUrl: string | null) => {
@@ -132,46 +83,6 @@ const resolveLegacyFileHash = (payload: { legacyFileHash: string | null; name: s
 const normalizeLookupValue = (value: string) => value.trim().toLowerCase()
 const normalizeLookupKey = (value: string) => normalizeLookupValue(value).replace(/[^a-z0-9]/g, '')
 
-const parseLegacyCodeOverrides = () => {
-  const rawValue = process.env.LEGACY_VERIFY_CODE_OVERRIDES?.trim()
-
-  if (!rawValue) {
-    return new Map<string, number>()
-  }
-
-  const entries = rawValue
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-
-  const output = new Map<string, number>()
-
-  for (const entry of entries) {
-    const [code, cents] = entry.split(':').map((value) => value.trim())
-
-    if (!code || !cents) {
-      continue
-    }
-
-    const parsedCents = Number.parseInt(cents, 10)
-
-    if (Number.isNaN(parsedCents) || parsedCents <= 0) {
-      continue
-    }
-
-    output.set(code.toLowerCase(), parsedCents)
-  }
-
-  return output
-}
-
-const buildLegacyAccessCode = (userId: string) => {
-  const secretKey = process.env.LEGACY_CODE_SECRET?.trim() || process.env.PATREON_CLIENT_SECRET?.trim() || 'secretwaifu-legacy-code'
-  const encodedDigest = createHmac('sha256', secretKey).update(userId).digest('base64url')
-  const compactCode = encodedDigest.replace(/[^a-zA-Z0-9]/g, '')
-  return compactCode.slice(0, 6).toUpperCase()
-}
-
 legacyRoutes.get(['/modeldownload/models.json', '/modeldownload/modes.json'], async (_request, response, next) => {
   try {
     const characterList = await prisma.character.findMany({
@@ -187,8 +98,7 @@ legacyRoutes.get(['/modeldownload/models.json', '/modeldownload/modes.json'], as
         legacyFileHash: true,
         legacyTier: true,
         legacyHeyWaifu: true,
-        isPatreonGated: true,
-        minimumTierCents: true
+        isPatreonGated: true
       }
     })
 
@@ -201,13 +111,11 @@ legacyRoutes.get(['/modeldownload/models.json', '/modeldownload/modes.json'], as
       }),
       Tier: resolveLegacyTier({
         legacyTier: character.legacyTier,
-        isPatreonGated: character.isPatreonGated,
-        minimumTierCents: character.minimumTierCents
+        isPatreonGated: character.isPatreonGated
       }),
       heywaifu: resolveLegacyHeyWaifu({
         legacyHeyWaifu: character.legacyHeyWaifu,
-        isPatreonGated: character.isPatreonGated,
-        minimumTierCents: character.minimumTierCents
+        isPatreonGated: character.isPatreonGated
       })
     }))
 
@@ -233,10 +141,9 @@ legacyRoutes.get('/wp-json/characters/v1/info', async (request, response, next) 
         name: true,
         fullName: true,
         description: true,
-        characterCard: {
+        defaultStory: {
           select: {
-            fullName: true,
-            description: true,
+            promptDescription: true,
             personality: true,
             scenario: true,
             firstMessage: true,
@@ -269,17 +176,17 @@ legacyRoutes.get('/wp-json/characters/v1/info', async (request, response, next) 
       return
     }
 
-    const persona = matchedCharacter.characterCard
+    const defaultStory = matchedCharacter.defaultStory
 
     response.json({
       id: matchedCharacter.id,
       name: matchedCharacter.name,
-      fullname: persona?.fullName ?? matchedCharacter.fullName ?? '',
-      description: persona?.description ?? matchedCharacter.description ?? '',
-      personality: persona?.personality ?? '',
-      scenario: persona?.scenario ?? '',
-      first_message: persona?.firstMessage ?? '',
-      example_dialogs: persona?.exampleDialogs ?? ''
+      fullname: matchedCharacter.fullName ?? '',
+      description: defaultStory?.promptDescription ?? matchedCharacter.description ?? '',
+      personality: defaultStory?.personality ?? '',
+      scenario: defaultStory?.scenario ?? '',
+      first_message: defaultStory?.firstMessage ?? '',
+      example_dialogs: defaultStory?.exampleDialogs ?? ''
     })
   } catch (error) {
     next(error)

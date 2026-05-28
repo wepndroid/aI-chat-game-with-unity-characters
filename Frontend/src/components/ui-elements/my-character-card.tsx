@@ -1,7 +1,7 @@
-import Image from 'next/image'
 import Link from 'next/link'
 import ModerationStatusChip, { type CharacterModerationStatus } from '@/components/ui-elements/moderation-status-chip'
 import { buildAiGirlfriendRouteHref } from '@/lib/ai-girlfriend-route'
+import { formatCompactCount } from '@/lib/format-compact-count'
 
 type MyCharacterCardRecord = {
   id: string
@@ -9,11 +9,14 @@ type MyCharacterCardRecord = {
   title: string
   summary: string
   moderationStatus: CharacterModerationStatus
+  visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED'
   moderationRejectReason?: string | null
   updatedAtLabel: string
-  views: number
+  messages: number
   hearts: number
   previewImageUrl?: string | null
+  cardThumbnailDesktopUrl?: string | null
+  cardThumbnailMobileUrl?: string | null
 }
 
 type MyCharacterCardProps = {
@@ -34,20 +37,29 @@ const MyCharacterCard = ({ characterRecord, onSubmitForReview, adminMode = false
   const isPendingReview = characterRecord.moderationStatus === 'pending'
   const isApproved = characterRecord.moderationStatus === 'approved'
   const showRejectReason = characterRecord.moderationStatus === 'rejected' && Boolean(characterRecord.moderationRejectReason?.trim())
+  const responsiveImageSrc =
+    characterRecord.cardThumbnailMobileUrl ?? characterRecord.cardThumbnailDesktopUrl ?? characterRecord.previewImageUrl ?? null
+  const visibilityLabelMap = {
+    PUBLIC: 'Public',
+    PRIVATE: 'Private',
+    UNLISTED: 'Hidden'
+  } satisfies Record<MyCharacterCardRecord['visibility'], string>
+  const openPageLabel = characterRecord.visibility === 'PUBLIC' ? 'Open Public Page' : 'Open Character Page'
 
   return (
     <article className="overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(25,18,20,0.98),rgba(16,14,16,0.96))] shadow-[0_18px_40px_rgba(0,0,0,0.35)]">
       <div className="grid gap-0 md:grid-cols-[200px_minmax(0,1fr)]">
         <div className="relative aspect-[4/5] border-b border-white/10 bg-[#0d0a0b] md:aspect-auto md:min-h-full md:border-b-0 md:border-r">
-          {characterRecord.previewImageUrl ? (
+          {responsiveImageSrc ? (
             <>
-              <Image
-                src={characterRecord.previewImageUrl}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={responsiveImageSrc}
+                width={360}
+                height={620}
                 alt={`${characterRecord.title} thumbnail`}
-                fill
-                unoptimized
-                sizes="(min-width: 1024px) 200px, (min-width: 768px) 200px, 100vw"
-                className="object-cover object-center"
+                loading="lazy"
+                className="h-full w-full object-cover object-center"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/10 to-transparent" />
             </>
@@ -70,21 +82,24 @@ const MyCharacterCard = ({ characterRecord, onSubmitForReview, adminMode = false
                   {characterRecord.title}
                 </h3>
                 <ModerationStatusChip status={characterRecord.moderationStatus} mode={adminMode ? 'admin' : 'default'} />
+                <span className="inline-flex rounded-full border border-white/15 bg-white/[0.04] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/70">
+                  {visibilityLabelMap[characterRecord.visibility]}
+                </span>
               </div>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-white/78">{characterRecord.summary}</p>
             </div>
 
             <div className="grid min-w-[220px] grid-cols-2 gap-3">
               <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">Views</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">Messages</p>
                 <p className="mt-2 font-[family-name:var(--font-heading)] text-2xl font-normal italic leading-none text-white">
-                  {characterRecord.views.toLocaleString()}
+                  {formatCompactCount(characterRecord.messages)}
                 </p>
               </div>
               <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">Hearts</p>
                 <p className="mt-2 font-[family-name:var(--font-heading)] text-2xl font-normal italic leading-none text-white">
-                  {characterRecord.hearts.toLocaleString()}
+                  {formatCompactCount(characterRecord.hearts)}
                 </p>
               </div>
             </div>
@@ -126,9 +141,9 @@ const MyCharacterCard = ({ characterRecord, onSubmitForReview, adminMode = false
               <Link
                 href={buildAiGirlfriendRouteHref(characterRecord.title, characterRecord.id)}
                 className="inline-flex h-10 items-center justify-center rounded-md border border-emerald-300/35 bg-emerald-200/10 px-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-emerald-100 transition hover:border-emerald-200"
-                aria-label={`Open public page for ${characterRecord.title}`}
+                aria-label={`Open character page for ${characterRecord.title}`}
               >
-                Open Public Page
+                {openPageLabel}
               </Link>
             ) : null}
           </div>

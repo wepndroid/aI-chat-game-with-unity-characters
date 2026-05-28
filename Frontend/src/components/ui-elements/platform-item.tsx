@@ -115,7 +115,7 @@ const PlatformIcon = ({ iconType }: PlatformIconProps) => {
 const PlatformItem = ({ label, iconType, href, ariaLabel, onLinkClick }: PlatformItemProps) => {
   const isExternal = href.startsWith('http://') || href.startsWith('https://')
   const tileClassName =
-    'group relative flex h-[46px] w-[52px] items-center justify-center overflow-hidden rounded-[14px] border-[2px] border-white/80 bg-black/12 transition group-hover:border-ember-300/90 group-hover:bg-black/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember-300 sm:h-[35px] sm:w-[39px] sm:rounded-[10px]'
+    'group relative flex h-[40px] w-[46px] items-center justify-center overflow-hidden rounded-[12px] border border-white/55 bg-black/18 transition group-hover:border-ember-300/80 group-hover:bg-black/28 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember-300 sm:h-[35px] sm:w-[39px] sm:rounded-[10px]'
 
   const inner = (
     <>
@@ -127,13 +127,13 @@ const PlatformItem = ({ label, iconType, href, ariaLabel, onLinkClick }: Platfor
   )
 
   const wrapperClassName =
-    'group flex min-w-[52px] flex-col items-center rounded-xl p-1 transition hover:text-ember-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember-300 sm:min-w-[39px] sm:rounded-md sm:p-0.5'
+    'group flex min-w-[46px] flex-col items-center rounded-xl p-1 transition hover:text-ember-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember-300 sm:min-w-[39px] sm:rounded-md sm:p-0.5'
 
   if (isExternal) {
     return (
       <a href={href} target="_blank" rel="noreferrer" className={wrapperClassName} aria-label={ariaLabel}>
         <span className={tileClassName}>{inner}</span>
-        <span className="mt-1 block text-center text-[12px] font-medium uppercase tracking-[0.08em] text-white/78 group-hover:underline sm:mt-0.5 sm:text-[10px] sm:font-normal sm:text-white/70">{label}</span>
+        <span className="mt-1 block text-center text-[10px] font-medium uppercase tracking-[0.08em] text-white/72 group-hover:underline sm:mt-0.5 sm:text-[10px] sm:font-normal sm:text-white/70">{label}</span>
       </a>
     )
   }
@@ -141,7 +141,7 @@ const PlatformItem = ({ label, iconType, href, ariaLabel, onLinkClick }: Platfor
   return (
     <Link href={href} onClick={onLinkClick} className={wrapperClassName} aria-label={ariaLabel}>
       <span className={tileClassName}>{inner}</span>
-      <span className="mt-1 block text-center text-[12px] font-medium uppercase tracking-[0.08em] text-white/78 group-hover:underline sm:mt-0.5 sm:text-[10px] sm:font-normal sm:text-white/70">{label}</span>
+      <span className="mt-1 block text-center text-[10px] font-medium uppercase tracking-[0.08em] text-white/72 group-hover:underline sm:mt-0.5 sm:text-[10px] sm:font-normal sm:text-white/70">{label}</span>
     </Link>
   )
 }

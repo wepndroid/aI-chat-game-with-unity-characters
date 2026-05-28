@@ -2,12 +2,16 @@ node_modules
 # Keep environment variables out of version control
 .env*
 !.env.example
+!.env.migration.example
 
 dist
 uploads
+.migration-lab/
 *.db
 *.db-*
 *.db.bak*
 prisma/**/*.db
 prisma/**/*.db-*
 prisma/**/*.bak*
+/tmp_pdf_pages
+Product-Source-Of-Truth-Audit-Log.md

@@ -1,11 +1,23 @@
 import { Router } from 'express'
 import { z } from 'zod'
-import { ensureLandingPageSignupClickColumn } from '../lib/landing-page-visit-compat'
 import {
   trackLandingPageSignupClick,
   trackLandingPageVisit
-} from '../lib/landing-page-attribution'
+} from '../services/landing/landing-page-attribution-service'
+import { normalizeLandingPageKey, normalizeLandingPagePath } from '../services/landing/landing-page-paths'
+import {
+  getLandingPagePerformanceReport,
+  getLandingPageStatsOverview,
+  getLandingPageTrafficReport
+} from '../services/landing/landing-page-analytics-read-model-service'
+import { listLandingPageAdminRows } from '../services/landing/landing-page-admin-row-service'
+import {
+  getDefaultHomepageSetting,
+  updateDefaultHomepageSetting
+} from '../services/landing/default-homepage-service'
+import { listLandingPageTrackingIssues } from '../services/landing/landing-page-tracking-issue-service'
 import { prisma } from '../lib/prisma'
+import { runPublicTrackingPersistence } from '../lib/public-tracking-persistence'
 import { requireAdmin } from '../middleware/auth-middleware'
 
 const landingPageRoutes = Router()
@@ -16,6 +28,7 @@ const publicTrackVisitSchema = z
     landingPageName: z.string().trim().min(1).max(120).optional(),
     variantKey: z.string().trim().min(1).max(80).optional(),
     variantName: z.string().trim().min(1).max(120).optional(),
+    shortUrlKey: z.string().trim().min(1).max(80).optional().nullable(),
     routePath: z.string().trim().min(1).max(255),
     source: z.string().trim().max(191).optional().nullable(),
     medium: z.string().trim().max(191).optional().nullable(),
@@ -23,7 +36,9 @@ const publicTrackVisitSchema = z
     content: z.string().trim().max(191).optional().nullable(),
     term: z.string().trim().max(191).optional().nullable(),
     landingUrl: z.string().trim().max(1000).optional().nullable(),
-    referrer: z.string().trim().max(1000).optional().nullable()
+    referrer: z.string().trim().max(1000).optional().nullable(),
+    gaClientId: z.string().trim().max(128).optional().nullable(),
+    gaSessionId: z.string().trim().max(128).optional().nullable()
   })
   .strict()
 
@@ -42,6 +57,7 @@ const adminCreateLandingPageSchema = z
         isControl: z.boolean().optional()
       })
       .strict()
+      .optional()
   })
   .strict()
 
@@ -79,112 +95,153 @@ const adminUpdateVariantSchema = z
   })
   .strict()
 
-const normalizeKey = (value: string) =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+const shortUrlTargetSchema = z
+  .object({
+    landingPageId: z.string().trim().min(1),
+    weight: z.number().int().min(1).max(10000).optional()
+  })
+  .strict()
 
-const normalizePath = (value: string) => {
-  const trimmed = value.trim()
-  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+const shortUrlUtmSchemaFields = {
+  utmSource: z.string().trim().max(191).nullable().optional(),
+  utmMedium: z.string().trim().max(191).nullable().optional(),
+  utmCampaign: z.string().trim().max(191).nullable().optional(),
+  utmContent: z.string().trim().max(191).nullable().optional(),
+  utmTerm: z.string().trim().max(191).nullable().optional()
 }
 
-const formatPercentage = (numerator: number, denominator: number) => {
-  if (denominator <= 0) {
-    return 0
-  }
+const updateDefaultHomepageSchema = z
+  .object({
+    landingPageId: z.string().trim().min(1).nullable()
+  })
+  .strict()
 
-  return Math.round((numerator / denominator) * 1000) / 10
+const adminCreateShortUrlSchema = z
+  .object({
+    key: z.string().trim().min(1).max(80),
+    name: z.string().trim().min(1).max(120),
+    description: z.string().trim().max(500).optional(),
+    isActive: z.boolean().optional(),
+    ...shortUrlUtmSchemaFields,
+    targets: z.array(shortUrlTargetSchema).min(1).max(20)
+  })
+  .strict()
+
+const adminUpdateShortUrlSchema = z
+  .object({
+    key: z.string().trim().min(1).max(80).optional(),
+    name: z.string().trim().min(1).max(120).optional(),
+    description: z.string().trim().max(500).nullable().optional(),
+    isActive: z.boolean().optional(),
+    ...shortUrlUtmSchemaFields,
+    targets: z.array(shortUrlTargetSchema).min(1).max(20).optional()
+  })
+  .strict()
+
+const normalizeKey = (value: string) => normalizeLandingPageKey(value, '')
+
+const normalizePath = (value: string) => normalizeLandingPagePath(value)
+
+const normalizeNullableText = (value: string | null | undefined) => value?.trim() || null
+
+type LandingPageVariantOptionRow = {
+  id: string
+  landingPageId: string
+  key: string
+  name: string
+  routePath: string
+  createdAt: Date | string
 }
 
-const formatDayKey = (value: Date) => value.toISOString().slice(0, 10)
+const listLandingPageOptionRows = async () => {
+  const landingPages = await listLandingPageAdminRows()
+  const variants = await prisma.$queryRaw<LandingPageVariantOptionRow[]>`
+    SELECT
+      "id",
+      "landingPageId",
+      "key",
+      "name",
+      "routePath",
+      "createdAt"
+    FROM "LandingPageVariant"
+    ORDER BY "createdAt" ASC, "id" ASC
+  `
+  const variantsByLandingPageId = new Map<string, Array<{
+    id: string
+    key: string
+    name: string
+    routePath: string
+  }>>()
 
-const buildDailyStats = (
-  visits: Array<{
-    firstVisitedAt: Date
-    visitorId: string
-    visitCount: number
-    signupClickedAt: Date | null
-    signupCompletedAt: Date | null
-    attributedUser?: {
-      patreonActiveAt: Date | null
-    } | null
-  }>
-) => {
-  const dayMap = new Map<
-    string,
-    {
-      date: string
-      visitors: Set<string>
-      visits: number
-      clicks: number
-      signups: number
-      patreonSales: number
-    }
-  >()
-
-  const ensureDayEntry = (dayKey: string) => {
-    const existingDay = dayMap.get(dayKey) ?? {
-      date: dayKey,
-      visitors: new Set<string>(),
-      visits: 0,
-      clicks: 0,
-      signups: 0,
-      patreonSales: 0
-    }
-
-    dayMap.set(dayKey, existingDay)
-    return existingDay
+  for (const variant of variants) {
+    const landingPageVariants = variantsByLandingPageId.get(variant.landingPageId) ?? []
+    landingPageVariants.push({
+      id: variant.id,
+      key: variant.key,
+      name: variant.name,
+      routePath: variant.routePath
+    })
+    variantsByLandingPageId.set(variant.landingPageId, landingPageVariants)
   }
 
-  for (const visit of visits) {
-    const dayKey = formatDayKey(visit.firstVisitedAt)
-    const existingDay = ensureDayEntry(dayKey)
+  return landingPages.map((landingPage) => ({
+    id: landingPage.id,
+    key: landingPage.key,
+    name: landingPage.name,
+    basePath: landingPage.basePath,
+    isActive: landingPage.isActive,
+    variants: variantsByLandingPageId.get(landingPage.id) ?? []
+  }))
+}
 
-    existingDay.visitors.add(visit.visitorId)
-    existingDay.visits += visit.visitCount
+const buildShortUrlUtmData = (payload: {
+  utmSource?: string | null
+  utmMedium?: string | null
+  utmCampaign?: string | null
+  utmContent?: string | null
+  utmTerm?: string | null
+}) => ({
+  ...(payload.utmSource !== undefined ? { utmSource: normalizeNullableText(payload.utmSource) } : {}),
+  ...(payload.utmMedium !== undefined ? { utmMedium: normalizeNullableText(payload.utmMedium) } : {}),
+  ...(payload.utmCampaign !== undefined ? { utmCampaign: normalizeNullableText(payload.utmCampaign) } : {}),
+  ...(payload.utmContent !== undefined ? { utmContent: normalizeNullableText(payload.utmContent) } : {}),
+  ...(payload.utmTerm !== undefined ? { utmTerm: normalizeNullableText(payload.utmTerm) } : {})
+})
 
-    if (visit.signupClickedAt) {
-      const clickDay = ensureDayEntry(formatDayKey(visit.signupClickedAt))
-      clickDay.clicks += 1
-    }
+const pickWeightedTarget = <T extends { weight: number }>(targets: T[]) => {
+  const totalWeight = targets.reduce((sum, target) => sum + target.weight, 0)
 
-    if (visit.signupCompletedAt) {
-      existingDay.signups += 1
-    }
-
-    if (visit.attributedUser?.patreonActiveAt) {
-      existingDay.patreonSales += 1
-    }
-
-    dayMap.set(dayKey, existingDay)
+  if (totalWeight <= 0) {
+    return targets[0] ?? null
   }
 
-  return [...dayMap.values()]
-    .sort((left, right) => left.date.localeCompare(right.date))
-    .map((dayEntry) => ({
-      date: dayEntry.date,
-      uniqueVisitors: dayEntry.visitors.size,
-      totalVisits: dayEntry.visits,
-      signupClicks: dayEntry.clicks,
-      signups: dayEntry.signups,
-      patreonSales: dayEntry.patreonSales,
-      clickThroughRate: formatPercentage(dayEntry.clicks, dayEntry.visitors.size),
-      signupConversionRate: formatPercentage(dayEntry.signups, dayEntry.visitors.size),
-      patreonSaleRate: formatPercentage(dayEntry.patreonSales, dayEntry.visitors.size)
-    }))
+  let cursor = Math.random() * totalWeight
+
+  for (const target of targets) {
+    cursor -= target.weight
+
+    if (cursor <= 0) {
+      return target
+    }
+  }
+
+  return targets[targets.length - 1] ?? null
 }
 
 landingPageRoutes.post('/landing-pages/track-visit', async (request, response, next) => {
   try {
     const payload = publicTrackVisitSchema.parse(request.body)
-    const trackedVisit = await trackLandingPageVisit(request, response, {
-      ...payload,
-      routePath: normalizePath(payload.routePath),
-      userAgent: request.get('user-agent') ?? null
-    })
+    const trackedVisit = await runPublicTrackingPersistence(
+      () =>
+        trackLandingPageVisit(request, response, {
+          ...payload,
+          routePath: normalizePath(payload.routePath),
+          userAgent: request.get('user-agent') ?? null
+        }),
+      {
+        operationName: 'landing.trackVisit'
+      }
+    )
 
     response.status(201).json({
       data: trackedVisit
@@ -196,7 +253,12 @@ landingPageRoutes.post('/landing-pages/track-visit', async (request, response, n
 
 landingPageRoutes.post('/landing-pages/track-signup-click', async (request, response, next) => {
   try {
-    const trackedClick = await trackLandingPageSignupClick(request)
+    const trackedClick = await runPublicTrackingPersistence(
+      () => trackLandingPageSignupClick(request),
+      {
+        operationName: 'landing.trackSignupClick'
+      }
+    )
 
     response.status(201).json({
       data: trackedClick
@@ -206,34 +268,28 @@ landingPageRoutes.post('/landing-pages/track-signup-click', async (request, resp
   }
 })
 
-landingPageRoutes.get('/stats/landing-pages', requireAdmin, async (_request, response, next) => {
+landingPageRoutes.get('/landing-pages/short-urls/:key/resolve', async (request, response, next) => {
   try {
-    await ensureLandingPageSignupClickColumn()
-
-    const landingPages = await prisma.landingPage.findMany({
-      orderBy: {
-        createdAt: 'asc'
+    const params = z.object({ key: z.string().trim().min(1).max(80) }).parse(request.params)
+    const shortUrl = await prisma.landingPageShortUrl.findUnique({
+      where: {
+        key: normalizeKey(params.key)
       },
       include: {
-        variants: {
-          orderBy: [
-            {
-              isControl: 'desc'
-            },
-            {
-              createdAt: 'asc'
+        targets: {
+          where: {
+            landingPage: {
+              isActive: true
             }
-          ],
+          },
           include: {
-            visits: {
-              include: {
-                attributedUser: {
-                  select: {
-                    id: true,
-                    patreonLinkedAt: true,
-                    patreonActiveAt: true
-                  }
-                }
+            landingPage: {
+              select: {
+                id: true,
+                key: true,
+                name: true,
+                basePath: true,
+                isActive: true
               }
             }
           }
@@ -241,168 +297,77 @@ landingPageRoutes.get('/stats/landing-pages', requireAdmin, async (_request, res
       }
     })
 
-    const landingPageStats = landingPages.map((landingPage) => {
-      const allVariantVisits = landingPage.variants.flatMap((variant) => variant.visits)
-      const uniqueVisitors = new Set(allVariantVisits.map((visit) => visit.visitorId)).size
-      const totalVisits = allVariantVisits.reduce((sum, visit) => sum + visit.visitCount, 0)
-      const signupClicks = allVariantVisits.filter((visit) => visit.signupClickedAt).length
-      const signups = allVariantVisits.filter((visit) => visit.signupCompletedAt).length
-      const patreonLinks = allVariantVisits.filter((visit) => visit.attributedUser?.patreonLinkedAt).length
-      const patreonSales = allVariantVisits.filter((visit) => visit.attributedUser?.patreonActiveAt).length
-
-      const sourceMap = new Map<
-        string,
-        { source: string; visitors: Set<string>; visits: number; clicks: number; signups: number; patreonSales: number }
-      >()
-
-      for (const visit of allVariantVisits) {
-        const sourceKey = visit.source || visit.referrerHost || 'direct'
-        const existingSource = sourceMap.get(sourceKey) ?? {
-          source: sourceKey,
-          visitors: new Set<string>(),
-          visits: 0,
-          clicks: 0,
-          signups: 0,
-          patreonSales: 0
-        }
-
-        existingSource.visitors.add(visit.visitorId)
-        existingSource.visits += visit.visitCount
-        if (visit.signupClickedAt) {
-          existingSource.clicks += 1
-        }
-        if (visit.signupCompletedAt) {
-          existingSource.signups += 1
-        }
-        if (visit.attributedUser?.patreonActiveAt) {
-          existingSource.patreonSales += 1
-        }
-        sourceMap.set(sourceKey, existingSource)
-      }
-
-      const variantStats = landingPage.variants.map((variant) => {
-        const uniqueVariantVisitors = new Set(variant.visits.map((visit) => visit.visitorId)).size
-        const variantVisits = variant.visits.reduce((sum, visit) => sum + visit.visitCount, 0)
-        const variantSignupClicks = variant.visits.filter((visit) => visit.signupClickedAt).length
-        const variantSignups = variant.visits.filter((visit) => visit.signupCompletedAt).length
-        const variantPatreonLinks = variant.visits.filter((visit) => visit.attributedUser?.patreonLinkedAt).length
-        const variantPatreonSales = variant.visits.filter((visit) => visit.attributedUser?.patreonActiveAt).length
-        const dailyStats = buildDailyStats(variant.visits)
-
-        return {
-          id: variant.id,
-          key: variant.key,
-          name: variant.name,
-          routePath: variant.routePath,
-          notes: variant.notes,
-          isControl: variant.isControl,
-          isActive: variant.isActive,
-          weight: variant.weight,
-          uniqueVisitors: uniqueVariantVisitors,
-          totalVisits: variantVisits,
-          signupClicks: variantSignupClicks,
-          signups: variantSignups,
-          patreonLinks: variantPatreonLinks,
-          patreonSales: variantPatreonSales,
-          clickThroughRate: formatPercentage(variantSignupClicks, uniqueVariantVisitors),
-          signupConversionRate: formatPercentage(variantSignups, uniqueVariantVisitors),
-          patreonLinkRate: formatPercentage(variantPatreonLinks, uniqueVariantVisitors),
-          patreonSaleRate: formatPercentage(variantPatreonSales, uniqueVariantVisitors),
-          dailyStats
-        }
+    if (!shortUrl || !shortUrl.isActive) {
+      response.status(404).json({
+        message: 'Short URL not found.'
       })
+      return
+    }
 
-      const dailyStats = buildDailyStats(allVariantVisits)
+    const activeTargets = shortUrl.targets.filter((target) => target.landingPage.isActive && target.landingPage.basePath)
+    const selectedTarget = pickWeightedTarget(activeTargets)
 
-      return {
-        id: landingPage.id,
-        key: landingPage.key,
-        name: landingPage.name,
-        description: landingPage.description,
-        basePath: landingPage.basePath,
-        isActive: landingPage.isActive,
-        createdAt: landingPage.createdAt.toISOString(),
-        updatedAt: landingPage.updatedAt.toISOString(),
-        kpis: {
-          uniqueVisitors,
-          totalVisits,
-          signupClicks,
-          signups,
-          patreonLinks,
-          patreonSales,
-          clickThroughRate: formatPercentage(signupClicks, uniqueVisitors),
-          signupConversionRate: formatPercentage(signups, uniqueVisitors),
-          patreonLinkRate: formatPercentage(patreonLinks, uniqueVisitors),
-          patreonSaleRate: formatPercentage(patreonSales, uniqueVisitors)
-        },
-        dailyStats,
-        sources: [...sourceMap.values()]
-          .map((sourceEntry) => ({
-            source: sourceEntry.source,
-            uniqueVisitors: sourceEntry.visitors.size,
-            totalVisits: sourceEntry.visits,
-            signupClicks: sourceEntry.clicks,
-            signups: sourceEntry.signups,
-            patreonSales: sourceEntry.patreonSales,
-            clickThroughRate: formatPercentage(sourceEntry.clicks, sourceEntry.visitors.size),
-            signupConversionRate: formatPercentage(sourceEntry.signups, sourceEntry.visitors.size),
-            patreonSaleRate: formatPercentage(sourceEntry.patreonSales, sourceEntry.visitors.size)
-          }))
-          .sort((left, right) => right.uniqueVisitors - left.uniqueVisitors)
-          .slice(0, 8),
-        variants: variantStats
-      }
-    })
-
-    const summary = await prisma.$transaction([
-      prisma.landingPage.count(),
-      prisma.landingPageVariant.count({
-        where: {
-          isActive: true
-        }
-      }),
-      prisma.landingPageVisit.findMany({
-        include: {
-          attributedUser: {
-            select: {
-              id: true,
-              patreonLinkedAt: true,
-              patreonActiveAt: true
-            }
-          }
-        }
+    if (!selectedTarget?.landingPage.basePath) {
+      response.status(404).json({
+        message: 'Short URL has no active landing page targets.'
       })
-    ])
-
-    const allVisits = summary[2]
-    const globalVisitors = new Set(allVisits.map((visit) => visit.visitorId)).size
-    const globalVisits = allVisits.reduce((sum, visit) => sum + visit.visitCount, 0)
-    const globalSignupClicks = allVisits.filter((visit) => visit.signupClickedAt).length
-    const globalSignups = allVisits.filter((visit) => visit.signupCompletedAt).length
-    const globalPatreonLinks = allVisits.filter((visit) => visit.attributedUser?.patreonLinkedAt).length
-    const globalPatreonSales = allVisits.filter((visit) => visit.attributedUser?.patreonActiveAt).length
-    const activeAttributedPatrons = allVisits.filter(
-      (visit) => visit.attributedUser?.patreonActiveAt && visit.attributedUser !== null
-    ).length
+      return
+    }
 
     response.json({
       data: {
-        summary: {
-          totalLandingPages: summary[0],
-          activeVariants: summary[1],
-          uniqueVisitors: globalVisitors,
-          totalVisits: globalVisits,
-          signupClicks: globalSignupClicks,
-          signups: globalSignups,
-          patreonLinks: globalPatreonLinks,
-          patreonSales: globalPatreonSales,
-          activeAttributedPatrons,
-          clickThroughRate: formatPercentage(globalSignupClicks, globalVisitors),
-          signupConversionRate: formatPercentage(globalSignups, globalVisitors),
-          patreonSaleRate: formatPercentage(globalPatreonSales, globalVisitors)
-        },
-        landingPages: landingPageStats
+        key: shortUrl.key,
+        name: shortUrl.name,
+        utmSource: shortUrl.utmSource,
+        utmMedium: shortUrl.utmMedium,
+        utmCampaign: shortUrl.utmCampaign,
+        utmContent: shortUrl.utmContent,
+        utmTerm: shortUrl.utmTerm,
+        targetPath: selectedTarget.landingPage.basePath,
+        landingPageId: selectedTarget.landingPage.id,
+        landingPageKey: selectedTarget.landingPage.key,
+        landingPageName: selectedTarget.landingPage.name
       }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+landingPageRoutes.get('/landing-pages/default-homepage', async (_request, response, next) => {
+  try {
+    response.json({
+      data: await getDefaultHomepageSetting()
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+landingPageRoutes.get('/stats/landing-pages', requireAdmin, async (_request, response, next) => {
+  try {
+    response.json({
+      data: await getLandingPageStatsOverview()
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+landingPageRoutes.get('/stats/landing-pages/traffic', requireAdmin, async (_request, response, next) => {
+  try {
+    response.json({
+      data: await getLandingPageTrafficReport()
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+landingPageRoutes.get('/stats/landing-pages/performance', requireAdmin, async (_request, response, next) => {
+  try {
+    response.json({
+      data: await getLandingPagePerformanceReport()
     })
   } catch (error) {
     next(error)
@@ -414,8 +379,21 @@ landingPageRoutes.post('/admin/landing-pages', requireAdmin, async (request, res
     const payload = adminCreateLandingPageSchema.parse(request.body)
     const key = normalizeKey(payload.key)
     const basePath = normalizePath(payload.basePath)
-    const variantKey = normalizeKey(payload.initialVariant.key)
-    const routePath = normalizePath(payload.initialVariant.routePath)
+    const initialVariant = payload.initialVariant
+      ? {
+          key: normalizeKey(payload.initialVariant.key),
+          name: payload.initialVariant.name.trim(),
+          routePath: normalizePath(payload.initialVariant.routePath),
+          notes: payload.initialVariant.notes?.trim() || null,
+          isControl: payload.initialVariant.isControl ?? true
+        }
+      : {
+          key: 'default',
+          name: 'Default Route',
+          routePath: basePath,
+          notes: null,
+          isControl: true
+        }
 
     const created = await prisma.landingPage.create({
       data: {
@@ -424,13 +402,7 @@ landingPageRoutes.post('/admin/landing-pages', requireAdmin, async (request, res
         description: payload.description?.trim() || null,
         basePath,
         variants: {
-          create: {
-            key: variantKey,
-            name: payload.initialVariant.name.trim(),
-            routePath,
-            notes: payload.initialVariant.notes?.trim() || null,
-            isControl: payload.initialVariant.isControl ?? true
-          }
+          create: initialVariant
         }
       },
       include: {
@@ -458,6 +430,36 @@ landingPageRoutes.post('/admin/landing-page-variants', requireAdmin, async (requ
         notes: payload.notes?.trim() || null,
         weight: payload.weight ?? 100,
         isControl: payload.isControl ?? false
+      }
+    })
+
+    response.status(201).json({
+      data: created
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+landingPageRoutes.post('/admin/landing-page-short-urls', requireAdmin, async (request, response, next) => {
+  try {
+    const payload = adminCreateShortUrlSchema.parse(request.body)
+    const created = await prisma.landingPageShortUrl.create({
+      data: {
+        key: normalizeKey(payload.key),
+        name: payload.name.trim(),
+        description: payload.description?.trim() || null,
+        ...buildShortUrlUtmData(payload),
+        isActive: payload.isActive ?? true,
+        targets: {
+          create: payload.targets.map((target) => ({
+            landingPageId: target.landingPageId,
+            weight: target.weight ?? 100
+          }))
+        }
+      },
+      include: {
+        targets: true
       }
     })
 
@@ -523,33 +525,105 @@ landingPageRoutes.patch('/admin/landing-page-variants/:id', requireAdmin, async 
   }
 })
 
-landingPageRoutes.get('/admin/landing-pages/options', requireAdmin, async (_request, response, next) => {
+landingPageRoutes.patch('/admin/landing-page-short-urls/:id', requireAdmin, async (request, response, next) => {
   try {
-    const landingPages = await prisma.landingPage.findMany({
-      orderBy: {
-        createdAt: 'asc'
-      },
-      select: {
-        id: true,
-        key: true,
-        name: true,
-        basePath: true,
-        variants: {
-          orderBy: {
-            createdAt: 'asc'
-          },
-          select: {
-            id: true,
-            key: true,
-            name: true,
-            routePath: true
-          }
+    const params = z.object({ id: z.string().trim().min(1) }).parse(request.params)
+    const payload = adminUpdateShortUrlSchema.parse(request.body)
+
+    const updated = await prisma.$transaction(async (transaction) => {
+      const shortUrl = await transaction.landingPageShortUrl.update({
+        where: {
+          id: params.id
+        },
+        data: {
+          ...(payload.key ? { key: normalizeKey(payload.key) } : {}),
+          ...(payload.name ? { name: payload.name.trim() } : {}),
+          ...(payload.description !== undefined ? { description: payload.description?.trim() || null } : {}),
+          ...buildShortUrlUtmData(payload),
+          ...(payload.isActive !== undefined ? { isActive: payload.isActive } : {})
         }
+      })
+
+      if (payload.targets) {
+        await transaction.landingPageShortUrlTarget.deleteMany({
+          where: {
+            shortUrlId: params.id
+          }
+        })
+
+        await transaction.landingPageShortUrlTarget.createMany({
+          data: payload.targets.map((target) => ({
+            shortUrlId: params.id,
+            landingPageId: target.landingPageId,
+            weight: target.weight ?? 100
+          }))
+        })
       }
+
+      return shortUrl
     })
 
     response.json({
+      data: updated
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// Read-only operational backlog for public tracking payloads that did not
+// match configured landing pages or variants. Repair remains in the editor.
+landingPageRoutes.get('/admin/landing-pages/tracking-issues', requireAdmin, async (_request, response, next) => {
+  try {
+    const issues = await listLandingPageTrackingIssues()
+
+    response.json({
+      data: issues.map((issue) => ({
+        id: issue.id,
+        fingerprint: issue.fingerprint,
+        kind: issue.kind,
+        landingPageKey: issue.landingPageKey,
+        variantKey: issue.variantKey,
+        routePath: issue.routePath,
+        shortUrlKey: issue.shortUrlKey,
+        firstSeenAt: issue.firstSeenAt.toISOString(),
+        lastSeenAt: issue.lastSeenAt.toISOString(),
+        seenCount: issue.seenCount
+      }))
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+landingPageRoutes.get('/admin/landing-pages/options', requireAdmin, async (_request, response, next) => {
+  try {
+    const landingPages = await listLandingPageOptionRows()
+
+    response.json({
       data: landingPages
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+landingPageRoutes.get('/admin/landing-pages/default-homepage', requireAdmin, async (_request, response, next) => {
+  try {
+    response.json({
+      data: await getDefaultHomepageSetting()
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+landingPageRoutes.patch('/admin/landing-pages/default-homepage', requireAdmin, async (request, response, next) => {
+  try {
+    const payload = updateDefaultHomepageSchema.parse(request.body)
+
+    response.json({
+      data: await updateDefaultHomepageSetting(payload.landingPageId)
     })
   } catch (error) {
     next(error)

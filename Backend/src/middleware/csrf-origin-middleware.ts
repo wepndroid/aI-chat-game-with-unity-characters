@@ -4,6 +4,7 @@ import { sendApiError } from '../lib/api-contract'
 type CsrfOriginOptions = {
   allowedOrigins: Set<string>
   isProduction: boolean
+  csrfExemptPaths?: Set<string>
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
@@ -38,9 +39,15 @@ const extractRequestOrigin = (request: Request): string | null => {
   }
 }
 
-const createCsrfOriginMiddleware = ({ allowedOrigins, isProduction }: CsrfOriginOptions) => {
+const createCsrfOriginMiddleware = ({ allowedOrigins, isProduction, csrfExemptPaths }: CsrfOriginOptions) => {
   return (request: Request, response: Response, next: NextFunction) => {
     if (SAFE_METHODS.has(request.method.toUpperCase())) {
+      next()
+      return
+    }
+
+    const normalizedPath = request.path.toLowerCase()
+    if (csrfExemptPaths?.has(normalizedPath)) {
       next()
       return
     }

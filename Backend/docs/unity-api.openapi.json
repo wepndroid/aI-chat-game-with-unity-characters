@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SecretWaifu Unity API",
-    "version": "1.1.0",
+    "version": "2.1.0",
     "description": "Unity-facing API contract snapshot.\nThis schema is the machine-readable source of truth for Unity integration.\n"
   },
   "servers": [
@@ -110,6 +110,236 @@
         }
       }
     },
+    "/auth/webgl-launch-context": {
+      "post": {
+        "summary": "Mint a short-lived Unity WebGL launch context token",
+        "description": "Website-side endpoint. Requires an authenticated cookie or bearer session and a selected\n`story_id`. Returns a short-lived story-scoped `launch_token` for the WebGL launch handoff.\n",
+        "operationId": "issueWebglLaunchContext",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebglLaunchContextIssueRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Launch context issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebglLaunchContextIssueResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The story character is tier-locked for the current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Story not found or not readable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/webgl-launch-context/resolve": {
+      "post": {
+        "summary": "Resolve a Unity WebGL launch context token",
+        "description": "Unity WebGL endpoint. Accepts a short-lived one-time `launch_token` in the JSON body, atomically consumes the launch context, creates a fresh story chat session, mints a short-lived WebGL bearer, and returns the bootstrap payload needed to enter chat.",
+        "operationId": "resolveWebglLaunchContext",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebglLaunchContextResolveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Launch context resolved",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebglLaunchContextResolveResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Story is not chat-usable in current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account suspended or story character is tier-locked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Launch context is missing, expired, consumed, or no longer readable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/unity-token": {
+      "post": {
+        "summary": "Issue bearer token for Unity Desktop/VR",
+        "description": "Non-browser token issue endpoint for Unity Desktop/VR.\nAccepts JSON email/password and returns a bearer token in the response body.\nThis route does not depend on browser cookie auth.\n",
+        "operationId": "postUnityToken",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnityTokenIssueRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnityTokenIssueResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid e-mail or password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account suspended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/logout": {
       "post": {
         "summary": "Revoke presented session token and clear cookie (if present)",
@@ -168,6 +398,7 @@
     "/characters": {
       "get": {
         "summary": "List characters",
+        "description": "Public endpoint with optional auth context. `scope=mine` requires authentication.",
         "operationId": "listCharacters",
         "security": [],
         "parameters": [
@@ -204,6 +435,21 @@
               ],
               "default": "full"
             }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "description": "Unity-friendly roster scope alias (`official` maps to curated/admin-owned rows).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "official",
+                "community",
+                "mine"
+              ]
+            }
           }
         ],
         "responses": {
@@ -213,6 +459,91 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CharacterListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required for scope=mine",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/characters/{character_id}/vrm-signed-url": {
+      "get": {
+        "summary": "Request a fresh signed VRM model URL for one character",
+        "operationId": "getCharacterVrmSignedUrl",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "character_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Signed URL issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnityModelSignedUrlResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Character/model not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
@@ -240,6 +571,7 @@
     "/characters/{character_id}/stories": {
       "get": {
         "summary": "List stories for one character",
+        "description": "Public endpoint with optional auth context. Tier-gated characters return `403` when caller lacks required access.",
         "operationId": "listCharacterStories",
         "security": [],
         "parameters": [
@@ -700,7 +1032,7 @@
     "/sessions/{session_id}/messages": {
       "get": {
         "summary": "List one session transcript with cursor pagination",
-        "description": "Returns persisted chat message rows for the owned session. Incomplete turns that were never persisted are not included. No additional deleted/moderated filtering is currently applied.",
+        "description": "Returns persisted chat message rows for the owned session. Incomplete turns that were never persisted are not included. Soft-deleted sessions return `404`.",
         "operationId": "listSessionMessages",
         "parameters": [
           {
@@ -790,9 +1122,207 @@
         }
       }
     },
+    "/sessions/{session_id}": {
+      "delete": {
+        "summary": "Soft-delete one owned chat session",
+        "description": "Marks the session as deleted and hides it from session lists/read/send routes.",
+        "operationId": "deleteSession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session soft-deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionDeleteResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/unity-state": {
+      "get": {
+        "summary": "Get Unity-owned session metadata blob",
+        "description": "Returns Unity gameplay/session metadata scoped to this session and owned by the caller.",
+        "operationId": "getSessionUnityState",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unity session metadata payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionUnityStateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Upsert Unity-owned session metadata blob",
+        "description": "Stores Unity gameplay/session metadata as opaque JSON. Backend does not interpret gameplay fields.",
+        "operationId": "putSessionUnityState",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "metadata_version",
+                  "metadata"
+                ],
+                "properties": {
+                  "metadata_version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored Unity session metadata payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionUnityStateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/chat/send": {
       "post": {
         "summary": "Send one chat turn with atomic quota + idempotency",
+        "description": "Voice behavior:\n- Unity only sends `voice_enabled=true|false` (no explicit voice id field required).\n- When `voice_enabled=true`, backend resolves `voice_ref_path` from session character:\n  1) use configured character voice URL when present\n  2) otherwise fallback to `\"default\"` voice alias.\n",
         "operationId": "sendChatMessage",
         "parameters": [
           {
@@ -817,7 +1347,8 @@
                 "required": [
                   "session_id",
                   "message",
-                  "client_message_id"
+                  "unity_runtime_context",
+                  "animation_capabilities"
                 ],
                 "properties": {
                   "session_id": {
@@ -827,6 +1358,28 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 8000
+                  },
+                  "unity_runtime_context": {
+                    "$ref": "#/components/schemas/UnityRuntimeContext",
+                    "description": "Unity-owned runtime facts for backend prompt rendering. Backend owns final prompt prose and provider formatting.\n"
+                  },
+                  "animation_capabilities": {
+                    "$ref": "#/components/schemas/AnimationCapabilities",
+                    "description": "Unity-owned valid animation tag IDs and examples for this character.\n"
+                  },
+                  "voice_enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enables backend voice generation with server-side voice resolution (character voice or `default` fallback)."
+                  },
+                  "stream": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "debug_prompt": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Emits a `prompt_debug` SSE event with the exact provider-rendered prompt before the first token when the backend prompt-debug kill switch allows it.\n"
                   },
                   "client_message_id": {
                     "type": "string",
@@ -863,6 +1416,11 @@
                       "$ref": "#/components/schemas/QuotaDataResponse"
                     }
                   ]
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSseEvent"
                 }
               }
             }
@@ -964,6 +1522,318 @@
         }
       }
     },
+    "/chat/gameplay-send": {
+      "post": {
+        "summary": "Persist gameplay/system event + assistant reply without consuming message or voice quota",
+        "description": "Non-quota gameplay/system generation endpoint.\nCalls to this endpoint do not consume message quota or voice quota units.\nWhen `voice_enabled=true`, backend applies the same server-side voice resolution as `/chat/send`:\ncharacter voice when configured, otherwise `\"default\"` fallback.\n",
+        "operationId": "sendGameplayChatMessage",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[a-zA-Z0-9._:-]+$"
+            },
+            "description": "Optional header alias for client_event_id. If both are provided, values must match."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "session_id",
+                  "event_type",
+                  "event_payload",
+                  "event_display_text",
+                  "unity_runtime_context",
+                  "animation_capabilities"
+                ],
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "event_type": {
+                    "type": "string",
+                    "enum": [
+                      "touch",
+                      "undress",
+                      "post_sex_return",
+                      "sex_rejected",
+                      "sex_postponed"
+                    ]
+                  },
+                  "event_payload": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "event_display_text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8000
+                  },
+                  "unity_runtime_context": {
+                    "$ref": "#/components/schemas/UnityRuntimeContext"
+                  },
+                  "animation_capabilities": {
+                    "$ref": "#/components/schemas/AnimationCapabilities"
+                  },
+                  "voice_enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enables backend voice generation with server-side voice resolution (character voice or `default` fallback)."
+                  },
+                  "stream": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "debug_prompt": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Emits a `prompt_debug` SSE event with the exact provider-rendered prompt before the first token when the backend prompt-debug kill switch allows it.\n"
+                  },
+                  "client_event_id": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9._:-]+$",
+                    "maxLength": 128
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed gameplay send result (fresh or replayed)",
+            "headers": {
+              "Idempotency-Replayed": {
+                "description": "Present and true when backend replays an already-completed idempotent request.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "true"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameplaySendSuccessResponse"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSseEvent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency key is currently in progress",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Idempotency key was reused with different payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "AI provider failure or finalize failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tts/request": {
+      "post": {
+        "summary": "Request one Unity-orchestrated TTS segment",
+        "description": "Unity calls this for one speakable TTS sentence/chunk. `parent_kind=visible_turn` is used while a `/chat/send` or `/chat/gameplay-send` turn is still active or pending. `parent_kind=session_voice` is used for session-scoped sex phrase voice that is authenticated, session-owned, voice tier/quota gated, non-consuming, and does not mutate transcript, pending turns, quota reservations, session preview, or Unity state. The backend validates ownership, gates voice, creates or replays a SecretWaifu public voice task, dispatches the provider stream internally, and returns a task-scoped `stream_token`. Gameplay and session voice are quota-gated but do not consume voice quota.",
+        "operationId": "requestTtsSegment",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TtsSegmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Voice task accepted or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsSegmentResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Voice tier disabled or voice quota exhausted. Response uses the quota snapshot shape so Unity can show the upgrade popup for the voice quota gate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuotaCheckResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session or active turn not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Active turn/session mismatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Voice task expired or retained audio buffer was evicted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many active voice tasks for this user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tts/stream/{voice_task_id}": {
+      "get": {
+        "summary": "WebSocket upgrade endpoint for streaming voice PCM frames by task id",
+        "description": "Unity opens this socket after receiving `voice_task_id` and `stream_token` from `/api/tts/request`. The query token is short-lived, task-scoped, single-use, and hashed at rest; full app bearer tokens and provider tokens must not be sent in this URL.\nStream frame contract:\n- text frame: `{\"type\":\"metadata\",\"task_id\":\"...\",\"sample_rate\":24000,\"channels\":1,\"estimated_samples\":...}` (initial control frame; task id is rewritten to SecretWaifu `voice_task_id`)\n- binary frame: raw PCM bytes\n- text frame: `{\"type\":\"control\",\"task_id\":\"...\",\"action\":\"pause\",\"status\":\"accepted\"}` public acknowledgement for task-scoped pause/resume/cancel controls\n- text frame: `{\"type\":\"complete\"}` stream finished\n- text frame: `{\"type\":\"error\",\"message\":\"...\"}` stream failed\n- text frame: `{\"type\":\"cancelled\"}` stream cancelled\nPCM format: Float32, mono, 24000 Hz, little-endian.\nClient control messages are strict JSON text frames scoped to the voice task in the URL: `{\"action\":\"pause\"}`, `{\"action\":\"resume\"}`, or `{\"action\":\"cancel\",\"reason\":\"client_closed\"}`. Provider task ids are internal; messages containing provider ids or unknown fields are rejected. If the last public stream client detaches before a terminal frame, the backend waits 2500 ms for a reattach before cancelling provider work.\n",
+        "operationId": "streamVoiceTask",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "voice_task_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stream_token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Short-lived task token returned by `POST /api/tts/request`. The token is single-use and scoped to this voice task."
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "Switching Protocols (WebSocket)"
+          },
+          "401": {
+            "description": "Missing, expired, or invalid stream token"
+          },
+          "403": {
+            "description": "Origin not allowed"
+          },
+          "410": {
+            "description": "Voice task expired or retained audio buffer was evicted"
+          }
+        }
+      }
+    },
     "/chat/quota/check": {
       "post": {
         "summary": "Advisory quota precheck (no consume, no reserve)",
@@ -981,6 +1851,10 @@
                   },
                   "user_id": {
                     "type": "string"
+                  },
+                  "voice_enabled": {
+                    "type": "boolean",
+                    "default": false
                   }
                 }
               }
@@ -1065,6 +1939,10 @@
                   },
                   "user_id": {
                     "type": "string"
+                  },
+                  "voice_enabled": {
+                    "type": "boolean",
+                    "default": false
                   }
                 }
               }
@@ -1136,6 +2014,33 @@
       "get": {
         "summary": "Get current quota status",
         "operationId": "getQuotaStatus",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "userId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "voice_enabled",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Quota data",
@@ -1166,6 +2071,92 @@
                 }
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/unity/llm/structured-generate": {
+      "post": {
+        "summary": "Run a non-quota structured Unity helper LLM call",
+        "description": "Authenticated Unity helper endpoint for metadata interpretation, sex phrase generation, and TTS emotion decoration. Unity owns helper prompt text, grammar, JSON schema meaning, parsing, and gameplay consequences. Backend owns auth, session ownership, provider credentials, template rendering, provider transport, resource caps, and sanitized errors. This endpoint does not consume text quota, consume voice quota, create pending turns, write chat messages, update session preview text, or mutate /unity-state.",
+        "operationId": "generateStructuredUnityHelperLlm",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StructuredHelperGenerateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Structured helper content generated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StructuredHelperGenerateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited or one helper request is already active for this user",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Sanitized AI provider failure",
             "content": {
               "application/json": {
                 "schema": {
@@ -1271,7 +2262,8 @@
         "type": "string",
         "enum": [
           "USER",
-          "ASSISTANT"
+          "ASSISTANT",
+          "GAMEPLAY"
         ]
       },
       "StoryPublicationStatus": {
@@ -1507,6 +2499,259 @@
           }
         }
       },
+      "UnityTokenIssueRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UnityTokenIssueUser": {
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "username",
+          "player_name",
+          "role",
+          "is_email_verified"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "username": {
+            "type": "string"
+          },
+          "player_name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "USER",
+              "CREATOR",
+              "ADMIN"
+            ]
+          },
+          "is_email_verified": {
+            "type": "boolean"
+          }
+        }
+      },
+      "UnityTokenIssueResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "access_token",
+              "token_type",
+              "expires_at",
+              "user"
+            ],
+            "properties": {
+              "access_token": {
+                "type": "string"
+              },
+              "token_type": {
+                "type": "string",
+                "enum": [
+                  "Bearer"
+                ]
+              },
+              "expires_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "user": {
+                "$ref": "#/components/schemas/UnityTokenIssueUser"
+              }
+            }
+          }
+        }
+      },
+      "WebglLaunchContextIssueRequest": {
+        "type": "object",
+        "required": [
+          "story_id",
+          "launch_mode"
+        ],
+        "properties": {
+          "story_id": {
+            "type": "string"
+          },
+          "launch_mode": {
+            "type": "string",
+            "enum": [
+              "fresh_session"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "WebglLaunchContextIssueResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "launch_token",
+              "story_id",
+              "character_id",
+              "launch_mode",
+              "expires_at"
+            ],
+            "properties": {
+              "launch_token": {
+                "type": "string"
+              },
+              "story_id": {
+                "type": "string"
+              },
+              "character_id": {
+                "type": "string"
+              },
+              "launch_mode": {
+                "type": "string",
+                "enum": [
+                  "fresh_session"
+                ]
+              },
+              "expires_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        }
+      },
+      "WebglLaunchContextResolveRequest": {
+        "type": "object",
+        "required": [
+          "launch_token"
+        ],
+        "properties": {
+          "launch_token": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 500
+          }
+        },
+        "additionalProperties": false
+      },
+      "WebglLaunchControl": {
+        "type": "object",
+        "required": [
+          "open_screen",
+          "launch_mode",
+          "character_id",
+          "story_id",
+          "session_id"
+        ],
+        "properties": {
+          "open_screen": {
+            "type": "string",
+            "enum": [
+              "chat"
+            ]
+          },
+          "launch_mode": {
+            "type": "string",
+            "enum": [
+              "fresh_session"
+            ]
+          },
+          "character_id": {
+            "type": "string"
+          },
+          "story_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WebglLaunchContextResolveResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "access_token",
+              "token_type",
+              "expires_at",
+              "user",
+              "launch",
+              "story",
+              "session"
+            ],
+            "properties": {
+              "access_token": {
+                "type": "string"
+              },
+              "token_type": {
+                "type": "string",
+                "enum": [
+                  "Bearer"
+                ]
+              },
+              "expires_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "user": {
+                "$ref": "#/components/schemas/UnityTokenIssueUser"
+              },
+              "launch": {
+                "$ref": "#/components/schemas/WebglLaunchControl"
+              },
+              "story": {
+                "$ref": "#/components/schemas/StoryListItem"
+              },
+              "session": {
+                "$ref": "#/components/schemas/SessionItem"
+              }
+            }
+          }
+        }
+      },
+      "MessageResponse": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        }
+      },
       "CharacterUnityAsset": {
         "type": "object",
         "required": [
@@ -1543,6 +2788,20 @@
               "null"
             ]
           },
+          "voice_file_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional selected/static character voice clip URL for Unity. Backend uses this as preferred voice source when `voice_enabled=true`; falls back to `\"default\"` when null."
+          },
+          "voice_file_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional selected/static character voice clip display filename."
+          },
           "signed_model_url_endpoint": {
             "type": "string",
             "format": "uri"
@@ -1560,6 +2819,10 @@
           "tier_code",
           "story_count",
           "default_story_id",
+          "source_type",
+          "is_mine",
+          "uploader_display_name",
+          "access_state",
           "unity_asset"
         ],
         "properties": {
@@ -1595,6 +2858,28 @@
               "string",
               "null"
             ]
+          },
+          "source_type": {
+            "type": "string",
+            "enum": [
+              "official",
+              "community"
+            ]
+          },
+          "is_mine": {
+            "type": "boolean"
+          },
+          "uploader_display_name": {
+            "type": "string"
+          },
+          "access_state": {
+            "type": "string",
+            "enum": [
+              "accessible",
+              "tier_locked",
+              "unavailable"
+            ],
+            "description": "Runtime access state for Unity. Characters without an approved published default story are returned as `unavailable`.\n"
           },
           "unity_asset": {
             "$ref": "#/components/schemas/CharacterUnityAsset"
@@ -1636,7 +2921,8 @@
         "required": [
           "id",
           "slug",
-          "name"
+          "name",
+          "default_story_id"
         ],
         "properties": {
           "id": {
@@ -1646,6 +2932,27 @@
             "type": "string"
           },
           "name": {
+            "type": "string"
+          },
+          "default_story_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "StoryAuthorRef": {
+        "type": "object",
+        "required": [
+          "id",
+          "username"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "username": {
             "type": "string"
           }
         }
@@ -1662,7 +2969,9 @@
           "scenario_type",
           "published_at",
           "likes_count",
-          "has_liked"
+          "has_liked",
+          "is_curated",
+          "author"
         ],
         "properties": {
           "id": {
@@ -1717,6 +3026,12 @@
           },
           "has_liked": {
             "type": "boolean"
+          },
+          "is_curated": {
+            "type": "boolean"
+          },
+          "author": {
+            "$ref": "#/components/schemas/StoryAuthorRef"
           }
         }
       },
@@ -1982,6 +3297,72 @@
           }
         }
       },
+      "SessionDeleteData": {
+        "type": "object",
+        "required": [
+          "id",
+          "deleted",
+          "deleted_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "deleted": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SessionDeleteResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SessionDeleteData"
+          }
+        }
+      },
+      "SessionUnityStateData": {
+        "type": "object",
+        "required": [
+          "session_id",
+          "metadata_version",
+          "metadata"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "metadata_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "SessionUnityStateResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SessionUnityStateData"
+          }
+        }
+      },
       "SessionListResponse": {
         "type": "object",
         "required": [
@@ -2000,14 +3381,26 @@
           }
         }
       },
+      "SessionMessageKind": {
+        "type": "string",
+        "enum": [
+          "user_text",
+          "assistant_text",
+          "gameplay_event",
+          "gameplay_assistant"
+        ]
+      },
       "SessionMessageItem": {
         "type": "object",
         "required": [
           "id",
           "session_id",
           "role",
+          "message_kind",
           "content",
           "client_message_id",
+          "client_event_id",
+          "audio_url",
           "created_at"
         ],
         "properties": {
@@ -2020,10 +3413,25 @@
           "role": {
             "$ref": "#/components/schemas/ChatMessageRole"
           },
+          "message_kind": {
+            "$ref": "#/components/schemas/SessionMessageKind"
+          },
           "content": {
             "type": "string"
           },
           "client_message_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_event_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "audio_url": {
             "type": [
               "string",
               "null"
@@ -2053,7 +3461,7 @@
           }
         }
       },
-      "MessageItem": {
+      "UserMessageItem": {
         "type": "object",
         "required": [
           "id",
@@ -2077,14 +3485,753 @@
           }
         }
       },
+      "AssistantMessageItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "content",
+          "created_at",
+          "audio_url"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ChatMessageRole"
+          },
+          "content": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "audio_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "QuotaExhaustionReason": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "message_quota_exhausted",
+              "voice_quota_exhausted"
+            ]
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "VoiceQuotaStatus": {
+        "type": "string",
+        "enum": [
+          "not_requested",
+          "disabled",
+          "quota_exhausted",
+          "generated",
+          "generation_failed",
+          "not_generated"
+        ]
+      },
+      "MessageQuotaDetail": {
+        "type": "object",
+        "required": [
+          "limit",
+          "used",
+          "reserved",
+          "remaining",
+          "unlimited"
+        ],
+        "properties": {
+          "limit": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "used": {
+            "type": "integer"
+          },
+          "reserved": {
+            "type": "integer"
+          },
+          "remaining": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unlimited": {
+            "type": "boolean"
+          }
+        }
+      },
+      "VoiceQuotaDetail": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "requested",
+          "allowed",
+          "status",
+          "limit",
+          "used",
+          "reserved",
+          "remaining",
+          "unlimited",
+          "audio_url",
+          "user_message"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "requested": {
+            "type": "boolean"
+          },
+          "allowed": {
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/VoiceQuotaStatus"
+          },
+          "limit": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "used": {
+            "type": "integer"
+          },
+          "reserved": {
+            "type": "integer"
+          },
+          "remaining": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unlimited": {
+            "type": "boolean"
+          },
+          "audio_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "QuotaSnapshotData": {
+        "type": "object",
+        "required": [
+          "allowed",
+          "exhaustion_reason",
+          "can_send_text",
+          "can_generate_voice",
+          "user_id",
+          "tier_code",
+          "limit",
+          "remaining",
+          "period_ends_at",
+          "message_quota",
+          "voice_quota"
+        ],
+        "properties": {
+          "allowed": {
+            "type": "boolean"
+          },
+          "exhaustion_reason": {
+            "$ref": "#/components/schemas/QuotaExhaustionReason"
+          },
+          "can_send_text": {
+            "type": "boolean"
+          },
+          "can_generate_voice": {
+            "type": "boolean"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "tier_code": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "remaining": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "period_ends_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "message_quota": {
+            "$ref": "#/components/schemas/MessageQuotaDetail"
+          },
+          "voice_quota": {
+            "$ref": "#/components/schemas/VoiceQuotaDetail"
+          },
+          "user_message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "QuotaCheckResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/QuotaSnapshotData"
+          }
+        }
+      },
+      "TtsSegmentRole": {
+        "type": "string",
+        "enum": [
+          "character",
+          "narrator"
+        ]
+      },
+      "TtsSegmentParentKind": {
+        "type": "string",
+        "enum": [
+          "visible_turn",
+          "session_voice"
+        ]
+      },
+      "TtsSegmentUsageKind": {
+        "type": "string",
+        "enum": [
+          "sex_phrase"
+        ]
+      },
+      "TtsSegmentVisibleTurnRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "parent_kind",
+          "session_id",
+          "client_turn_id",
+          "segment_id",
+          "sequence_index",
+          "role",
+          "text"
+        ],
+        "properties": {
+          "parent_kind": {
+            "type": "string",
+            "const": "visible_turn"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "client_turn_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9._:-]+$",
+            "description": "Unity id for the parent visible chat/gameplay turn. For normal chat this is `client_message_id`; for gameplay this is `client_event_id`."
+          },
+          "segment_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": "^[a-zA-Z0-9._:-]+$",
+            "description": "Idempotency key for this TTS sentence/chunk within `user + session + client_turn_id`."
+          },
+          "sequence_index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "role": {
+            "$ref": "#/components/schemas/TtsSegmentRole"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000,
+            "description": "Speakable segment text only. Do not include auth, provider task ids, prompt debug text, or backend control markers."
+          },
+          "voice_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "voice_ref_path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "emotion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "emo_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "emo_alpha": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "emotion_vector": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          }
+        }
+      },
+      "TtsSegmentSessionVoiceRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "parent_kind",
+          "session_id",
+          "client_request_id",
+          "segment_id",
+          "sequence_index",
+          "usage_kind",
+          "role",
+          "text"
+        ],
+        "properties": {
+          "parent_kind": {
+            "type": "string",
+            "const": "session_voice"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "client_request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9._:-]+$",
+            "description": "Unity idempotency key for a session-scoped voice request. It is not a visible chat turn id."
+          },
+          "segment_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": "^[a-zA-Z0-9._:-]+$",
+            "description": "Idempotency key for this session voice segment within `user + session + client_request_id`."
+          },
+          "sequence_index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "usage_kind": {
+            "$ref": "#/components/schemas/TtsSegmentUsageKind"
+          },
+          "role": {
+            "$ref": "#/components/schemas/TtsSegmentRole"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000,
+            "description": "Speakable segment text only. Do not include auth, provider task ids, prompt debug text, or backend control markers."
+          },
+          "voice_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "voice_ref_path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "emotion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "emo_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "emo_alpha": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "emotion_vector": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          }
+        }
+      },
+      "TtsSegmentRequest": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/TtsSegmentVisibleTurnRequest"
+          },
+          {
+            "$ref": "#/components/schemas/TtsSegmentSessionVoiceRequest"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "parent_kind",
+          "mapping": {
+            "visible_turn": "#/components/schemas/TtsSegmentVisibleTurnRequest",
+            "session_voice": "#/components/schemas/TtsSegmentSessionVoiceRequest"
+          }
+        }
+      },
+      "TtsSegmentData": {
+        "type": "object",
+        "required": [
+          "parent_kind",
+          "voice_task_id",
+          "session_id",
+          "segment_id",
+          "sequence_index",
+          "role",
+          "voice_ref_path",
+          "stream_token",
+          "stream_token_expires_at",
+          "status",
+          "non_quota",
+          "quota"
+        ],
+        "properties": {
+          "parent_kind": {
+            "$ref": "#/components/schemas/TtsSegmentParentKind"
+          },
+          "voice_task_id": {
+            "type": "string",
+            "description": "SecretWaifu public voice task id. Provider-internal task ids are never exposed to Unity."
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "client_turn_id": {
+            "type": "string",
+            "description": "Present for `parent_kind=visible_turn`."
+          },
+          "client_request_id": {
+            "type": "string",
+            "description": "Present for `parent_kind=session_voice`."
+          },
+          "segment_id": {
+            "type": "string"
+          },
+          "sequence_index": {
+            "type": "integer"
+          },
+          "role": {
+            "$ref": "#/components/schemas/TtsSegmentRole"
+          },
+          "voice_ref_path": {
+            "type": "string"
+          },
+          "stream_token": {
+            "type": "string",
+            "description": "Raw short-lived stream token. Backend stores only a hash. Do not log it."
+          },
+          "stream_token_expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "processing",
+              "complete",
+              "error",
+              "cancelled"
+            ]
+          },
+          "usage_kind": {
+            "$ref": "#/components/schemas/TtsSegmentUsageKind",
+            "description": "Present for `parent_kind=session_voice`."
+          },
+          "non_quota": {
+            "type": "boolean",
+            "description": "`true` for gameplay/session voice, `false` for normal visible chat voice."
+          },
+          "quota": {
+            "$ref": "#/components/schemas/QuotaSnapshotData"
+          }
+        }
+      },
+      "TtsSegmentResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TtsSegmentData"
+          }
+        }
+      },
+      "TtsStreamControlMessage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "pause",
+              "resume",
+              "cancel"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional cancel reason. Only accepted for `cancel`; pause/resume controls must not include it."
+          }
+        },
+        "description": "Client-to-backend websocket text frame for `/api/tts/stream/{voice_task_id}`. The task id is taken from the authenticated stream URL; provider task ids and unknown fields are rejected."
+      },
+      "TtsStreamControlAcknowledgement": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "task_id",
+          "action",
+          "status"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "control"
+            ]
+          },
+          "task_id": {
+            "type": "string",
+            "description": "SecretWaifu public voice task id."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "pause",
+              "resume",
+              "cancel"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "failed"
+            ]
+          },
+          "deferred": {
+            "type": "boolean",
+            "description": "True when a pause/resume/cancel was accepted before the upstream provider task id existed and will be applied or handled locally when possible."
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "description": "Backend-to-Unity websocket text frame confirming whether a public stream control was accepted or rejected without exposing provider task ids."
+      },
+      "UnityRuntimeDirective": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "scope",
+          "kind",
+          "text"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "Unity-owned machine key. Backend must not treat this as an enum."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "current_turn",
+              "session_state"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "fact",
+              "constraint",
+              "style_hint"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1200
+          }
+        }
+      },
+      "UnityRuntimeContext": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract_version",
+          "directives"
+        ],
+        "properties": {
+          "contract_version": {
+            "type": "integer",
+            "enum": [
+              2
+            ]
+          },
+          "directives": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "$ref": "#/components/schemas/UnityRuntimeDirective"
+            }
+          }
+        },
+        "description": "Unity-owned runtime directives for one visible chat turn. Backend validates the generic envelope and renders directive text as untrusted prompt context; directive IDs and gameplay meaning belong to Unity.\n"
+      },
+      "AnimationCapabilityEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 512
+          }
+        }
+      },
+      "AnimationCapabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract_version",
+          "moods",
+          "gestures",
+          "big_gestures"
+        ],
+        "properties": {
+          "contract_version": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "moods": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "$ref": "#/components/schemas/AnimationCapabilityEntry"
+            }
+          },
+          "gestures": {
+            "type": "array",
+            "maxItems": 256,
+            "items": {
+              "$ref": "#/components/schemas/AnimationCapabilityEntry"
+            }
+          },
+          "big_gestures": {
+            "type": "array",
+            "maxItems": 128,
+            "items": {
+              "$ref": "#/components/schemas/AnimationCapabilityEntry"
+            }
+          },
+          "example_response": {
+            "type": "string",
+            "maxLength": 4000
+          }
+        },
+        "description": "Unity-owned animation tag inventory for backend prompt rendering. The backend must not invent tag IDs outside these lists.\n"
+      },
       "ChatSendSuccessData": {
         "type": "object",
         "required": [
           "allowed",
-          "session_id",
+          "exhaustion_reason",
+          "can_send_text",
+          "can_generate_voice",
+          "user_id",
+          "tier_code",
+          "limit",
           "remaining",
+          "period_ends_at",
+          "message_quota",
+          "voice_quota",
+          "session_id",
           "user_message",
           "assistant_message",
+          "voice_task_id",
           "provider"
         ],
         "properties": {
@@ -2094,6 +4241,27 @@
               true
             ]
           },
+          "exhaustion_reason": {
+            "$ref": "#/components/schemas/QuotaExhaustionReason"
+          },
+          "can_send_text": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "can_generate_voice": {
+            "type": "boolean"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "tier_code": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer"
+          },
           "idempotency_replayed": {
             "type": "boolean"
           },
@@ -2101,13 +4269,36 @@
             "type": "string"
           },
           "remaining": {
-            "type": "integer"
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "period_ends_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "message_quota": {
+            "$ref": "#/components/schemas/MessageQuotaDetail"
+          },
+          "voice_quota": {
+            "$ref": "#/components/schemas/VoiceQuotaDetail"
           },
           "user_message": {
-            "$ref": "#/components/schemas/MessageItem"
+            "$ref": "#/components/schemas/UserMessageItem"
           },
           "assistant_message": {
-            "$ref": "#/components/schemas/MessageItem"
+            "$ref": "#/components/schemas/AssistantMessageItem"
+          },
+          "voice_task_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "provider": {
             "type": "string"
@@ -2125,26 +4316,209 @@
           }
         }
       },
+      "GameplayEventMessageItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "content",
+          "client_event_id",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "GAMEPLAY"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "client_event_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "GameplayAssistantMessageItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "content",
+          "client_event_id",
+          "created_at",
+          "audio_url"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ASSISTANT"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "client_event_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "audio_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "GameplaySendSuccessData": {
+        "type": "object",
+        "required": [
+          "session_id",
+          "non_quota",
+          "idempotency_replayed",
+          "client_event_id",
+          "event_type",
+          "event_message",
+          "assistant_message",
+          "voice_task_id",
+          "provider"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "non_quota": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "idempotency_replayed": {
+            "type": "boolean"
+          },
+          "client_event_id": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "touch",
+              "undress",
+              "post_sex_return",
+              "sex_rejected",
+              "sex_postponed"
+            ]
+          },
+          "event_message": {
+            "$ref": "#/components/schemas/GameplayEventMessageItem"
+          },
+          "assistant_message": {
+            "$ref": "#/components/schemas/GameplayAssistantMessageItem"
+          },
+          "voice_task_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "type": "string"
+          }
+        }
+      },
+      "GameplaySendSuccessResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/GameplaySendSuccessData"
+          }
+        }
+      },
+      "ChatSseEvent": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "prompt_debug",
+              "token",
+              "done",
+              "error"
+            ]
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Exact provider-rendered prompt, present only on `prompt_debug`."
+          },
+          "diagnostics": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Prompt hash, size, provider-template, history, runtime-context, animation, and generation diagnostics."
+          }
+        }
+      },
       "QuotaData": {
         "type": "object",
         "required": [
           "allowed",
+          "exhaustion_reason",
+          "can_send_text",
+          "can_generate_voice",
           "user_id",
-          "remaining",
           "tier_code",
           "limit",
+          "remaining",
           "period_ends_at",
-          "user_message"
+          "user_message",
+          "message_quota",
+          "voice_quota"
         ],
         "properties": {
           "allowed": {
+            "type": "boolean"
+          },
+          "exhaustion_reason": {
+            "$ref": "#/components/schemas/QuotaExhaustionReason"
+          },
+          "can_send_text": {
+            "type": "boolean"
+          },
+          "can_generate_voice": {
             "type": "boolean"
           },
           "user_id": {
             "type": "string"
           },
           "remaining": {
-            "type": "integer"
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "tier_code": {
             "type": "string"
@@ -2161,6 +4535,12 @@
               "string",
               "null"
             ]
+          },
+          "message_quota": {
+            "$ref": "#/components/schemas/MessageQuotaDetail"
+          },
+          "voice_quota": {
+            "$ref": "#/components/schemas/VoiceQuotaDetail"
           }
         }
       },
@@ -2172,6 +4552,269 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/QuotaData"
+          }
+        }
+      },
+      "UnityModelSignedUrlData": {
+        "type": "object",
+        "required": [
+          "character_id",
+          "model_url",
+          "expires_at",
+          "model_hash",
+          "model_version"
+        ],
+        "properties": {
+          "character_id": {
+            "type": "string"
+          },
+          "model_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "model_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_version": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "UnityModelSignedUrlResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/UnityModelSignedUrlData"
+          }
+        }
+      },
+      "StructuredHelperPurpose": {
+        "type": "string",
+        "enum": [
+          "metadata_interpretation",
+          "sex_phrases",
+          "tts_emotion_decoration"
+        ]
+      },
+      "StructuredHelperMessage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "content"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "system",
+              "user",
+              "assistant"
+            ]
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 12000
+          }
+        }
+      },
+      "StructuredHelperGenerateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "session_id",
+          "purpose",
+          "messages"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "client_request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9._:-]+$",
+            "description": "Optional Unity diagnostic/idempotency correlation id. This endpoint does not replay or persist helper calls."
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/StructuredHelperPurpose"
+          },
+          "messages": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 8,
+            "description": "Unity-owned helper prompt messages. Total content is capped at 32,000 characters.",
+            "items": {
+              "$ref": "#/components/schemas/StructuredHelperMessage"
+            }
+          },
+          "ai_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "Optional assistant name used only by the provider-template renderer."
+          },
+          "grammar": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 24000,
+            "description": "Optional Unity-owned GBNF grammar passed to the provider for this helper call only."
+          },
+          "json_schema": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Optional Unity-owned JSON Schema object. Serialized UTF-8 size is capped at 24,000 bytes."
+          },
+          "debug_prompt": {
+            "type": "boolean",
+            "default": false,
+            "description": "Returns prompt_debug only when this flag is true and CHAT_PROMPT_DEBUG_ENABLED is enabled on the backend."
+          }
+        },
+        "description": "Structured helper requests are non-quota and non-persistent. Unity owns prompt/schema/grammar semantics; backend owns provider execution policy."
+      },
+      "StructuredHelperPromptDebug": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "prompt",
+          "diagnostics"
+        ],
+        "properties": {
+          "prompt": {
+            "type": "string"
+          },
+          "diagnostics": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+              "purpose",
+              "prompt_sha256",
+              "prompt_chars",
+              "prompt_utf8_bytes",
+              "provider_template",
+              "provider_template_sha256",
+              "message_count",
+              "total_message_chars",
+              "grammar_chars",
+              "json_schema_utf8_bytes",
+              "n_keep",
+              "stop",
+              "generation",
+              "content_max_chars"
+            ],
+            "properties": {
+              "purpose": {
+                "$ref": "#/components/schemas/StructuredHelperPurpose"
+              },
+              "prompt_sha256": {
+                "type": "string"
+              },
+              "prompt_chars": {
+                "type": "integer"
+              },
+              "prompt_utf8_bytes": {
+                "type": "integer"
+              },
+              "provider_template": {
+                "type": "string"
+              },
+              "provider_template_sha256": {
+                "type": "string"
+              },
+              "message_count": {
+                "type": "integer"
+              },
+              "total_message_chars": {
+                "type": "integer"
+              },
+              "grammar_chars": {
+                "type": "integer"
+              },
+              "json_schema_utf8_bytes": {
+                "type": "integer"
+              },
+              "n_keep": {
+                "type": "integer"
+              },
+              "stop": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "generation": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "content_max_chars": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "description": "Exact provider-rendered prompt diagnostics. Never includes provider URLs, bearer tokens, cookies, env values, passwords, or signed URLs."
+      },
+      "StructuredHelperGenerateData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "purpose",
+          "content",
+          "content_sha256",
+          "provider",
+          "prompt_debug"
+        ],
+        "properties": {
+          "purpose": {
+            "$ref": "#/components/schemas/StructuredHelperPurpose"
+          },
+          "content": {
+            "type": "string"
+          },
+          "content_sha256": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "webhook"
+            ]
+          },
+          "prompt_debug": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StructuredHelperPromptDebug"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "StructuredHelperGenerateResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/StructuredHelperGenerateData"
           }
         }
       }

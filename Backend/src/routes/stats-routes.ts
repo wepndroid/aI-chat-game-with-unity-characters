@@ -2,16 +2,90 @@ import os from 'node:os'
 import { Router } from 'express'
 import { z } from 'zod'
 import { getEmailConfig } from '../lib/auth-config'
-import { applyApiKeysToProcessEnv, writeApiKeysToEnvFile } from '../lib/env-file-sync'
 import { isPatreonOauthEnabled } from '../lib/patreon-config'
 import { getGoogleOAuthConfig } from '../lib/oauth-config'
 import { requireAdmin } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
-import { getRuntimeAdminSettings, updateRuntimeAdminSettings } from '../lib/runtime-admin-settings'
+import { getRuntimeAdminSettings, toMaskedApiKeys, updateRuntimeAdminSettings } from '../lib/runtime-admin-settings'
+import { calculateMonthlyEquivalentCents, resolveBillingPeriodMonths } from '../lib/subscription-billing'
+import { buildActivePlayablePatreonEntitlementWhere } from '../services/membership/active-patreon-entitlement-projection'
 
 const statsRoutes = Router()
 
 type ActivityTone = 'yellow' | 'red' | 'green' | 'blue'
+
+const formatDayKey = (value: Date) => value.toISOString().slice(0, 10)
+
+const formatMonthKey = (value: Date) => value.toISOString().slice(0, 7)
+
+const getUtcDayStart = (value: Date) => new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()))
+
+const getUtcMonthStart = (value: Date) => new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), 1))
+
+const addUtcDays = (value: Date, days: number) => {
+  const nextValue = new Date(value)
+  nextValue.setUTCDate(nextValue.getUTCDate() + days)
+  return nextValue
+}
+
+const addUtcMonths = (value: Date, months: number) => {
+  const nextValue = new Date(value)
+  nextValue.setUTCMonth(nextValue.getUTCMonth() + months)
+  return nextValue
+}
+
+const buildSignupTrend = (input: {
+  users: Array<{ createdAt: Date }>
+  dailyStart: Date
+  monthlyStart: Date
+  dailyBaselineUsers: number
+  monthlyBaselineUsers: number
+  now: Date
+}) => {
+  const dailyBuckets = new Map<string, number>()
+  const monthlyBuckets = new Map<string, number>()
+
+  for (let dayCursor = input.dailyStart; dayCursor <= input.now; dayCursor = addUtcDays(dayCursor, 1)) {
+    dailyBuckets.set(formatDayKey(dayCursor), 0)
+  }
+
+  for (let monthCursor = input.monthlyStart; monthCursor <= input.now; monthCursor = addUtcMonths(monthCursor, 1)) {
+    monthlyBuckets.set(formatMonthKey(monthCursor), 0)
+  }
+
+  for (const user of input.users) {
+    if (user.createdAt >= input.dailyStart) {
+      const dayKey = formatDayKey(user.createdAt)
+      dailyBuckets.set(dayKey, (dailyBuckets.get(dayKey) ?? 0) + 1)
+    }
+
+    if (user.createdAt >= input.monthlyStart) {
+      const monthKey = formatMonthKey(user.createdAt)
+      monthlyBuckets.set(monthKey, (monthlyBuckets.get(monthKey) ?? 0) + 1)
+    }
+  }
+
+  const serializeBuckets = (buckets: Map<string, number>, baselineUsers: number) => {
+    let cumulativeUsers = baselineUsers
+
+    return [...buckets.entries()]
+      .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+      .map(([periodKey, signups]) => {
+        cumulativeUsers += signups
+
+        return {
+          periodKey,
+          signups,
+          cumulativeUsers
+        }
+      })
+  }
+
+  return {
+    daily: serializeBuckets(dailyBuckets, input.dailyBaselineUsers),
+    monthly: serializeBuckets(monthlyBuckets, input.monthlyBaselineUsers)
+  }
+}
 
 const toRelativeTimeLabel = (value: Date) => {
   const diffMs = Date.now() - value.getTime()
@@ -160,6 +234,16 @@ const buildDeploymentChecks = () => {
   const googleEnabled = getGoogleOAuthConfig().enabled
   const emailCfg = getEmailConfig()
   const smtpConfigured = Boolean(emailCfg.smtpHost && emailCfg.smtpUser && emailCfg.smtpPass)
+  const mailgunConfigured = Boolean(emailCfg.mailgunDomain && emailCfg.mailgunApiKey && emailCfg.from)
+  const emailConfigured = emailCfg.provider === 'mailgun' ? mailgunConfigured : smtpConfigured
+  const emailDetail =
+    emailCfg.provider === 'mailgun'
+      ? mailgunConfigured
+        ? `Mailgun (${emailCfg.mailgunRegion.toUpperCase()}) - ${emailCfg.mailgunDomain}`
+        : 'Missing Mailgun domain or API key'
+      : smtpConfigured
+        ? `SMTP ${emailCfg.smtpHost}:${emailCfg.smtpPort}`
+        : 'Missing SMTP credentials'
 
   return {
     checks: [
@@ -176,10 +260,10 @@ const buildDeploymentChecks = () => {
         detail: googleEnabled ? 'Configured' : 'Google OAuth credentials are incomplete'
       },
       {
-        id: 'smtp',
-        label: 'SMTP',
-        status: smtpConfigured ? 'ready' : 'pending',
-        detail: smtpConfigured ? `${emailCfg.smtpHost}:${emailCfg.smtpPort}` : 'Missing SMTP credentials'
+        id: 'email',
+        label: 'Email Delivery',
+        status: emailConfigured ? 'ready' : 'pending',
+        detail: emailDetail
       }
     ],
     browserMatrix: []
@@ -254,22 +338,6 @@ const adminSettingsPatchSchema = z.object({
     })
     .strict()
     .optional(),
-  apiKeys: z
-    .object({
-      googleClientId: z.string(),
-      googleClientSecret: z.string(),
-      googleRedirectUri: z.string(),
-      patreonClientId: z.string(),
-      patreonClientSecret: z.string(),
-      patreonRedirectUri: z.string(),
-      smtpHost: z.string(),
-      smtpPort: z.number().int().min(1).max(65535),
-      smtpUser: z.string(),
-      smtpPass: z.string(),
-      smtpFrom: z.string()
-    })
-    .strict()
-    .optional()
 }).strict()
 
 statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next) => {
@@ -287,11 +355,16 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    const dailySignupTrendStart = addUtcDays(getUtcDayStart(now), -29)
+    const monthlySignupTrendStart = addUtcMonths(getUtcMonthStart(now), -11)
 
     const [
       totalUsers,
       nonAdminUserCount,
       newUsersToday,
+      dailySignupTrendBaseline,
+      monthlySignupTrendBaseline,
+      signupTrendUsers,
       totalCharacters,
       approvedCharacters,
       pendingCharacters,
@@ -299,7 +372,7 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
       totalHeartsResult,
       patreonLinkedUsers,
       activePatrons,
-      totalViewsResult,
+      totalMessagesResult,
       dau7dRecords,
       dau30dRecords,
       pendingStories
@@ -317,6 +390,30 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
           createdAt: {
             gte: startOfToday
           }
+        }
+      }),
+      prisma.user.count({
+        where: {
+          createdAt: {
+            lt: dailySignupTrendStart
+          }
+        }
+      }),
+      prisma.user.count({
+        where: {
+          createdAt: {
+            lt: monthlySignupTrendStart
+          }
+        }
+      }),
+      prisma.user.findMany({
+        where: {
+          createdAt: {
+            gte: monthlySignupTrendStart
+          }
+        },
+        select: {
+          createdAt: true
         }
       }),
       prisma.character.count(),
@@ -342,39 +439,33 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
         }
       }),
       prisma.patreonAccount.count(),
-      prisma.patreonAccount.count({
+      prisma.user.count({
         where: {
-          membershipStatus: 'active_patron',
-          OR: [{ nextChargeDate: null }, { nextChargeDate: { gt: now } }]
+          role: {
+            not: 'ADMIN'
+          },
+          entitlementGrants: {
+            some: buildActivePlayablePatreonEntitlementWhere(now)
+          }
         }
       }),
       prisma.character.aggregate({
         _sum: {
-          viewsCount: true
+          messageCount: true
         }
       }),
-      prisma.session.findMany({
+      prisma.userActivityState.count({
         where: {
-          revokedAt: null,
           lastSeenAt: {
             gte: sevenDaysAgo
           }
-        },
-        distinct: ['userId'],
-        select: {
-          userId: true
         }
       }),
-      prisma.session.findMany({
+      prisma.userActivityState.count({
         where: {
-          revokedAt: null,
           lastSeenAt: {
             gte: thirtyDaysAgo
           }
-        },
-        distinct: ['userId'],
-        select: {
-          userId: true
         }
       }),
       prisma.storyPost.count({
@@ -448,39 +539,56 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
         status: 'APPROVED'
       },
       take: 8,
-      orderBy: [{ viewsCount: 'desc' }, { heartsCount: 'desc' }],
+      orderBy: [{ messageCount: 'desc' }, { heartsCount: 'desc' }],
       select: {
         id: true,
         slug: true,
         name: true,
         previewImageUrl: true,
-        viewsCount: true,
+        messageCount: true,
         heartsCount: true,
         minimumTierCents: true,
         isPatreonGated: true
       }
     })
 
-    const tierDistributionRaw = await prisma.patreonAccount.findMany({
+    const tierDistributionRaw = await prisma.user.findMany({
       where: {
-        tierCents: {
-          not: null
+        role: {
+          not: 'ADMIN'
         },
-        user: {
-          role: {
-            not: 'ADMIN'
-          }
+        entitlementGrants: {
+          some: buildActivePlayablePatreonEntitlementWhere(now)
         }
       },
       select: {
-        tierCents: true
+        patreonAccount: {
+          select: {
+            tierCents: true,
+            pledgeCadenceMonths: true,
+            lastChargeDate: true,
+            nextChargeDate: true
+          }
+        }
       }
     })
 
     const tierDistributionMap = new Map<number, number>()
 
-    for (const account of tierDistributionRaw) {
-      const tierCents = account.tierCents ?? 0
+    for (const row of tierDistributionRaw) {
+      const account = row.patreonAccount
+      if (!account) {
+        continue
+      }
+
+      const tierCents = calculateMonthlyEquivalentCents(
+        account.tierCents ?? 0,
+        resolveBillingPeriodMonths({
+          pledgeCadenceMonths: account.pledgeCadenceMonths,
+          lastChargeDate: account.lastChargeDate,
+          nextChargeDate: account.nextChargeDate
+        })
+      )
       tierDistributionMap.set(tierCents, (tierDistributionMap.get(tierCents) ?? 0) + 1)
     }
 
@@ -493,6 +601,14 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
 
     const recentActivity = await buildRecentActivity()
     const deployment = await buildDeploymentChecks()
+    const signupTrends = buildSignupTrend({
+      users: signupTrendUsers,
+      dailyStart: dailySignupTrendStart,
+      monthlyStart: monthlySignupTrendStart,
+      dailyBaselineUsers: dailySignupTrendBaseline,
+      monthlyBaselineUsers: monthlySignupTrendBaseline,
+      now
+    })
 
     const [loadAvg1m, loadAvg5m, loadAvg15m] = os.loadavg()
 
@@ -509,11 +625,11 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
         newCommunityVrmsCount,
         totalReviews,
         totalHearts: totalHeartsResult._sum.heartsCount ?? 0,
-        totalViews: totalViewsResult._sum.viewsCount ?? 0,
+        totalMessages: totalMessagesResult._sum.messageCount ?? 0,
         patreonLinkedUsers,
         activePatrons,
-        dau7d: dau7dRecords.length,
-        dau30d: dau30dRecords.length,
+        dau7d: dau7dRecords,
+        dau30d: dau30dRecords,
         serverLoad1m: Math.round(loadAvg1m * 1000) / 1000,
         serverLoad5m: Math.round(loadAvg5m * 1000) / 1000,
         serverLoad15m: Math.round(loadAvg15m * 1000) / 1000,
@@ -523,6 +639,7 @@ statsRoutes.get('/stats/overview', requireAdmin, async (request, response, next)
           activePatrons,
           tierDistribution
         },
+        signupTrends,
         recentActivity,
         deployment,
         updatedAt: new Date().toISOString()
@@ -561,7 +678,10 @@ statsRoutes.get('/admin/global-settings', requireAdmin, async (_request, respons
   try {
     const settings = await getRuntimeAdminSettings()
     response.json({
-      data: settings
+      data: {
+        ...settings,
+        apiKeys: toMaskedApiKeys(settings.apiKeys)
+      }
     })
   } catch (error) {
     next(error)
@@ -594,28 +714,16 @@ statsRoutes.patch('/admin/global-settings', requireAdmin, async (request, respon
       featureSwitches: payload.featureSwitches ?? previous.featureSwitches,
       thumbnailGeneration: payload.thumbnailGeneration ?? previous.thumbnailGeneration,
       maintenance: payload.maintenance ?? previous.maintenance,
-      apiKeys: payload.apiKeys
-        ? {
-            ...previous.apiKeys,
-            ...payload.apiKeys,
-            googleClientSecret:
-              payload.apiKeys.googleClientSecret.trim().length > 0 ? payload.apiKeys.googleClientSecret : previous.apiKeys.googleClientSecret,
-            patreonClientSecret:
-              payload.apiKeys.patreonClientSecret.trim().length > 0
-                ? payload.apiKeys.patreonClientSecret
-                : previous.apiKeys.patreonClientSecret,
-            smtpPass: payload.apiKeys.smtpPass.trim().length > 0 ? payload.apiKeys.smtpPass : previous.apiKeys.smtpPass
-          }
-        : previous.apiKeys
+      apiKeys: previous.apiKeys
     })
-
-    applyApiKeysToProcessEnv(nextSettings.apiKeys)
-    writeApiKeysToEnvFile(nextSettings.apiKeys)
 
     const refreshed = await getRuntimeAdminSettings()
 
     response.json({
-      data: refreshed
+      data: {
+        ...refreshed,
+        apiKeys: toMaskedApiKeys(refreshed.apiKeys)
+      }
     })
   } catch (error) {
     next(error)

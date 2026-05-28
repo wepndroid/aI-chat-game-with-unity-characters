@@ -25,4 +25,8 @@ const markNotificationRead = async (id: string) => {
   return apiPost<{ data: { updated: boolean } }>('/users/me/notifications/mark-read', { id })
 }
 
-export { getMyNotifications, markNotificationRead }
+const clearMyNotifications = async () => {
+  return apiPost<{ data: { cleared: boolean } }>('/users/me/notifications/clear')
+}
+
+export { clearMyNotifications, getMyNotifications, markNotificationRead }

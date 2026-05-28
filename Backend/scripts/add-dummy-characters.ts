@@ -5,6 +5,7 @@
 import 'dotenv/config'
 import { PrismaClient, type CharacterStatus, type CharacterVisibility } from '@prisma/client'
 import { slugify } from '../src/lib/slug'
+import { combineScenarioFields } from '../src/lib/combine-scenario-body'
 
 const prisma = new PrismaClient()
 
@@ -17,9 +18,8 @@ type DummyCharacterSeed = {
   firstMessage: string
   exampleDialogs: string
   heartsCount: number
-  viewsCount: number
+  messageCount: number
   isPatreonGated: boolean
-  minimumTierCents: number | null
 }
 
 const dummyCharacters: DummyCharacterSeed[] = [
@@ -32,9 +32,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'You made it. I saved the best seat for you.',
     exampleDialogs: 'You: What should we do first?\nAstra Vale: Step one, breathe. Step two, we win.',
     heartsCount: 1480,
-    viewsCount: 9200,
-    isPatreonGated: false,
-    minimumTierCents: null
+    messageCount: 9200,
+    isPatreonGated: false
   },
   {
     name: 'Mina Voss',
@@ -45,9 +44,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'Think you can beat me this time?',
     exampleDialogs: 'You: Rematch?\nMina Voss: Always. I was just getting warmed up.',
     heartsCount: 1320,
-    viewsCount: 8100,
-    isPatreonGated: false,
-    minimumTierCents: null
+    messageCount: 8100,
+    isPatreonGated: false
   },
   {
     name: 'Liora Nox',
@@ -58,9 +56,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'Shh. The books are listening.',
     exampleDialogs: 'You: Do you always work this late?\nLiora Nox: Only when the right story is waiting.',
     heartsCount: 1175,
-    viewsCount: 7600,
-    isPatreonGated: true,
-    minimumTierCents: 500
+    messageCount: 7600,
+    isPatreonGated: true
   },
   {
     name: 'Rei Ember',
@@ -71,9 +68,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'If it is broken, I can fix it. If it is cursed, I can still fix it.',
     exampleDialogs: 'You: Need a hand?\nRei Ember: Finally, a useful suggestion.',
     heartsCount: 1240,
-    viewsCount: 8300,
-    isPatreonGated: false,
-    minimumTierCents: null
+    messageCount: 8300,
+    isPatreonGated: false
   },
   {
     name: 'Yuna Crest',
@@ -84,9 +80,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'Last one to the top buys the snacks!',
     exampleDialogs: 'You: You are way too excited about this.\nYuna Crest: That is how you know it will be fun.',
     heartsCount: 960,
-    viewsCount: 6400,
-    isPatreonGated: false,
-    minimumTierCents: null
+    messageCount: 6400,
+    isPatreonGated: false
   },
   {
     name: 'Selene Frost',
@@ -97,9 +92,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'If you are going to interrupt, do it with purpose.',
     exampleDialogs: 'You: That was impressive.\nSelene Frost: I appreciate the accurate observation.',
     heartsCount: 1110,
-    viewsCount: 7100,
-    isPatreonGated: true,
-    minimumTierCents: 1500
+    messageCount: 7100,
+    isPatreonGated: true
   },
   {
     name: 'Talia Rune',
@@ -110,9 +104,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'I am very close to the truth. Please do not let me get distracted.',
     exampleDialogs: 'You: What are we looking for?\nTalia Rune: A pattern. There is always a pattern.',
     heartsCount: 1030,
-    viewsCount: 6900,
-    isPatreonGated: false,
-    minimumTierCents: null
+    messageCount: 6900,
+    isPatreonGated: false
   },
   {
     name: 'Nia Sol',
@@ -123,9 +116,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'Good morning. The plants were waiting for us.',
     exampleDialogs: 'You: It feels peaceful here.\nNia Sol: That is the goal. Peace grows best when shared.',
     heartsCount: 1405,
-    viewsCount: 8700,
-    isPatreonGated: false,
-    minimumTierCents: null
+    messageCount: 8700,
+    isPatreonGated: false
   },
   {
     name: 'Vera Lux',
@@ -136,9 +128,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'Tell me what you noticed. Leave nothing out.',
     exampleDialogs: 'You: The clues do not line up.\nVera Lux: Excellent. That means someone tried very hard.',
     heartsCount: 1285,
-    viewsCount: 7800,
-    isPatreonGated: false,
-    minimumTierCents: null
+    messageCount: 7800,
+    isPatreonGated: false
   },
   {
     name: 'Kira Thorne',
@@ -149,9 +140,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'Hop on. We are taking the long way.',
     exampleDialogs: 'You: Where are we going?\nKira Thorne: Somewhere better than here. Trust me.',
     heartsCount: 1015,
-    viewsCount: 6200,
-    isPatreonGated: true,
-    minimumTierCents: 3000
+    messageCount: 6200,
+    isPatreonGated: true
   },
   {
     name: 'Elara Bloom',
@@ -162,9 +152,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'I was hoping you would arrive before the light changed.',
     exampleDialogs: 'You: What are you painting?\nElara Bloom: A feeling. I am trying to catch it before it escapes.',
     heartsCount: 1495,
-    viewsCount: 9400,
-    isPatreonGated: false,
-    minimumTierCents: null
+    messageCount: 9400,
+    isPatreonGated: false
   },
   {
     name: 'Juniper Reed',
@@ -175,9 +164,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'Sit down. I am here to help, not to lecture.',
     exampleDialogs: 'You: Is it serious?\nJuniper Reed: Not if you cooperate and stop worrying.',
     heartsCount: 940,
-    viewsCount: 5700,
-    isPatreonGated: false,
-    minimumTierCents: null
+    messageCount: 5700,
+    isPatreonGated: false
   },
   {
     name: 'Orion Wren',
@@ -188,9 +176,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'Good timing. I have room for one more passenger.',
     exampleDialogs: 'You: Is this safe?\nOrion Wren: Safe is relative. Fun is guaranteed.',
     heartsCount: 1190,
-    viewsCount: 7300,
-    isPatreonGated: false,
-    minimumTierCents: null
+    messageCount: 7300,
+    isPatreonGated: false
   },
   {
     name: 'Mira Ash',
@@ -201,9 +188,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'You can be honest. I would rather hear the truth.',
     exampleDialogs: 'You: That chorus gave me chills.\nMira Ash: Then the song did its job.',
     heartsCount: 1080,
-    viewsCount: 6800,
-    isPatreonGated: false,
-    minimumTierCents: null
+    messageCount: 6800,
+    isPatreonGated: false
   },
   {
     name: 'Riven Hale',
@@ -214,9 +200,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'If anyone asks, you never saw me here.',
     exampleDialogs: 'You: What is in the box?\nRiven Hale: If I told you, we would both be in trouble.',
     heartsCount: 1315,
-    viewsCount: 8600,
-    isPatreonGated: true,
-    minimumTierCents: 5000
+    messageCount: 8600,
+    isPatreonGated: true
   },
   {
     name: 'Cleo Sage',
@@ -227,9 +212,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'Tell me how your day felt, and I will match the tea to it.',
     exampleDialogs: 'You: I need something calming.\nCleo Sage: Then we will start with a gentler flavor.',
     heartsCount: 990,
-    viewsCount: 5900,
-    isPatreonGated: false,
-    minimumTierCents: null
+    messageCount: 5900,
+    isPatreonGated: false
   },
   {
     name: 'Arden Pike',
@@ -240,9 +224,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'No excuses. Just your best effort.',
     exampleDialogs: 'You: You really like this, do you not?\nArden Pike: I like excellence. This is close enough.',
     heartsCount: 1150,
-    viewsCount: 7400,
-    isPatreonGated: false,
-    minimumTierCents: null
+    messageCount: 7400,
+    isPatreonGated: false
   },
   {
     name: 'Etta Noir',
@@ -253,9 +236,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'You look like someone who knows how to keep a promise.',
     exampleDialogs: 'You: Do you remember everyone who comes here?\nEtta Noir: Only the interesting ones.',
     heartsCount: 1375,
-    viewsCount: 8900,
-    isPatreonGated: false,
-    minimumTierCents: null
+    messageCount: 8900,
+    isPatreonGated: false
   },
   {
     name: 'Kaia Ember',
@@ -266,9 +248,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'The mountain is talking again. Good. I was getting bored.',
     exampleDialogs: 'You: That sounds alarming.\nKaia Ember: Not alarming. Scientific.',
     heartsCount: 1210,
-    viewsCount: 7500,
-    isPatreonGated: false,
-    minimumTierCents: null
+    messageCount: 7500,
+    isPatreonGated: false
   },
   {
     name: 'Seren Vale',
@@ -279,9 +260,8 @@ const dummyCharacters: DummyCharacterSeed[] = [
     firstMessage: 'The sky is especially kind tonight.',
     exampleDialogs: 'You: Which star is yours?\nSeren Vale: The one that feels like it is waiting for us.',
     heartsCount: 1440,
-    viewsCount: 9100,
-    isPatreonGated: true,
-    minimumTierCents: 1000
+    messageCount: 9100,
+    isPatreonGated: true
   }
 ]
 
@@ -299,19 +279,9 @@ const buildCharacterData = (seed: DummyCharacterSeed, index: number) => {
     visibility: 'PUBLIC' as CharacterVisibility,
     officialListing: false,
     isPatreonGated: seed.isPatreonGated,
-    minimumTierCents: seed.minimumTierCents,
     heartsCount: seed.heartsCount,
-    viewsCount: seed.viewsCount,
-    publishedAt: now,
-    characterCard: {
-      fullName: seed.name,
-      description: seed.description,
-      personality: seed.personality,
-      scenario: seed.scenario,
-      firstMessage: seed.firstMessage,
-      exampleDialogs: seed.exampleDialogs,
-      isPublic: true
-    }
+    messageCount: seed.messageCount,
+    publishedAt: now
   }
 }
 
@@ -336,18 +306,17 @@ const main = async () => {
 
   for (const [index, seed] of dummyCharacters.entries()) {
     const characterData = buildCharacterData(seed, index)
-    const { characterCard, ...characterFields } = characterData
 
     const character = await prisma.character.upsert({
       where: {
-        slug: characterFields.slug
+        slug: characterData.slug
       },
       create: {
-        ...characterFields,
+        ...characterData,
         ownerId: owner.id
       },
       update: {
-        ...characterFields,
+        ...characterData,
         ownerId: owner.id
       },
       select: {
@@ -357,18 +326,60 @@ const main = async () => {
       }
     })
 
-    await prisma.characterCard.upsert({
+    const title = `${seed.name} Introduction`
+    const storyData = {
+      authorId: owner.id,
+      characterId: character.id,
+      title,
+      promptDescription: seed.description,
+      personality: seed.personality,
+      scenario: seed.scenario,
+      firstMessage: seed.firstMessage,
+      exampleDialogs: seed.exampleDialogs,
+      scenarioStory: seed.description,
+      scenarioChat: seed.scenario,
+      body: combineScenarioFields(seed.description, seed.scenario),
+      scenarioType: 'OTHER',
+      origin: 'OFFICIAL' as const,
+      publicationStatus: 'PUBLISHED' as const,
+      moderationStatus: 'APPROVED' as const,
+      publishedAt: characterData.publishedAt
+    }
+    const existingStory = await prisma.storyPost.findFirst({
       where: {
-        characterId: character.id
-      },
-      create: {
         characterId: character.id,
-        creatorUserId: owner.id,
-        ...characterCard
+        title
       },
-      update: {
-        creatorUserId: owner.id,
-        ...characterCard
+      orderBy: {
+        createdAt: 'asc'
+      },
+      select: {
+        id: true
+      }
+    })
+    const story = existingStory
+      ? await prisma.storyPost.update({
+          where: {
+            id: existingStory.id
+          },
+          data: storyData,
+          select: {
+            id: true
+          }
+        })
+      : await prisma.storyPost.create({
+          data: storyData,
+          select: {
+            id: true
+          }
+        })
+
+    await prisma.character.update({
+      where: {
+        id: character.id
+      },
+      data: {
+        defaultStoryId: story.id
       }
     })
 

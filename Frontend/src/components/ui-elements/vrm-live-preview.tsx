@@ -14,12 +14,14 @@ type VrmLivePreviewProps = {
   existingPoseUrl?: string | null
   existingPreviewImageUrl?: string | null
   onThumbnailGenerated: (file: File) => void
+  onModelLoadStateChange?: (state: { isLoading: boolean; progressPercent: number; isReady: boolean }) => void
   poseControls?: ReactNode
   autoPoseUrls?: string[]
   wideLayout?: boolean
   autoCaptureOnLoad?: boolean
   headless?: boolean
   debugViewport?: boolean
+  flipCharacter?: boolean
   capturePreset?: 'default' | 'portrait-thumbnail'
   captureRequestKey?: number
 }
@@ -197,12 +199,14 @@ const VrmLivePreview = ({
   existingPoseUrl,
   existingPreviewImageUrl,
   onThumbnailGenerated,
+  onModelLoadStateChange,
   poseControls,
   autoPoseUrls,
   wideLayout = false,
   autoCaptureOnLoad = false,
   headless = false,
   debugViewport = false,
+  flipCharacter = false,
   capturePreset = 'default',
   captureRequestKey = 0
 }: VrmLivePreviewProps) => {
@@ -244,6 +248,8 @@ const VrmLivePreview = ({
   const [isMirroringLarge, setIsMirroringLarge] = useState(false)
   const [selectedPreviewSize, setSelectedPreviewSize] = useState<'small' | 'large'>('large')
   const [isModelLoading, setIsModelLoading] = useState(false)
+  const [modelLoadProgressPercent, setModelLoadProgressPercent] = useState(0)
+  const [isModelReadyForThumbnail, setIsModelReadyForThumbnail] = useState(false)
   const [controlMode, setControlMode] = useState<'rotate' | 'move'>('rotate')
   const [isCameraFollowEnabled, setIsCameraFollowEnabled] = useState(false)
 
@@ -275,12 +281,39 @@ const VrmLivePreview = ({
   const isInteractiveViewport = !headless && !debugViewport
 
   useEffect(() => {
+    onModelLoadStateChange?.({
+      isLoading: isModelLoading,
+      progressPercent: modelLoadProgressPercent,
+      isReady: isModelReadyForThumbnail
+    })
+  }, [isModelLoading, isModelReadyForThumbnail, modelLoadProgressPercent, onModelLoadStateChange])
+
+  useEffect(() => {
+    if (hasModelSource) {
+      return
+    }
+
+    setIsModelLoading(false)
+    setModelLoadProgressPercent(0)
+    setIsModelReadyForThumbnail(false)
+  }, [hasModelSource])
+
+  useEffect(() => {
     isCameraFollowEnabledRef.current = isCameraFollowEnabled
   }, [isCameraFollowEnabled])
 
   useEffect(() => {
     controlModeRef.current = controlMode
   }, [controlMode])
+
+  useEffect(() => {
+    if (!vrmRef.current) {
+      return
+    }
+
+    vrmRef.current.scene.rotation.y = flipCharacter ? Math.PI : 0
+    vrmRef.current.scene.updateMatrixWorld(true)
+  }, [flipCharacter])
 
   useEffect(() => {
     const entries = debugMeshOriginalMaterialsRef.current
@@ -762,6 +795,8 @@ const VrmLivePreview = ({
     window.addEventListener('resize', resize)
 
     void Promise.resolve().then(async () => {
+      setIsModelReadyForThumbnail(false)
+      setModelLoadProgressPercent(5)
       setIsModelLoading(true)
       appendDiagnostic('Initializing preview renderer')
       try {
@@ -804,6 +839,7 @@ const VrmLivePreview = ({
               composer.setSize(Math.max(container.clientWidth, 240), Math.max(container.clientHeight, 280))
 
               composerRef.current = { composer, bloomPass, vignettePass, fxaaPass }
+              setModelLoadProgressPercent((previous) => Math.max(previous, 12))
               appendDiagnostic('Post-processing initialized')
             }
           } catch (error) {
@@ -817,12 +853,14 @@ const VrmLivePreview = ({
         }
 
         appendDiagnostic('Loading VRM runtime modules')
+        setModelLoadProgressPercent((previous) => Math.max(previous, 18))
         const runtime = await loadVrmRuntime()
         if (disposed) {
           return
         }
 
         appendDiagnostic('Creating GLTF loader')
+        setModelLoadProgressPercent((previous) => Math.max(previous, 24))
         const loader = createVrmGLTFLoader(runtime)
         loader.load(
           modelUrl,
@@ -832,16 +870,19 @@ const VrmLivePreview = ({
             }
             try {
               appendDiagnostic('VRM file downloaded and parsed by GLTFLoader')
+              setModelLoadProgressPercent((previous) => Math.max(previous, 84))
               setIsPlaying(true)
 
               const gltf = loadedGltf as VrmLoadedGltf
               const vrm = getVrmFromGltfUserData(gltf)
               if (!vrm) {
                 appendDiagnostic('VRM plugin returned no VRM instance')
+                setModelLoadProgressPercent(0)
                 setErrorMessage('Failed to read VRM data for preview.')
                 return
               }
               appendDiagnostic('VRM instance created')
+              setModelLoadProgressPercent((previous) => Math.max(previous, 88))
               vrmRef.current = vrm
               if (vrm.lookAt && lookAtTargetRef.current) {
                 vrm.lookAt.target = lookAtTargetRef.current
@@ -849,6 +890,7 @@ const VrmLivePreview = ({
               }
 
               appendDiagnostic('Optimizing VRM scene')
+              setModelLoadProgressPercent((previous) => Math.max(previous, 92))
               optimizeVrmSceneForRendering(runtime, vrm.scene)
               debugMeshOriginalMaterialsRef.current = []
               vrm.scene.traverse((node) => {
@@ -876,8 +918,8 @@ const VrmLivePreview = ({
                   applyMaterialArray(entry.mesh, debugMaterial)
                 }
               }
-              // Keep default forward orientation so first frame faces the camera.
-              vrm.scene.rotation.y = 0
+              // Admins can flip the model for hidden reference capture without reloading the VRM.
+              vrm.scene.rotation.y = flipCharacter ? Math.PI : 0
               scene.add(vrm.scene)
               isPlayingRef.current = true
               setIsPlaying(true)
@@ -890,6 +932,7 @@ const VrmLivePreview = ({
               setErrorMessage(null)
 
               appendDiagnostic('Fitting camera to hips target')
+              setModelLoadProgressPercent((previous) => Math.max(previous, 95))
               frameCameraToVrm(vrm)
               initialCameraRef.current = {
                 position: camera.position.clone(),
@@ -911,12 +954,15 @@ const VrmLivePreview = ({
 
               if (poseUrl === null) {
                 appendDiagnostic('No pose selected; rendering base model only')
+                setModelLoadProgressPercent(100)
+                setIsModelReadyForThumbnail(true)
                 scheduleAutoCapture('base model ready')
               } else {
                 const selectedPoseUrl: string = poseUrl
                 void Promise.resolve().then(async () => {
                   try {
                     appendDiagnostic('Loading VRMA pose/animation')
+                    setModelLoadProgressPercent((previous) => Math.max(previous, 97))
                     const vrmaClip = await loadDanceVrmaClip(vrm, selectedPoseUrl)
                     if (disposed || loadGenerationRef.current !== loadGeneration) {
                       return
@@ -941,11 +987,15 @@ const VrmLivePreview = ({
                     clipRef.current = vrmaClip
                     setAnimationMessage(null)
                     appendDiagnostic(`VRMA applied with ${vrmaClip.tracks.length} tracks (autoplay on)`)
+                    setModelLoadProgressPercent(100)
+                    setIsModelReadyForThumbnail(true)
                     scheduleAutoCapture('pose applied')
                   } catch (error) {
                     console.warn('[VrmLivePreview] Failed to load/apply VRMA animation', error)
                     appendDiagnostic(`VRMA load failed: ${formatDiagnosticError(error)}`)
                     setAnimationMessage('Selected pose unavailable right now. Preview and capture still work.')
+                    setModelLoadProgressPercent(100)
+                    setIsModelReadyForThumbnail(true)
                     scheduleAutoCapture('pose failed; base model fallback')
                   }
                 })
@@ -957,24 +1007,32 @@ const VrmLivePreview = ({
             } catch (error) {
               appendDiagnostic(`Load pipeline failed: ${formatDiagnosticError(error)}`)
               setIsModelLoading(false)
+              setModelLoadProgressPercent(0)
+              setIsModelReadyForThumbnail(false)
               setErrorMessage('Could not finish preparing this VRM for preview. Check the diagnostics log below.')
             }
           },
           (event) => {
             const progressEvent = event as ProgressEvent
             if (progressEvent.lengthComputable && progressEvent.total > 0) {
-              appendDiagnostic(`Download progress ${Math.round((progressEvent.loaded / progressEvent.total) * 100)}%`)
+              const downloadPercent = Math.round((progressEvent.loaded / progressEvent.total) * 100)
+              setModelLoadProgressPercent((previous) => Math.max(previous, 24 + Math.round(downloadPercent * 0.56)))
+              appendDiagnostic(`Download progress ${downloadPercent}%`)
             }
           },
           (error) => {
             appendDiagnostic(`GLTF loader failed: ${formatDiagnosticError(error)}`)
             setIsModelLoading(false)
+            setModelLoadProgressPercent(0)
+            setIsModelReadyForThumbnail(false)
             setErrorMessage('Could not load this VRM file for preview.')
           }
         )
       } catch (error) {
         appendDiagnostic(`Preview initialization failed: ${formatDiagnosticError(error)}`)
         setIsModelLoading(false)
+        setModelLoadProgressPercent(0)
+        setIsModelReadyForThumbnail(false)
         setErrorMessage('Could not initialize the 3D preview.')
       }
     })
@@ -998,8 +1056,9 @@ const VrmLivePreview = ({
       }
     }
   // This effect intentionally rebuilds the preview only when the model or pose source changes.
+  // `autoCaptureOnLoad` is read during a given load cycle, but changing it later should not tear down and reload the model.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoCaptureOnLoad, existingPoseUrl, existingVrmUrl, selectedFile, selectedPoseFile])
+  }, [existingPoseUrl, existingVrmUrl, selectedFile, selectedPoseFile])
 
   useEffect(() => {
     const controls = controlsRef.current

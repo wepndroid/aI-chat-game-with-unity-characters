@@ -46,14 +46,19 @@ const PreviewImageDropzone = ({
 
   useEffect(() => {
     if (!pendingImageFile) {
-      setPendingPreviewUrl(null)
-      return
+      const timeout = window.setTimeout(() => {
+        setPendingPreviewUrl(null)
+      }, 0)
+      return () => window.clearTimeout(timeout)
     }
 
     const url = URL.createObjectURL(pendingImageFile)
-    setPendingPreviewUrl(url)
+    const timeout = window.setTimeout(() => {
+      setPendingPreviewUrl(url)
+    }, 0)
 
     return () => {
+      window.clearTimeout(timeout)
       URL.revokeObjectURL(url)
     }
   }, [pendingImageFile])

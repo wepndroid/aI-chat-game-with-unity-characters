@@ -126,8 +126,13 @@ const parseIssuesFromReportJson = (reportJson: unknown): ParsedIssue[] => {
 
   useEffect(() => {
     if (open) {
-      setCopyState('idle')
+      const timeout = window.setTimeout(() => {
+        setCopyState('idle')
+      }, 0)
+      return () => window.clearTimeout(timeout)
     }
+
+    return undefined
   }, [open])
  
    if (!open || typeof document === 'undefined') {

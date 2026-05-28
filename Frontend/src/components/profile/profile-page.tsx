@@ -3,8 +3,10 @@
 import { useAuth } from '@/components/providers/auth-provider'
 import { ProfileAvatarCropDialog } from '@/components/profile/profile-avatar-crop-dialog'
 import AccountSideMenu from '@/components/shared/account-side-menu'
-import { resendVerificationCode, verifyEmailCode } from '@/lib/auth-api'
-import { removeUserAvatar, uploadUserAvatar } from '@/lib/user-api'
+import { resendVerificationCode, setPasswordForCurrentUser, verifyEmailCode } from '@/lib/auth-api'
+import { trackAuthLoginEvent, trackAuthSignUpEvent } from '@/lib/google-analytics-events'
+import { getAuthenticatedOAuthLinkErrorMessage, stripOAuthRedirectQueryParams } from '@/lib/oauth-redirect-query'
+import { removeUserAvatar, updateMyPlayerName, uploadUserAvatar } from '@/lib/user-api'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -14,6 +16,14 @@ const ProfilePage = () => {
   const [verificationCodeInputValue, setVerificationCodeInputValue] = useState('')
   const [verificationMessage, setVerificationMessage] = useState<string | null>(null)
   const [isVerificationBusy, setIsVerificationBusy] = useState(false)
+  const [playerNameInputValue, setPlayerNameInputValue] = useState('')
+  const [isPlayerNameBusy, setIsPlayerNameBusy] = useState(false)
+  const [playerNameMessage, setPlayerNameMessage] = useState<{ text: string; variant: 'success' | 'error' } | null>(null)
+  const [gamePasswordInputValue, setGamePasswordInputValue] = useState('')
+  const [gamePasswordConfirmInputValue, setGamePasswordConfirmInputValue] = useState('')
+  const [isGamePasswordBusy, setIsGamePasswordBusy] = useState(false)
+  const [gamePasswordMessage, setGamePasswordMessage] = useState<{ text: string; variant: 'info' | 'success' | 'error' } | null>(null)
+  const [oauthLinkMessage, setOauthLinkMessage] = useState<string | null>(null)
   const [avatarBusy, setAvatarBusy] = useState(false)
   const [avatarMessage, setAvatarMessage] = useState<{ text: string; variant: 'success' | 'error' } | null>(null)
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null)
@@ -35,6 +45,58 @@ const ProfilePage = () => {
       }
     }
   }, [avatarCropSrc])
+
+  useEffect(() => {
+    if (!sessionUser) {
+      setPlayerNameInputValue('')
+      setGamePasswordInputValue('')
+      setGamePasswordConfirmInputValue('')
+      setGamePasswordMessage(null)
+      setOauthLinkMessage(null)
+      return
+    }
+    setPlayerNameInputValue(sessionUser.playerName || sessionUser.username)
+  }, [sessionUser])
+
+  useEffect(() => {
+    if (!sessionUser) {
+      return
+    }
+
+    const url = new URL(window.location.href)
+    const isGoogleOAuthSuccess = url.searchParams.get('oauth') === 'success' && url.searchParams.get('provider') === 'google'
+    const authenticatedOAuthLinkMessage = getAuthenticatedOAuthLinkErrorMessage(url.searchParams)
+    const shouldPromptForPassword = !sessionUser.hasPassword && url.searchParams.get('setPassword') === '1'
+
+    if (!isGoogleOAuthSuccess && !shouldPromptForPassword && !authenticatedOAuthLinkMessage) {
+      return
+    }
+
+    if (isGoogleOAuthSuccess) {
+      if (url.searchParams.get('newUser') === '1') {
+        trackAuthSignUpEvent('google')
+      } else {
+        trackAuthLoginEvent('google')
+      }
+    }
+
+    if (shouldPromptForPassword) {
+      setGamePasswordMessage({
+        text: 'Set a SecretWaifu password so this Google account can also sign in inside the VR/Desktop game.',
+        variant: 'info'
+      })
+    }
+
+    if (authenticatedOAuthLinkMessage) {
+      setOauthLinkMessage(authenticatedOAuthLinkMessage)
+    } else {
+      setOauthLinkMessage(null)
+    }
+
+    stripOAuthRedirectQueryParams(url.searchParams)
+    const query = url.searchParams.toString()
+    window.history.replaceState({}, '', query ? `${url.pathname}?${query}${url.hash}` : `${url.pathname}${url.hash}`)
+  }, [sessionUser])
 
   const memberSinceLabel = (() => {
     if (!sessionUser?.createdAt) {
@@ -203,6 +265,75 @@ const ProfilePage = () => {
     }
   }
 
+  const handleSavePlayerName = async () => {
+    if (!sessionUser) {
+      return
+    }
+
+    const normalizedName = playerNameInputValue.trim()
+
+    if (normalizedName.length < 1) {
+      setPlayerNameMessage({ text: 'Player name cannot be empty.', variant: 'error' })
+      return
+    }
+
+    if (normalizedName.length > 40) {
+      setPlayerNameMessage({ text: 'Player name must be 40 characters or fewer.', variant: 'error' })
+      return
+    }
+
+    setIsPlayerNameBusy(true)
+    setPlayerNameMessage(null)
+    try {
+      await updateMyPlayerName(normalizedName)
+      await refreshSessionUser()
+      setPlayerNameMessage({ text: 'In-game name updated.', variant: 'success' })
+    } catch (error) {
+      setPlayerNameMessage({
+        text: error instanceof Error ? error.message : 'Could not update in-game name.',
+        variant: 'error'
+      })
+    } finally {
+      setIsPlayerNameBusy(false)
+    }
+  }
+
+  const handleSetGamePassword = async () => {
+    if (!sessionUser || sessionUser.hasPassword || isGamePasswordBusy) {
+      return
+    }
+
+    if (gamePasswordInputValue.length < 8) {
+      setGamePasswordMessage({ text: 'Password must be at least 8 characters.', variant: 'error' })
+      return
+    }
+
+    if (gamePasswordInputValue !== gamePasswordConfirmInputValue) {
+      setGamePasswordMessage({ text: 'Passwords do not match.', variant: 'error' })
+      return
+    }
+
+    setIsGamePasswordBusy(true)
+    setGamePasswordMessage(null)
+
+    try {
+      await setPasswordForCurrentUser({
+        password: gamePasswordInputValue
+      })
+      setGamePasswordInputValue('')
+      setGamePasswordConfirmInputValue('')
+      await refreshSessionUser()
+      setGamePasswordMessage({ text: 'Game password set. You can now sign in from Unity with this email and password.', variant: 'success' })
+    } catch (error) {
+      setGamePasswordMessage({
+        text: error instanceof Error ? error.message : 'Could not set game password.',
+        variant: 'error'
+      })
+    } finally {
+      setIsGamePasswordBusy(false)
+    }
+  }
+
   return (
     <main className="relative overflow-x-hidden bg-[#030303] text-white">
       <section className="relative min-h-[calc(100vh-150px)] border-b border-white/10 px-5 py-10 md:px-8">
@@ -229,6 +360,117 @@ const ProfilePage = () => {
               ) : (
                 <p className="mt-2 text-[11px] uppercase tracking-[0.08em] text-rose-300">Sign in to access account details</p>
               )}
+
+              {oauthLinkMessage ? (
+                <div className="mt-5 rounded-md border border-rose-300/25 bg-rose-400/10 p-4" role="alert">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-rose-100">Google link not changed</p>
+                  <p className="mt-2 text-xs leading-relaxed text-white/75">{oauthLinkMessage}</p>
+                </div>
+              ) : null}
+
+              {sessionUser ? (
+                <div className="mt-6 rounded-md border border-white/10 bg-black/20 p-4 md:p-5">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-white/70">In-game name</p>
+                  <p className="mt-1.5 text-xs leading-relaxed text-white/55">
+                    This is the player name sent to game/chat APIs. You can change it anytime.
+                  </p>
+                  <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <input
+                      type="text"
+                      value={playerNameInputValue}
+                      onChange={(event) => {
+                        setPlayerNameInputValue(event.target.value)
+                        if (playerNameMessage) {
+                          setPlayerNameMessage(null)
+                        }
+                      }}
+                      maxLength={40}
+                      className="h-11 w-full rounded-md border border-white/20 bg-black/25 px-3 text-sm tracking-[0.02em] text-white outline-none transition placeholder:text-white/35 focus:border-ember-300"
+                      placeholder="Enter in-game name"
+                      aria-label="In-game player name"
+                    />
+                    <button
+                      type="button"
+                      className="inline-flex h-11 min-w-[160px] items-center justify-center rounded-md border border-white/20 bg-white/5 px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-white transition hover:border-ember-300 hover:text-ember-200 disabled:opacity-60"
+                      onClick={() => void handleSavePlayerName()}
+                      disabled={isPlayerNameBusy}
+                    >
+                      Save Name
+                    </button>
+                  </div>
+                  {playerNameMessage ? (
+                    <p
+                      className={`mt-2 text-xs font-medium ${
+                        playerNameMessage.variant === 'success' ? 'text-emerald-200/95' : 'text-rose-200'
+                      }`}
+                      role={playerNameMessage.variant === 'error' ? 'alert' : 'status'}
+                    >
+                      {playerNameMessage.text}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {sessionUser && !sessionUser.hasPassword ? (
+                <div className="mt-5 rounded-md border border-amber-300/25 bg-amber-300/10 p-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-amber-100">Game password required</p>
+                  <p className="mt-2 text-xs leading-relaxed text-white/75">
+                    Google sign-in works on the website, but the Unity VR/Desktop login uses your SecretWaifu email and password.
+                  </p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <input
+                      type="password"
+                      value={gamePasswordInputValue}
+                      onChange={(event) => {
+                        setGamePasswordInputValue(event.target.value)
+                        if (gamePasswordMessage) {
+                          setGamePasswordMessage(null)
+                        }
+                      }}
+                      autoComplete="new-password"
+                      className="h-11 w-full rounded-md border border-white/20 bg-black/25 px-3 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-ember-300"
+                      placeholder="SecretWaifu password"
+                      aria-label="SecretWaifu game password"
+                    />
+                    <input
+                      type="password"
+                      value={gamePasswordConfirmInputValue}
+                      onChange={(event) => {
+                        setGamePasswordConfirmInputValue(event.target.value)
+                        if (gamePasswordMessage) {
+                          setGamePasswordMessage(null)
+                        }
+                      }}
+                      autoComplete="new-password"
+                      className="h-11 w-full rounded-md border border-white/20 bg-black/25 px-3 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-ember-300"
+                      placeholder="Confirm password"
+                      aria-label="Confirm SecretWaifu game password"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="mt-3 inline-flex h-11 min-w-[180px] items-center justify-center rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-white transition hover:brightness-110 disabled:opacity-60"
+                    onClick={() => void handleSetGamePassword()}
+                    disabled={isGamePasswordBusy}
+                  >
+                    {isGamePasswordBusy ? 'Saving...' : 'Set Game Password'}
+                  </button>
+                  {gamePasswordMessage ? (
+                    <p
+                      className={`mt-2 text-xs font-medium ${
+                        gamePasswordMessage.variant === 'success'
+                          ? 'text-emerald-200/95'
+                          : gamePasswordMessage.variant === 'info'
+                            ? 'text-amber-100'
+                            : 'text-rose-200'
+                      }`}
+                      role={gamePasswordMessage.variant === 'error' ? 'alert' : 'status'}
+                    >
+                      {gamePasswordMessage.text}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
 
               {sessionUser ? (
                 <div className="mt-6 rounded-md border border-white/10 bg-black/20 p-4 md:p-5">

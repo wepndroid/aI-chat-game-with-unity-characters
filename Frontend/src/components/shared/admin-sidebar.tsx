@@ -10,7 +10,9 @@ import { usePathname, useRouter } from 'next/navigation'
 
 type AdminSidebarKey =
   | 'dashboard'
+  | 'static-pages'
   | 'landing-pages'
+  | 'marketing'
   | 'legacy-import'
   | 'activity'
   | 'users'
@@ -19,7 +21,11 @@ type AdminSidebarKey =
   | 'stories'
   | 'review-queue'
   | 'global-settings'
+  | 'game-releases'
+  | 'logs'
+  | 'news'
   | 'image-lab'
+  | 'character-thumbnails'
 
 type AdminSidebarEntry = {
   id: AdminSidebarKey
@@ -77,6 +83,16 @@ const TransferIcon = () => {
       <path d="M7 7h10M7 17h10" strokeLinecap="round" />
       <path d="m13.5 3.8 3.7 3.2-3.7 3.2" strokeLinecap="round" strokeLinejoin="round" />
       <path d="m10.5 13.8-3.7 3.2 3.7 3.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+const MegaphoneIcon = () => {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M14.5 7.2 19 5v14l-4.5-2.2L8 15.6V8.4l6.5-1.2Z" strokeLinejoin="round" />
+      <path d="M8 8.4v7.2H5.8A1.8 1.8 0 0 1 4 13.8v-3.6a1.8 1.8 0 0 1 1.8-1.8H8Z" />
+      <path d="m8.2 15.2 1.2 4.1" strokeLinecap="round" />
     </svg>
   )
 }
@@ -206,7 +222,9 @@ const AdminSidebar = ({ activeKey, className }: AdminSidebarProps) => {
         title: 'Management',
         entryList: [
           { id: 'dashboard', label: 'Dashboard', href: '/admin/dashboard', icon: <DashboardGridIcon /> },
+          { id: 'static-pages', label: 'Static Pages', href: '/admin/static-pages', icon: <BookOpenIcon /> },
           { id: 'landing-pages', label: 'Landing Pages', href: '/admin/landing-pages', icon: <ClipboardIcon /> },
+          { id: 'marketing', label: 'Marketing', href: '/admin/marketing', icon: <MegaphoneIcon /> },
           { id: 'legacy-import', label: 'Legacy Transfer', href: '/admin/legacy-import', icon: <TransferIcon /> },
           { id: 'users', label: 'Users', href: '/admin/users', icon: <UserGroupIcon /> },
           {
@@ -239,7 +257,8 @@ const AdminSidebar = ({ activeKey, className }: AdminSidebarProps) => {
             href: '/admin/stories',
             icon: <BookOpenIcon />,
             badgeText: pendingStoriesCount !== null ? String(pendingStoriesCount) : undefined
-          }
+          },
+          { id: 'news', label: 'News', href: '/admin/news', icon: <MegaphoneIcon /> }
         ]
       },
       {
@@ -260,7 +279,10 @@ const AdminSidebar = ({ activeKey, className }: AdminSidebarProps) => {
         title: 'System',
         entryList: [
           { id: 'global-settings', label: 'Global Settings', href: '/admin/global-settings', icon: <CogIcon /> },
-          { id: 'image-lab', label: 'Image Lab', href: '/admin/image-lab', icon: <SparklesIcon /> }
+          { id: 'game-releases', label: 'Game Releases', href: '/admin/game-releases', icon: <ServerIcon /> },
+          { id: 'logs', label: 'Error Logs', href: '/admin/logs', icon: <ClipboardIcon /> },
+          { id: 'image-lab', label: 'Image Lab', href: '/admin/image-lab', icon: <SparklesIcon /> },
+          { id: 'character-thumbnails', label: 'Character Thumbnails', href: '/admin/character-thumbnails', icon: <StarsIcon /> }
         ]
       }
     ],

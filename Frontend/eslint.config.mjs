@@ -3,10 +3,7 @@ import nextTypescript from 'eslint-config-next/typescript'
 
 const eslintConfig = [
   ...nextVitals,
-  ...nextTypescript,
-  {
-    ignores: ['public/secretwaifu-webgl/**']
-  }
+  ...nextTypescript
 ]
 
 export default eslintConfig

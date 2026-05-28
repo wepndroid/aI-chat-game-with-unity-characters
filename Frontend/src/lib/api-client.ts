@@ -67,13 +67,14 @@ const toNetworkErrorMessage = (error: unknown) => {
   return error instanceof Error ? error.message : 'Network request failed.'
 }
 
-const apiGet = async <T>(path: string) => {
+const apiGet = async <T>(path: string, init?: Pick<RequestInit, 'cache'>) => {
   const requestSignal = createRequestSignal()
 
   try {
     const response = await fetch(buildApiUrl(path), {
       method: 'GET',
       credentials: 'include',
+      ...init,
       signal: requestSignal.signal
     })
 
@@ -100,13 +101,23 @@ const createRequestSignalWithTimeout = (timeoutMs = API_REQUEST_TIMEOUT_MS) => {
   }
 }
 
-const apiPost = async <T>(path: string, body?: unknown, timeoutMs = API_REQUEST_TIMEOUT_MS) => {
-  const requestSignal = createRequestSignalWithTimeout(timeoutMs)
+type ApiPostOptions = Pick<RequestInit, 'cache'> & {
+  timeoutMs?: number
+}
+
+const resolveApiPostOptions = (options: number | ApiPostOptions = API_REQUEST_TIMEOUT_MS): ApiPostOptions => {
+  return typeof options === 'number' ? { timeoutMs: options } : options
+}
+
+const apiPost = async <T>(path: string, body?: unknown, options: number | ApiPostOptions = API_REQUEST_TIMEOUT_MS) => {
+  const resolvedOptions = resolveApiPostOptions(options)
+  const requestSignal = createRequestSignalWithTimeout(resolvedOptions.timeoutMs ?? API_REQUEST_TIMEOUT_MS)
 
   try {
     const response = await fetch(buildApiUrl(path), {
       method: 'POST',
       credentials: 'include',
+      cache: resolvedOptions.cache,
       headers: {
         'Content-Type': 'application/json'
       },
@@ -150,12 +161,112 @@ const apiPostFormData = async <T>(path: string, formData: FormData, timeoutMs = 
   }
 }
 
+const apiPostFormDataWithProgress = async <T>(
+  path: string,
+  formData: FormData,
+  options?: {
+    timeoutMs?: number
+    onProgress?: (progress: { loaded: number; total: number | null; percent: number | null }) => void
+  }
+) => {
+  const timeoutMs = options?.timeoutMs ?? 120000
+
+  return await new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    const timeoutId = window.setTimeout(() => {
+      xhr.abort()
+    }, timeoutMs)
+
+    xhr.open('POST', buildApiUrl(path))
+    xhr.withCredentials = true
+
+    xhr.upload.onprogress = (event) => {
+      if (!options?.onProgress) {
+        return
+      }
+
+      const total = event.lengthComputable ? event.total : null
+      const percent = total && total > 0 ? Math.min(100, Math.max(0, (event.loaded / total) * 100)) : null
+      options.onProgress({
+        loaded: event.loaded,
+        total,
+        percent
+      })
+    }
+
+    xhr.onerror = () => {
+      clearTimeout(timeoutId)
+      reject(new Error('Network request failed.'))
+    }
+
+    xhr.onabort = () => {
+      clearTimeout(timeoutId)
+      reject(new Error('Request timed out. Please try again.'))
+    }
+
+    xhr.onload = async () => {
+      clearTimeout(timeoutId)
+
+      try {
+        const text = xhr.responseText
+        const payload = (text ? JSON.parse(text) : null) as (T & ApiErrorPayload) | null
+
+        if (xhr.status < 200 || xhr.status >= 300) {
+          reject(new ApiRequestError(payload?.message ?? 'API request failed.', xhr.status, payload?.code, payload?.field))
+          return
+        }
+
+        if (!payload) {
+          reject(new Error('API returned an empty response payload.'))
+          return
+        }
+
+        resolve(payload)
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error('API request failed.'))
+      }
+    }
+
+    xhr.send(formData)
+  }).catch((error) => {
+    if (error instanceof ApiRequestError) {
+      throw error
+    }
+    throw new Error(toNetworkErrorMessage(error))
+  })
+}
+
 const apiPatch = async <T>(path: string, body?: unknown) => {
   const requestSignal = createRequestSignal()
 
   try {
     const response = await fetch(buildApiUrl(path), {
       method: 'PATCH',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: requestSignal.signal
+    })
+
+    return parseApiResponse<T>(response)
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      throw error
+    }
+    throw new Error(toNetworkErrorMessage(error))
+  } finally {
+    requestSignal.clear()
+  }
+}
+
+const apiPut = async <T>(path: string, body?: unknown) => {
+  const requestSignal = createRequestSignal()
+
+  try {
+    const response = await fetch(buildApiUrl(path), {
+      method: 'PUT',
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json'
@@ -196,4 +307,4 @@ const apiDelete = async <T>(path: string) => {
   }
 }
 
-export { ApiRequestError, apiDelete, apiGet, apiPatch, apiPost, apiPostFormData, buildApiUrl, getApiBaseUrl }
+export { ApiRequestError, apiDelete, apiGet, apiPatch, apiPost, apiPostFormData, apiPostFormDataWithProgress, apiPut, buildApiUrl, getApiBaseUrl }

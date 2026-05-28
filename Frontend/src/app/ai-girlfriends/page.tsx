@@ -3,7 +3,7 @@ import CharactersPage from '@/components/characters/characters-page'
 import { listCharacters, type CharacterListRecord } from '@/lib/character-api'
 import { absoluteUrl } from '@/lib/site'
 
-export const revalidate = 300
+export const revalidate = 30
 
 export async function generateMetadata(): Promise<Metadata> {
   const title = 'Browse AI Girlfriends'

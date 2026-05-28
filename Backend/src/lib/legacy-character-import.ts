@@ -2,6 +2,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { CharacterStatus, CharacterVisibility, PrismaClient, UserRole } from '@prisma/client'
 import { getLegacyCharacterTagline, legacyCharacterTaglineMap } from './legacy-character-taglines'
+import { buildUploadUrl, uploadFolders } from './upload-paths'
+import { combineScenarioFields } from './combine-scenario-body'
+import { resolveStoryOriginForAuthor } from '../services/story/story-origin-policy'
 
 type LegacyModelListItem = {
   Name: string
@@ -66,7 +69,6 @@ type PreparedLegacyCharacter = {
   legacyTier: number
   legacyHeyWaifu: number
   isPatreonGated: boolean
-  minimumTierCents: number | null
   status: CharacterStatus
   visibility: CharacterVisibility
   officialListing: boolean
@@ -180,25 +182,13 @@ const toOptionalTrimmedString = (value: unknown) => {
   return trimmed.length > 0 ? trimmed : null
 }
 
-const mapLegacyTierToMinimumTierCents = (tier: number) => {
-  if (tier >= 2) {
-    return 1650
-  }
-
-  if (tier >= 1) {
-    return 900
-  }
-
-  return null
-}
-
 const buildLegacyVrmUrl = (sourceBaseUrl: string, modelName: string) => {
   const encodedName = encodeURIComponent(modelName.trim())
   return `${sourceBaseUrl}/modeldownload/${encodedName}.vrm`
 }
 
-const buildUploadedVrmUrl = (publicAssetBaseUrl: string, filename: string) => {
-  return `${publicAssetBaseUrl}/uploads/${encodeURIComponent(filename)}`
+const buildUploadedVrmUrl = (publicAssetBaseUrl: string, relativePath: string) => {
+  return buildUploadUrl(publicAssetBaseUrl, relativePath)
 }
 
 const normalizeLegacyImportOptions = (options: LegacyImportOptions): NormalizedLegacyImportOptions => {
@@ -312,8 +302,8 @@ const prepareLegacyCharacter = async (
 ) => {
   const sourceVrmUrl = buildLegacyVrmUrl(options.sourceBaseUrl, model.Name)
   const localFilename = `${model.FileHash.toLowerCase()}.vrm`
-  const localFilePath = path.join(uploadsRoot, localFilename)
-  const minimumTierCents = mapLegacyTierToMinimumTierCents(model.Tier)
+  const localRelativePath = path.join(uploadFolders.officialVrms, localFilename)
+  const localFilePath = path.join(uploadsRoot, localRelativePath)
   const shouldFetchPersona = model.heywaifu === 1
 
   let legacyCharacterInfo: LegacyCharacterInfoResponse | null = null
@@ -333,7 +323,7 @@ const prepareLegacyCharacter = async (
 
   if (!options.skipDownloads) {
     if (!options.dryRun) {
-      await ensureDirectory(uploadsRoot)
+      await ensureDirectory(path.dirname(localFilePath))
 
       if (!fs.existsSync(localFilePath)) {
         await downloadVrmFile(sourceVrmUrl, localFilePath)
@@ -345,7 +335,7 @@ const prepareLegacyCharacter = async (
       downloadedFile = true
     }
 
-    vroidFileUrl = buildUploadedVrmUrl(options.publicAssetBaseUrl, localFilename)
+    vroidFileUrl = buildUploadedVrmUrl(options.publicAssetBaseUrl, localRelativePath)
   }
 
   const preparedCharacter: PreparedLegacyCharacter = {
@@ -364,7 +354,6 @@ const prepareLegacyCharacter = async (
     legacyTier: model.Tier,
     legacyHeyWaifu: model.heywaifu,
     isPatreonGated: model.Tier > 0,
-    minimumTierCents,
     status: 'APPROVED',
     visibility: 'PUBLIC',
     officialListing: owner.role === 'ADMIN'
@@ -409,6 +398,78 @@ const findExistingImportedCharacter = async (
   })
 }
 
+const upsertImportedCharacterDefaultStory = async (
+  prismaClient: PrismaClient,
+  owner: ResolvedOwner,
+  characterId: string,
+  character: PreparedLegacyCharacter
+) => {
+  const title = `${character.name} Introduction`
+  const existingStory = await prismaClient.storyPost.findFirst({
+    where: {
+      authorId: owner.id,
+      characterId,
+      title
+    },
+    orderBy: {
+      createdAt: 'asc'
+    },
+    select: {
+      id: true
+    }
+  })
+  const scenarioStory = character.description?.trim() || character.scenario?.trim() || `${character.name} profile.`
+  const scenarioChat = character.scenario?.trim() ?? ''
+  const storyData = {
+    authorId: owner.id,
+    characterId,
+    title,
+    promptDescription: character.description,
+    personality: character.personality,
+    scenario: character.scenario,
+    firstMessage: character.firstMessage,
+    exampleDialogs: character.exampleDialogs,
+    scenarioStory,
+    scenarioChat,
+    body: combineScenarioFields(scenarioStory, scenarioChat),
+    scenarioType: 'OTHER',
+    origin: resolveStoryOriginForAuthor(owner.role),
+    publicationStatus: 'PUBLISHED' as const,
+    moderationStatus: 'APPROVED' as const,
+    moderationRejectReason: null,
+    publishedAt: new Date()
+  }
+
+  const story = existingStory
+    ? await prismaClient.storyPost.update({
+        where: {
+          id: existingStory.id
+        },
+        data: storyData,
+        select: {
+          id: true
+        }
+      })
+    : await prismaClient.storyPost.create({
+        data: storyData,
+        select: {
+          id: true
+        }
+      })
+
+  await prismaClient.character.update({
+    where: {
+      id: characterId
+    },
+    data: {
+      defaultStoryId: story.id
+    },
+    select: {
+      id: true
+    }
+  })
+}
+
 const createImportedCharacter = async (prismaClient: PrismaClient, owner: ResolvedOwner, character: PreparedLegacyCharacter) => {
   const createdCharacter = await prismaClient.character.create({
     data: {
@@ -427,7 +488,6 @@ const createImportedCharacter = async (prismaClient: PrismaClient, owner: Resolv
       visibility: character.visibility,
       officialListing: character.officialListing,
       isPatreonGated: character.isPatreonGated,
-      minimumTierCents: character.minimumTierCents,
       publishedAt: new Date()
     },
     select: {
@@ -435,19 +495,7 @@ const createImportedCharacter = async (prismaClient: PrismaClient, owner: Resolv
     }
   })
 
-  await prismaClient.characterCard.create({
-    data: {
-      characterId: createdCharacter.id,
-      creatorUserId: owner.id,
-      fullName: character.fullName,
-      description: character.description,
-      personality: character.personality,
-      scenario: character.scenario,
-      firstMessage: character.firstMessage,
-      exampleDialogs: character.exampleDialogs,
-      isPublic: true
-    }
-  })
+  await upsertImportedCharacterDefaultStory(prismaClient, owner, createdCharacter.id, character)
 }
 
 const updateImportedCharacter = async (
@@ -472,38 +520,13 @@ const updateImportedCharacter = async (
       visibility: character.visibility,
       officialListing: character.officialListing,
       isPatreonGated: character.isPatreonGated,
-      minimumTierCents: character.minimumTierCents,
       publishedAt: existingCharacter.publishedAt ?? new Date(),
       previewImageUrl: existingCharacter.previewImageUrl,
       ...(character.tagline !== null ? { tagline: character.tagline } : {})
     }
   })
 
-  await prismaClient.characterCard.upsert({
-    where: {
-      characterId: existingCharacter.id
-    },
-    create: {
-      characterId: existingCharacter.id,
-      creatorUserId: owner.id,
-      fullName: character.fullName,
-      description: character.description,
-      personality: character.personality,
-      scenario: character.scenario,
-      firstMessage: character.firstMessage,
-      exampleDialogs: character.exampleDialogs,
-      isPublic: true
-    },
-    update: {
-      fullName: character.fullName,
-      description: character.description,
-      personality: character.personality,
-      scenario: character.scenario,
-      firstMessage: character.firstMessage,
-      exampleDialogs: character.exampleDialogs,
-      isPublic: true
-    }
-  })
+  await upsertImportedCharacterDefaultStory(prismaClient, owner, existingCharacter.id, character)
 }
 
 const runLegacyImport = async (prismaClient: PrismaClient, rawOptions: LegacyImportOptions): Promise<LegacyImportRunResult> => {

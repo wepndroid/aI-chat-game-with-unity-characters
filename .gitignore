@@ -14,4 +14,13 @@ backend-dev.out.log
 backend-dev.err.log
 frontend-dev.err.log
 frontend-dev.out.log
+Backend/*-dev.out.log
+Backend/*-dev.err.log
+Frontend/*-dev.out.log
+Frontend/*-dev.err.log
 unity-api-feedback-to-web-developer.md
+Product-Source-Of-Truth (1).pdf
+Product-Source-Of-Truth-Audit-Log.md
+tmp_pdf_pages
+vitalii-api-doc-review-product-contract.md
+unity-api.openapi.yaml

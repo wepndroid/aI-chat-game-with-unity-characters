@@ -4,7 +4,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -46,6 +46,18 @@ enum EntitlementStatus {
   EXPIRED
 }
 
+enum RevenueEventProvider {
+  PATREON
+}
+
+enum RevenueEventKind {
+  INITIAL_PURCHASE
+  RENEWAL
+  REACTIVATION
+  UPGRADE
+  DOWNGRADE
+}
+
 /// Subscription tier catalog (PDF: Tiers.code, message_limit). Used for chat quota and optional User.tierCode.
 model Tier {
   code         String  @id
@@ -60,10 +72,66 @@ enum ChatMessageRole {
   ASSISTANT
 }
 
+enum ChatSessionPreviewRefreshJobStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+}
+
+enum UnityLaunchMode {
+  FRESH_SESSION
+}
+
+enum ChatPendingTurnKind {
+  NORMAL   @map("normal")
+  GAMEPLAY @map("gameplay")
+}
+
+enum ChatPendingTurnStatus {
+  PENDING
+  COMMITTED
+  ABORTED
+  EXPIRED
+}
+
+enum GameReleasePlatform {
+  WINDOWS
+  WEBGL
+}
+
+enum PatreonSyncLogLevel {
+  INFO
+  WARN
+  ERROR
+}
+
+enum MarketingEmailTemplateCategory {
+  SYSTEM       @map("system")
+  ONBOARDING   @map("onboarding")
+  CONVERSION   @map("conversion")
+  WINBACK      @map("winback")
+  ANNOUNCEMENT @map("announcement")
+}
+
+enum MarketingEmailSendMode {
+  TEST       @map("test")
+  SEGMENT    @map("segment")
+  SINGLE     @map("single")
+  AUTOMATION @map("automation")
+}
+
+enum MarketingEmailSendStatus {
+  SENT   @map("sent")
+  FAILED @map("failed")
+}
+
 model User {
   id                      String                   @id @default(cuid())
   email                   String                   @unique
   username                String                   @unique
+  /// Optional in-game display name editable from profile; falls back to `username` when not set.
+  playerName              String?
   passwordHash            String?
   role                    UserRole                 @default(USER)
   /// Optional FK to Tier — overrides Patreon-derived tier for message limits when set (PDF: Users.tier_code).
@@ -74,14 +142,14 @@ model User {
   avatarUrl               String?
   isBanned                Boolean                  @default(false)
   /// When this admin last opened Official VRMs; used for sidebar “new official” badge (per admin).
-  officialVrmsListSeenAt  DateTime?
+  officialVrmsListSeenAt  DateTime?                @db.Timestamptz(3)
   /// When this admin last opened Community VRMs; used for sidebar “new community” badge (per admin).
-  communityVrmsListSeenAt DateTime?
+  communityVrmsListSeenAt DateTime?                @db.Timestamptz(3)
   acquisitionVisitId      String?                  @unique
-  patreonLinkedAt         DateTime?
-  patreonActiveAt         DateTime?
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
+  patreonLinkedAt         DateTime?                @db.Timestamptz(3)
+  patreonActiveAt         DateTime?                @db.Timestamptz(3)
+  createdAt               DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                 @updatedAt @db.Timestamptz(3)
   acquisitionVisit        LandingPageVisit?        @relation("UserAcquisitionVisit", fields: [acquisitionVisitId], references: [id], onDelete: SetNull)
   characters              Character[]
   hearts                  CharacterHeart[]
@@ -93,26 +161,78 @@ model User {
   passwordResetTokens     PasswordResetToken[]
   oauthAccounts           OAuthAccount[]
   sessions                Session[]
+  activityState           UserActivityState?
   chatMessageUsage        ChatMessageUsage[]
   storyPosts              StoryPost[]
   storyPostLikes          StoryPostLike[]
-  characterCardsCreated   CharacterCard[]
   chatSessions            ChatSession[]
   chatQuotaReservations   ChatQuotaReservation[]
+  chatQuotaPeriods        ChatQuotaPeriod[]        @relation("UserQuotaPeriods")
+  actedChatQuotaPeriods   ChatQuotaPeriod[]        @relation("QuotaPeriodActor")
+  chatPendingTurns        ChatPendingTurn[]
+  unitySessionStates      UnitySessionState[]
+  patreonSyncLogs         PatreonSyncLog[]         @relation("PatreonSyncLogUser")
+  actedPatreonSyncLogs    PatreonSyncLog[]         @relation("PatreonSyncLogActor")
+  marketingEmailSendLogs  MarketingEmailSendLog[]
   userNotifications       UserNotification[]
+  unityLaunchContexts     UnityLaunchContext[]
+  revenueEvents           RevenueEvent[]
 }
 
 model LandingPage {
-  id          String               @id @default(cuid())
-  key         String               @unique
+  id              String                      @id @default(cuid())
+  key             String                      @unique
+  name            String
+  description     String?
+  basePath        String?
+  isActive        Boolean                     @default(true)
+  createdAt       DateTime                    @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime                    @updatedAt @db.Timestamptz(3)
+  variants        LandingPageVariant[]
+  visits          LandingPageVisit[]
+  shortUrlTargets LandingPageShortUrlTarget[]
+  homepageSettings SiteHomepageSettings[]
+}
+
+model SiteHomepageSettings {
+  id            String       @id
+  landingPageId String?
+  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime     @updatedAt @db.Timestamptz(3)
+  landingPage   LandingPage? @relation(fields: [landingPageId], references: [id], onDelete: SetNull)
+}
+
+model LandingPageShortUrl {
+  id          String                      @id @default(cuid())
+  key         String                      @unique
   name        String
   description String?
-  basePath    String?
-  isActive    Boolean              @default(true)
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
-  variants    LandingPageVariant[]
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmContent  String?
+  utmTerm     String?
+  isActive    Boolean                     @default(true)
+  createdAt   DateTime                    @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime                    @updatedAt @db.Timestamptz(3)
+  targets     LandingPageShortUrlTarget[]
   visits      LandingPageVisit[]
+
+  @@index([isActive, createdAt])
+}
+
+model LandingPageShortUrlTarget {
+  id            String              @id @default(cuid())
+  shortUrlId    String
+  landingPageId String
+  weight        Int                 @default(100)
+  createdAt     DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime            @updatedAt @db.Timestamptz(3)
+  shortUrl      LandingPageShortUrl @relation(fields: [shortUrlId], references: [id], onDelete: Cascade)
+  landingPage   LandingPage         @relation(fields: [landingPageId], references: [id], onDelete: Cascade)
+
+  @@unique([shortUrlId, landingPageId])
+  @@index([shortUrlId, weight])
 }
 
 model LandingPageVariant {
@@ -120,49 +240,99 @@ model LandingPageVariant {
   landingPageId String
   key           String
   name          String
-  routePath     String             @unique
+  routePath     String
   notes         String?
   weight        Int                @default(100)
   isControl     Boolean            @default(false)
   isActive      Boolean            @default(true)
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
+  createdAt     DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime           @updatedAt @db.Timestamptz(3)
   landingPage   LandingPage        @relation(fields: [landingPageId], references: [id], onDelete: Cascade)
   visits        LandingPageVisit[]
 
   @@unique([landingPageId, key])
   @@index([landingPageId, isActive])
+  @@index([routePath])
 }
 
 model LandingPageVisit {
-  id                String             @id @default(cuid())
+  id                String               @id @default(cuid())
   landingPageId     String
   variantId         String
+  shortUrlId        String?
   visitorId         String
   source            String?
   medium            String?
   campaign          String?
   content           String?
   term              String?
+  attributionKey    String?
   referrerHost      String?
   entryPath         String?
   landingUrl        String?
   userAgent         String?
-  visitCount        Int                @default(1)
-  firstVisitedAt    DateTime           @default(now())
-  lastVisitedAt     DateTime           @default(now())
-  signupClickedAt   DateTime?
-  signedUpUserId    String?            @unique
-  signupCompletedAt DateTime?
-  landingPage       LandingPage        @relation(fields: [landingPageId], references: [id], onDelete: Cascade)
-  variant           LandingPageVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  attributedUser    User?              @relation("UserAcquisitionVisit")
+  /// GA4 browser identifiers captured from gtag.js for later Measurement Protocol purchase attribution.
+  /// These are pseudonymous analytics IDs, not application credentials or account identifiers.
+  gaClientId        String?
+  gaSessionId       String?
+  visitCount        Int                  @default(1)
+  firstVisitedAt    DateTime             @default(now()) @db.Timestamptz(3)
+  lastVisitedAt     DateTime             @default(now()) @db.Timestamptz(3)
+  signupClickedAt   DateTime?            @db.Timestamptz(3)
+  signedUpUserId    String?              @unique
+  signupCompletedAt DateTime?            @db.Timestamptz(3)
+  landingPage       LandingPage          @relation(fields: [landingPageId], references: [id], onDelete: Cascade)
+  variant           LandingPageVariant   @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  shortUrl          LandingPageShortUrl? @relation(fields: [shortUrlId], references: [id], onDelete: SetNull)
+  attributedUser    User?                @relation("UserAcquisitionVisit")
+  revenueEvents     RevenueEvent[]       @relation("VisitRevenueEvents")
 
-  @@unique([visitorId, variantId])
+  @@unique([visitorId, attributionKey])
+  @@index([visitorId, variantId])
   @@index([landingPageId, firstVisitedAt])
   @@index([variantId, firstVisitedAt])
+  @@index([shortUrlId, firstVisitedAt])
   @@index([source, campaign, medium])
-  @@index([signedUpUserId])
+}
+
+/// Aggregated, sanitized repair backlog for public landing tracking payloads
+/// that do not match admin-owned landing page configuration.
+model LandingPageTrackingIssue {
+  id             String   @id @default(cuid())
+  fingerprint    String   @unique
+  kind           String
+  landingPageKey String?
+  variantKey     String?
+  routePath      String?
+  shortUrlKey    String?
+  firstSeenAt    DateTime @default(now()) @db.Timestamptz(3)
+  lastSeenAt     DateTime @default(now()) @db.Timestamptz(3)
+  seenCount      Int      @default(1)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([lastSeenAt])
+  @@index([kind, lastSeenAt])
+  @@index([landingPageKey, lastSeenAt])
+}
+
+model RevenueEvent {
+  id                  String               @id @default(cuid())
+  userId              String
+  acquisitionVisitId  String?
+  provider            RevenueEventProvider @default(PATREON)
+  kind                RevenueEventKind
+  providerEventKey    String               @unique
+  tierCode            String
+  amountCents         Int
+  billingPeriodMonths Int                  @default(1)
+  chargedAt           DateTime             @db.Timestamptz(3)
+  createdAt           DateTime             @default(now()) @db.Timestamptz(3)
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  acquisitionVisit    LandingPageVisit?    @relation("VisitRevenueEvents", fields: [acquisitionVisitId], references: [id], onDelete: SetNull)
+
+  @@index([userId, chargedAt])
+  @@index([acquisitionVisitId, chargedAt])
 }
 
 /// In-app notifications (VRM moderation, etc.). Story rejections use StoryPost + merge in API until read.
@@ -173,8 +343,8 @@ model UserNotification {
   title     String
   body      String?
   href      String?
-  readAt    DateTime?
-  createdAt DateTime  @default(now())
+  readAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, readAt])
@@ -186,108 +356,137 @@ model SystemActivityLog {
   id        String   @id @default(cuid())
   message   String
   tone      String
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
 
   @@index([createdAt])
 }
 
 model Character {
-  id                     String                      @id @default(cuid())
-  slug                   String                      @unique
-  name                   String
-  fullName               String?
-  tagline                String?
-  description            String?
-  vroidFileUrl           String?
-  poseFileUrl            String?
-  previewImageUrl        String?
-  legacyFileHash         String?
-  legacyTier             Int?
-  legacyHeyWaifu         Int?
-  status                 CharacterStatus             @default(DRAFT)
-  visibility             CharacterVisibility         @default(PUBLIC)
+  id                         String                           @id @default(cuid())
+  slug                       String                           @unique
+  name                       String
+  fullName                   String?
+  tagline                    String?
+  description                String?
+  vroidFileUrl               String?
+  poseFileUrl                String?
+  previewImageUrl            String?
+  /// Optional static voice clip URL selected for this character (for Unity/runtime metadata).
+  voiceFileUrl               String?
+  /// Optional original/display filename for the selected character voice clip.
+  voiceFileName              String?
+  thumbnailReferenceImageUrl String?
+  cardThumbnailDesktopUrl    String?
+  cardThumbnailMobileUrl     String?
+  legacyFileHash             String?
+  legacyTier                 Int?
+  legacyHeyWaifu             Int?
+  status                     CharacterStatus                  @default(DRAFT)
+  visibility                 CharacterVisibility              @default(PUBLIC)
   /// True when the owning account is an admin (admin-uploaded VRMs); mirrored for API compatibility.
-  officialListing        Boolean                     @default(false)
-  isPatreonGated         Boolean                     @default(false)
-  minimumTierCents       Int?
+  officialListing            Boolean                          @default(false)
+  isPatreonGated             Boolean                          @default(false)
+  minimumTierCents           Int?
   /// Optional note from admin when status is set to REJECTED (shown in moderation / future creator messaging).
-  moderationRejectReason String?
-  heartsCount            Int                         @default(0)
-  viewsCount             Int                         @default(0)
-  ownerId                String
-  owner                  User                        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  reviews                Review[]
-  hearts                 CharacterHeart[]
-  chatStartLedgerRows    CharacterChatStartLedger[]
-  systemScanReports      CharacterSystemScanReport[]
-  storyPosts             StoryPost[]
-  /// Primary character card (PDF: CharacterCards) — AI persona / chat context. Mirrors legacy fields on Character.
-  characterCard          CharacterCard?
-  createdAt              DateTime                    @default(now())
-  updatedAt              DateTime                    @updatedAt
-  publishedAt            DateTime?
+  moderationRejectReason     String?
+  heartsCount                Int                              @default(0)
+  /// Number of committed visible transcript messages for this character.
+  messageCount               Int                              @default(0)
+  /// Number of sessions that reached at least one committed assistant response.
+  completedChatCount         Int                              @default(0)
+  ownerId                    String
+  owner                      User                             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  reviews                    Review[]
+  hearts                     CharacterHeart[]
+  activityDailyMetrics       CharacterActivityDailyMetric[]
+  activityMessageLedgers     CharacterActivityMessageLedger[]
+  completedChatLedgers       CharacterCompletedChatLedger[]
+  systemScanReports          CharacterSystemScanReport[]
+  storyPosts                 StoryPost[]
+  defaultStoryId             String?
+  defaultStory               StoryPost?                       @relation("CharacterDefaultStory", fields: [defaultStoryId], references: [id], onDelete: SetNull)
+  unityLaunchContexts        UnityLaunchContext[]
+  chatSessions               ChatSession[]
+  createdAt                  DateTime                         @default(now()) @db.Timestamptz(3)
+  updatedAt                  DateTime                         @updatedAt @db.Timestamptz(3)
+  publishedAt                DateTime?                        @db.Timestamptz(3)
 
   @@index([ownerId, status])
   @@index([status, visibility])
+  @@index([defaultStoryId])
+  @@index([messageCount, heartsCount, createdAt])
+  @@index([completedChatCount, createdAt])
 }
 
-/// PDF: CharacterCards — persona / behavior layer on top of base Character (visual avatar).
-model CharacterCard {
-  id             String        @id @default(cuid())
-  characterId    String        @unique
-  creatorUserId  String
-  fullName       String?
-  description    String?
-  personality    String?
-  scenario       String?
-  firstMessage   String?
-  exampleDialogs String?
-  isPublic       Boolean       @default(true)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  character      Character     @relation(fields: [characterId], references: [id], onDelete: Cascade)
-  creator        User          @relation(fields: [creatorUserId], references: [id], onDelete: Cascade)
-  chatSessions   ChatSession[]
-
-  @@index([creatorUserId])
-}
-
-/// PDF: ChatSessions — groups messages per user + character card.
+/// PDF: ChatSessions — groups messages per user + selected character/story.
 model ChatSession {
-  id                String                 @id @default(cuid())
-  userId            String
-  characterCardId   String
+  id                  String                         @id @default(cuid())
+  userId              String
+  characterId         String
   /// Phase-1 v4: Story context for this thread.
-  storyId           String
-  createdAt         DateTime               @default(now())
+  storyId             String
+  createdAt           DateTime                       @default(now()) @db.Timestamptz(3)
   /// Mutable metadata for session list UX.
-  lastUpdatedAt     DateTime               @default(now())
-  previewText       String?
-  user              User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  characterCard     CharacterCard          @relation(fields: [characterCardId], references: [id], onDelete: Cascade)
-  story             StoryPost              @relation(fields: [storyId], references: [id], onDelete: Cascade)
-  messages          ChatMessage[]
-  quotaReservations ChatQuotaReservation[]
+  lastUpdatedAt       DateTime                       @default(now()) @db.Timestamptz(3)
+  previewText         String?
+  user                User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character           Character                      @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  story               StoryPost                      @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  messages            ChatMessage[]
+  quotaReservations   ChatQuotaReservation[]
+  pendingTurns        ChatPendingTurn[]
+  unityState          UnitySessionState?
+  unityLaunchContexts UnityLaunchContext[]
+  previewRefreshJobs  ChatSessionPreviewRefreshJob[]
 
   @@index([userId, createdAt])
-  @@index([characterCardId])
+  @@index([characterId])
   @@index([storyId, userId, createdAt])
 }
 
 /// PDF: ChatMessages — chat history (role + content).
 model ChatMessage {
-  id                String                 @id @default(cuid())
+  id                String                          @id @default(cuid())
   sessionId         String
   /// Idempotency key echoed on both USER and ASSISTANT messages for replay-safe transcript recovery.
   clientMessageId   String?
   role              ChatMessageRole
   content           String
-  createdAt         DateTime               @default(now())
-  session           ChatSession            @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  /// Optional generated voice/audio URL for assistant responses when voice is enabled.
+  audioUrl          String?
+  createdAt         DateTime                        @default(now()) @db.Timestamptz(3)
+  session           ChatSession                     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   quotaReservations ChatQuotaReservation[]
+  activityLedger    CharacterActivityMessageLedger?
 
   @@index([sessionId, createdAt])
   @@index([sessionId, clientMessageId])
+}
+
+/// Durable outbox for refreshing mutable chat-session preview metadata after transcript commits.
+model ChatSessionPreviewRefreshJob {
+  id                 String                             @id @default(cuid())
+  sessionId          String
+  /// Runtime-only pending turn id that produced this job; useful for operations logs and repair reports.
+  pendingTurnId      String
+  /// One preview job per committed user message keeps commit retries idempotent.
+  userMessageId      String                             @unique
+  assistantMessageId String
+  status             ChatSessionPreviewRefreshJobStatus @default(PENDING)
+  attemptCount       Int                                @default(0)
+  nextAttemptAt      DateTime                           @default(now()) @db.Timestamptz(3)
+  lastAttemptAt      DateTime?                          @db.Timestamptz(3)
+  processedAt        DateTime?                          @db.Timestamptz(3)
+  leaseOwner         String?
+  leaseExpiresAt     DateTime?                          @db.Timestamptz(3)
+  lastError          String?
+  createdAt          DateTime                           @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime                           @updatedAt @db.Timestamptz(3)
+  session            ChatSession                        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt, createdAt])
+  @@index([sessionId, status])
+  @@index([leaseExpiresAt])
 }
 
 /// Moderation/system scan output (e.g. Unity-side checks) stored per character (append-only).
@@ -298,7 +497,7 @@ model CharacterSystemScanReport {
   issuesCount Int      @default(0)
   summary     String
   reportJson  Json
-  createdAt   DateTime @default(now())
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
 
   character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
 
@@ -309,7 +508,7 @@ model CharacterHeart {
   id          String    @id @default(cuid())
   userId      String
   characterId String
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
 
@@ -317,16 +516,51 @@ model CharacterHeart {
   @@index([characterId])
 }
 
-/// At most one counted "chat start" per character per dedupeKey (signed-in user or anonymous visitor id).
-model CharacterChatStartLedger {
+/// Non-content ledger for sessions already counted as completed chats.
+model CharacterCompletedChatLedger {
   id          String    @id @default(cuid())
+  sessionId   String    @unique
   characterId String
-  dedupeKey   String
-  createdAt   DateTime  @default(now())
+  countedAt   DateTime  @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
   character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
 
-  @@unique([characterId, dedupeKey])
-  @@index([characterId])
+  @@index([characterId, countedAt])
+}
+
+/// Non-content outbox rows for character activity derived from committed transcript messages.
+model CharacterActivityMessageLedger {
+  id               String          @id @default(cuid())
+  messageId        String          @unique
+  sessionId        String
+  characterId      String
+  role             ChatMessageRole
+  messageCreatedAt DateTime        @db.Timestamptz(3)
+  createdAt        DateTime        @default(now()) @db.Timestamptz(3)
+  processedAt      DateTime?       @db.Timestamptz(3)
+  message          ChatMessage     @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  character        Character       @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@index([processedAt, createdAt])
+  @@index([characterId, messageCreatedAt])
+  @@index([sessionId])
+}
+
+/// Daily aggregate for recent character activity without scanning transcripts.
+model CharacterActivityDailyMetric {
+  id                 String    @id @default(cuid())
+  characterId        String
+  day                DateTime  @db.Date
+  messageCount       Int       @default(0)
+  completedChatCount Int       @default(0)
+  createdAt          DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @db.Timestamptz(3)
+  character          Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([characterId, day])
+  @@index([day, messageCount])
+  @@index([day, completedChatCount])
+  @@index([characterId, day])
 }
 
 model Review {
@@ -336,8 +570,8 @@ model Review {
   characterId String
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
 
   @@unique([userId, characterId])
   @@index([characterId])
@@ -350,15 +584,16 @@ model PatreonAccount {
   campaignMemberId      String?
   accessTokenEncrypted  String?
   refreshTokenEncrypted String?
-  tokenExpiresAt        DateTime?
+  tokenExpiresAt        DateTime? @db.Timestamptz(3)
   tierCents             Int?
+  pledgeCadenceMonths   Int       @default(1)
   membershipStatus      String?
   lastChargeStatus      String?
-  lastChargeDate        DateTime?
-  nextChargeDate        DateTime?
-  lastCheckedAt         DateTime?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  lastChargeDate        DateTime? @db.Timestamptz(3)
+  nextChargeDate        DateTime? @db.Timestamptz(3)
+  lastCheckedAt         DateTime? @db.Timestamptz(3)
+  createdAt             DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime  @updatedAt @db.Timestamptz(3)
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
@@ -367,8 +602,8 @@ model PatreonOAuthState {
   stateToken    String   @unique
   userId        String
   redirectAfter String?
-  expiresAt     DateTime
-  createdAt     DateTime @default(now())
+  expiresAt     DateTime @db.Timestamptz(3)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, expiresAt])
@@ -380,10 +615,10 @@ model Entitlement {
   source     EntitlementSource @default(PATREON)
   tierCode   String
   status     EntitlementStatus @default(INACTIVE)
-  validFrom  DateTime?
-  validUntil DateTime?
-  createdAt  DateTime          @default(now())
-  updatedAt  DateTime          @updatedAt
+  validFrom  DateTime?         @db.Timestamptz(3)
+  validUntil DateTime?         @db.Timestamptz(3)
+  createdAt  DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime          @updatedAt @db.Timestamptz(3)
   user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, status])
@@ -393,9 +628,9 @@ model EmailVerificationToken {
   id          String    @id @default(cuid())
   userId      String
   tokenHash   String    @unique
-  expiresAt   DateTime
-  consumedAt  DateTime?
-  createdAt   DateTime  @default(now())
+  expiresAt   DateTime  @db.Timestamptz(3)
+  consumedAt  DateTime? @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
   requestedIp String?
   userAgent   String?
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -408,9 +643,9 @@ model PasswordResetToken {
   id          String    @id @default(cuid())
   userId      String
   tokenHash   String    @unique
-  expiresAt   DateTime
-  consumedAt  DateTime?
-  createdAt   DateTime  @default(now())
+  expiresAt   DateTime  @db.Timestamptz(3)
+  consumedAt  DateTime? @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
   requestedIp String?
   userAgent   String?
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -424,13 +659,12 @@ model OAuthAccount {
   userId         String
   provider       SocialProvider
   providerUserId String
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  createdAt      DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime       @updatedAt @db.Timestamptz(3)
   user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerUserId])
   @@unique([userId, provider])
-  @@index([provider, providerUserId])
   @@index([userId])
 }
 
@@ -438,10 +672,10 @@ model Session {
   id               String    @id @default(cuid())
   userId           String
   sessionTokenHash String    @unique
-  expiresAt        DateTime
-  revokedAt        DateTime?
-  createdAt        DateTime  @default(now())
-  lastSeenAt       DateTime?
+  expiresAt        DateTime  @db.Timestamptz(3)
+  revokedAt        DateTime? @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+  lastSeenAt       DateTime? @db.Timestamptz(3)
   ipAddress        String?
   userAgent        String?
   user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -451,19 +685,37 @@ model Session {
   @@index([expiresAt, revokedAt])
 }
 
-/// Admin runtime JSON blobs; table is created/updated via raw SQL (`runtime-admin-settings.ts`).
-/// Declared with `@@ignore` so `prisma db push` / migrate does not drop this table.
-model RuntimeAdminSettings {
-  id                  String @id
-  uploadLimitsJson    String
-  requestLimitsJson   String
-  sessionLoginJson    String
-  featureSwitchesJson String
-  maintenanceJson     String
-  apiKeysJson         String
-  updatedAt           String
+/// Durable user activity summary derived from auth-session telemetry during the
+/// SQLite-to-PostgreSQL import. Session rows remain auth-only transient state:
+/// existing SQLite tokens are not imported, and runtime cleanup moves
+/// admin/stats/marketing last-seen reads to this table.
+model UserActivityState {
+  userId     String    @id
+  lastSeenAt DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @db.Timestamptz(3)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@ignore
+  @@index([lastSeenAt])
+}
+
+/// Singleton admin runtime settings. PostgreSQL owns the schema; later runtime
+/// cleanup removes the SQLite startup DDL helper and writes these JSON objects
+/// through Prisma.
+///
+/// `apiKeys` is imported only after sanitization/reset. The backend process
+/// environment remains authoritative for real credentials and tokens.
+model RuntimeAdminSettings {
+  id                   String   @id
+  uploadLimits         Json     @map("uploadLimitsJson")
+  characterFieldLimits Json     @map("characterFieldLimitsJson")
+  thumbnailGeneration  Json     @map("thumbnailGenerationJson")
+  requestLimits        Json     @map("requestLimitsJson")
+  sessionLogin         Json     @map("sessionLoginJson")
+  featureSwitches      Json     @map("featureSwitchesJson")
+  maintenance          Json     @map("maintenanceJson")
+  apiKeys              Json     @map("apiKeysJson")
+  updatedAt            DateTime @db.Timestamptz(3)
 }
 
 /// User-submitted story adjustments / community posts visible on the public feed.
@@ -490,35 +742,45 @@ model StoryPost {
   characterId            String
   /// Story category / badge (e.g. CYBERPUNK, ROMANCE). Required when published; shown on feeds and character cards.
   scenarioType           String?
+  /// Optional story-specific voice clip URL. Overrides the linked character voice in TTS/runtime metadata.
+  voiceFileUrl           String?
+  /// Optional original/display filename for the selected story voice clip.
+  voiceFileName          String?
+  /// Stored story origin. OFFICIAL means admin-authored or admin-curated; COMMUNITY means user-authored/community-curated.
+  origin                 StoryOrigin            @default(COMMUNITY)
   publicationStatus      StoryPublicationStatus @default(PUBLISHED)
   /// NONE = draft / not submitted; PENDING = submitted for review; APPROVED = public; REJECTED = author must revise.
   moderationStatus       StoryModerationStatus  @default(NONE)
   /// Shown to the author when moderationStatus is REJECTED (and to admins).
   moderationRejectReason String?
   /// When the author has seen the rejection (clears header notification); set by acknowledge or viewing story/edit.
-  authorReadRejectionAt  DateTime?
+  authorReadRejectionAt  DateTime?              @db.Timestamptz(3)
   /// Set when the story is or was published; kept if moved back to draft for ordering/history.
-  publishedAt            DateTime?
+  publishedAt            DateTime?              @db.Timestamptz(3)
   likesCount             Int                    @default(0)
-  createdAt              DateTime               @default(now())
-  updatedAt              DateTime               @updatedAt
+  createdAt              DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime               @updatedAt @db.Timestamptz(3)
   author                 User                   @relation(fields: [authorId], references: [id], onDelete: Cascade)
   character              Character              @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  defaultForCharacters   Character[]            @relation("CharacterDefaultStory")
   likes                  StoryPostLike[]
   chatSessions           ChatSession[]
+  pendingTurns           ChatPendingTurn[]
+  unityLaunchContexts    UnityLaunchContext[]
 
   @@index([authorId, createdAt])
   @@index([authorId, publicationStatus])
   @@index([publicationStatus, createdAt])
   @@index([moderationStatus, publicationStatus])
   @@index([characterId])
+  @@index([origin, publicationStatus, moderationStatus])
 }
 
 model StoryPostLike {
   id        String    @id @default(cuid())
   userId    String
   storyId   String
-  createdAt DateTime  @default(now())
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   story     StoryPost @relation(fields: [storyId], references: [id], onDelete: Cascade)
 
@@ -538,6 +800,11 @@ enum StoryModerationStatus {
   REJECTED
 }
 
+enum StoryOrigin {
+  OFFICIAL
+  COMMUNITY
+}
+
 enum ChatQuotaReservationStatus {
   RESERVED
   FINALIZED
@@ -546,41 +813,69 @@ enum ChatQuotaReservationStatus {
 
 /// Rolling message quota tracker: one row per user per billing period.
 model ChatMessageUsage {
-  id            String                 @id @default(cuid())
-  userId        String
-  periodStartAt DateTime
-  periodEndAt   DateTime
-  messagesUsed  Int                    @default(0)
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
-  user          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reservations  ChatQuotaReservation[]
+  id                String                 @id @default(cuid())
+  userId            String
+  periodStartAt     DateTime               @db.Timestamptz(3)
+  periodEndAt       DateTime               @db.Timestamptz(3)
+  messagesUsed      Int                    @default(0)
+  /// Number of assistant turns in this period that finalized with generated voice/audio.
+  voiceMessagesUsed Int                    @default(0)
+  createdAt         DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime               @updatedAt @db.Timestamptz(3)
+  user              User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reservations      ChatQuotaReservation[]
 
   @@unique([userId, periodStartAt])
   @@index([userId, periodEndAt])
 }
 
+/// Authoritative current-period anchor for chat/TTS quota resets.
+model ChatQuotaPeriod {
+  id             String   @id @default(cuid())
+  userId         String
+  periodStartAt  DateTime @db.Timestamptz(3)
+  periodEndAt    DateTime @db.Timestamptz(3)
+  tierCode       String
+  resetReason    String
+  sourceEventKey String?  @unique
+  actorUserId    String?
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+  user           User     @relation("UserQuotaPeriods", fields: [userId], references: [id], onDelete: Cascade)
+  actor          User?    @relation("QuotaPeriodActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, periodStartAt])
+  @@index([userId, periodStartAt, periodEndAt])
+}
+
 /// Quota reservation ledger for reserve/finalize/release + idempotent retries (Phase-1 v4).
 model ChatQuotaReservation {
-  id            String                     @id @default(cuid())
-  userId        String
-  usageId       String
-  periodStartAt DateTime
-  requestId     String
+  id                 String                     @id @default(cuid())
+  userId             String
+  usageId            String
+  periodStartAt      DateTime                   @db.Timestamptz(3)
+  requestId          String
   /// Stable hash of semantic payload (`session_id` + `message`) to detect idempotency key reuse with different body.
   requestFingerprint String?
-  status        ChatQuotaReservationStatus @default(RESERVED)
-  sessionId     String?
-  messageId     String?
-  errorReason   String?
-  createdAt     DateTime                   @default(now())
-  updatedAt     DateTime                   @updatedAt
-  finalizedAt   DateTime?
-  releasedAt    DateTime?
-  user          User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  usage         ChatMessageUsage           @relation(fields: [usageId], references: [id], onDelete: Cascade)
-  session       ChatSession?               @relation(fields: [sessionId], references: [id], onDelete: SetNull)
-  message       ChatMessage?               @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  /// True when this request asked for voice generation and passed prechecks.
+  voiceRequested     Boolean                    @default(false)
+  /// True when this request finalized with a generated assistant audio URL.
+  voiceConsumed      Boolean                    @default(false)
+  /// Public backend voice task id that owns the first accepted visible-turn TTS reservation.
+  voiceTaskId        String?
+  status             ChatQuotaReservationStatus @default(RESERVED)
+  sessionId          String?
+  messageId          String?
+  errorReason        String?
+  createdAt          DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime                   @updatedAt @db.Timestamptz(3)
+  finalizedAt        DateTime?                  @db.Timestamptz(3)
+  releasedAt         DateTime?                  @db.Timestamptz(3)
+  user               User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usage              ChatMessageUsage           @relation(fields: [usageId], references: [id], onDelete: Cascade)
+  session            ChatSession?               @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  message            ChatMessage?               @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  pendingTurns       ChatPendingTurn[]
 
   @@unique([userId, requestId])
   @@index([usageId])
@@ -588,16 +883,314 @@ model ChatQuotaReservation {
   @@index([sessionId])
 }
 
+/// Runtime-owned two-phase chat turn buffer. Active rows are transient and
+/// must be zero at cutover; terminal COMMITTED/ABORTED/EXPIRED rows are
+/// retained for at most 24 hours before cleanup.
+model ChatPendingTurn {
+  id                          String                @id @default(cuid())
+  userId                      String
+  sessionId                   String
+  storyId                     String
+  kind                        ChatPendingTurnKind
+  clientTurnId                String
+  requestId                   String
+  requestFingerprint          String
+  messageText                 String?
+  gameplayEventType           String?
+  gameplayEventPayload        Json?                 @map("gameplayEventPayloadJson")
+  gameplayDisplayText         String?
+  assistantText               String
+  assistantSha256             String
+  provider                    String
+  reservationId               String
+  voiceRequested              Boolean               @default(false)
+  voiceConsumed               Boolean               @default(false)
+  voiceAudioUrl               String?
+  voiceTaskId                 String?
+  status                      ChatPendingTurnStatus @default(PENDING)
+  expiresAt                   DateTime              @db.Timestamptz(3)
+  committedUserMessageId      String?
+  committedAssistantMessageId String?
+  abortReason                 String?
+  createdAt                   DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt                   DateTime              @updatedAt @db.Timestamptz(3)
+  committedAt                 DateTime?             @db.Timestamptz(3)
+  abortedAt                   DateTime?             @db.Timestamptz(3)
+  expiredAt                   DateTime?             @db.Timestamptz(3)
+  user                        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session                     ChatSession           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  story                       StoryPost             @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  reservation                 ChatQuotaReservation  @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, requestId])
+  @@index([userId, sessionId, status])
+  @@index([expiresAt, status])
+  @@index([storyId])
+  @@index([reservationId])
+}
+
+/// Latest Unity-authored metadata snapshot for a chat session. The payload is
+/// opaque to the backend and size/version validation belongs in the runtime
+/// service before persistence.
+model UnitySessionState {
+  sessionId       String      @id
+  userId          String
+  metadataVersion Int
+  metadata        Json        @map("metadataJson")
+  createdAt       DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime    @updatedAt @db.Timestamptz(3)
+  session         ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Website-to-Unity secure launch handoff context (WebGL).
+/// The website mints a short-lived context token for one selected story.
+/// Unity resolves and consumes it in 9B before entering chat.
+model UnityLaunchContext {
+  id                String          @id @default(cuid())
+  tokenHash         String          @unique
+  userId            String
+  storyId           String
+  characterId       String
+  launchMode        UnityLaunchMode @default(FRESH_SESSION)
+  expiresAt         DateTime        @db.Timestamptz(3)
+  consumedAt        DateTime?       @db.Timestamptz(3)
+  consumedSessionId String?
+  createdAt         DateTime        @default(now()) @db.Timestamptz(3)
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  story             StoryPost       @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  character         Character       @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  consumedSession   ChatSession?    @relation(fields: [consumedSessionId], references: [id], onDelete: SetNull)
+
+  @@index([userId, expiresAt])
+  @@index([storyId, expiresAt])
+  @@index([characterId, expiresAt])
+  @@index([expiresAt, consumedAt])
+  @@index([consumedSessionId])
+}
+
 /// Persistent failed-login throttling by client IP to survive process restarts.
 model FailedLoginAttempt {
   /// Normalized IP key (Express `request.ip` or remote address fallback).
   ipAddress     String    @id
   attempts      Int       @default(0)
-  windowStartAt DateTime
-  lockUntil     DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  windowStartAt DateTime  @db.Timestamptz(3)
+  lockUntil     DateTime? @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(3)
 
   @@index([lockUntil])
   @@index([windowStartAt])
+}
+
+/// Durable provider-side registration state for SecretWaifu-uploaded WAV clips.
+/// Runtime TTS must not upload WAV files synchronously on first speech; this
+/// table lets the backend prepare/retry Ahmad-compatible aliases in the
+/// background and repair stale provider aliases after provider cache loss.
+model TtsProviderUploadedVoiceAlias {
+  id                   String    @id
+  uploadedRelativePath String    @unique
+  fileSignature        String
+  providerAlias        String    @unique
+  providerVoiceRefPath String
+  status               String    @default("pending")
+  attemptCount         Int       @default(0)
+  lastAttemptAt        DateTime? @db.Timestamptz(3)
+  nextRetryAt          DateTime? @db.Timestamptz(3)
+  lastError            String?
+  leaseOwner           String?
+  leaseExpiresAt       DateTime? @db.Timestamptz(3)
+  createdAt            DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@index([status, nextRetryAt])
+}
+
+/// Uploaded playable builds shown on public/download surfaces and admin release
+/// management. File size uses BigInt because release artifacts can outgrow
+/// JavaScript-safe SQLite integer assumptions during import.
+model GameRelease {
+  id               String              @id
+  platform         GameReleasePlatform
+  versionLabel     String
+  changelogHtml    String              @default("")
+  artifactUrl      String
+  runtimeUrl       String?
+  downloadUrl      String?
+  artifactFileName String?
+  storagePath      String?
+  totalBytes       BigInt?
+  fileCount        Int?
+  isActive         Boolean             @default(false)
+  newsArticleId    String?
+  createdAt        DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime            @updatedAt @db.Timestamptz(3)
+  deletedAt        DateTime?           @db.Timestamptz(3)
+  newsArticle      NewsArticle?        @relation(fields: [newsArticleId], references: [id], onDelete: Restrict)
+
+  @@index([platform, isActive, deletedAt])
+  @@index([platform, createdAt(sort: Desc)])
+  @@index([newsArticleId, deletedAt])
+}
+
+/// Public/newsroom article content optionally linked from game releases.
+/// Soft-delete state is part of the schema so importer and later runtime
+/// cleanup can preserve current admin behavior.
+model NewsArticle {
+  id           String        @id
+  slug         String        @unique
+  title        String
+  summary      String?
+  contentHtml  String
+  isPublished  Boolean       @default(false)
+  createdAt    DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime      @updatedAt @db.Timestamptz(3)
+  deletedAt    DateTime?     @db.Timestamptz(3)
+  gameReleases GameRelease[]
+
+  @@index([slug, deletedAt])
+  @@index([isPublished, createdAt(sort: Desc), deletedAt])
+}
+
+/// Admin-managed legal/policy/static content. The physical plural table name
+/// is preserved for import/runtime cleanup risk containment.
+model StaticPage {
+  id              String   @id
+  slug            String   @unique
+  title           String
+  summary         String?
+  metaTitle       String?
+  metaDescription String?
+  contentHtml     String
+  sourceUrl       String?
+  revisionDate    String?
+  isPublished     Boolean  @default(true)
+  showInFooter    Boolean  @default(false)
+  footerLabel     String?
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([isPublished, slug])
+  @@index([showInFooter, sortOrder, title])
+  @@map("StaticPages")
+}
+
+/// Human-readable Patreon entitlement/sync audit trail. `details` is native
+/// JSON so importer validation catches malformed historical payloads.
+model PatreonSyncLog {
+  id          String              @id
+  userId      String
+  source      String
+  eventType   String
+  level       PatreonSyncLogLevel
+  message     String
+  actorUserId String?
+  actorLabel  String?
+  details     Json?               @map("detailsJson")
+  createdAt   DateTime            @default(now()) @db.Timestamptz(3)
+  user        User                @relation("PatreonSyncLogUser", fields: [userId], references: [id], onDelete: Cascade)
+  actor       User?               @relation("PatreonSyncLogActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([actorUserId, createdAt(sort: Desc)])
+}
+
+/// Admin-editable transactional/marketing email templates. The physical plural
+/// table name is retained until a later post-migration cleanup can rename it.
+model MarketingEmailTemplate {
+  id          String                         @id
+  templateKey String                         @unique
+  name        String
+  description String
+  category    MarketingEmailTemplateCategory
+  subject     String
+  htmlBody    String
+  textBody    String
+  isBuiltIn   Boolean                        @default(true)
+  createdAt   DateTime                       @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime                       @updatedAt @db.Timestamptz(3)
+  sendLogs    MarketingEmailSendLog[]
+
+  @@index([category, name])
+  @@map("MarketingEmailTemplates")
+}
+
+/// Delivery audit for marketing/admin email sends. Logs keep scalar recipient
+/// email for operational forensics even when the related account is later
+/// removed.
+model MarketingEmailSendLog {
+  id              String                   @id
+  templateKey     String
+  recipientEmail  String
+  recipientUserId String?
+  segmentKey      String?
+  mode            MarketingEmailSendMode
+  status          MarketingEmailSendStatus
+  provider        String
+  subject         String
+  errorMessage    String?
+  createdAt       DateTime                 @default(now()) @db.Timestamptz(3)
+  sentAt          DateTime?                @db.Timestamptz(3)
+  template        MarketingEmailTemplate   @relation(fields: [templateKey], references: [templateKey], onDelete: Restrict)
+  recipientUser   User?                    @relation(fields: [recipientUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([recipientEmail])
+  @@index([recipientUserId, createdAt(sort: Desc)])
+  @@index([templateKey, createdAt(sort: Desc)])
+}
+
+/// Scheduled marketing email campaign definition. Status and condition remain
+/// strings for Increment 03 so the migration can preserve currently deployed
+/// runtime values without introducing a new enum compatibility surface.
+model MarketingEmailAutomation {
+  id                      String                              @id
+  templateKey             String
+  status                  String
+  statusCondition         String
+  triggerDelayHours       Int
+  triggerDelayDays        Int
+  campaignDiscountCode    String?
+  campaignFeaturesSummary String
+  campaignCtaUrl          String
+  sendIntervalSeconds     Int
+  maxRecipients           Int
+  createdAt               DateTime                            @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                            @updatedAt @db.Timestamptz(3)
+  startedAt               DateTime?                           @db.Timestamptz(3)
+  pausedAt                DateTime?                           @db.Timestamptz(3)
+  recipients              MarketingEmailAutomationRecipient[]
+
+  @@index([status, createdAt])
+}
+
+/// Per-user queue row for a marketing automation. The automation relation owns
+/// cleanup; recipient user/template fields intentionally remain scalar audit
+/// data because old campaign rows must stay readable if users/templates change.
+model MarketingEmailAutomationRecipient {
+  id             String                   @id
+  automationId   String
+  templateKey     String
+  recipientUserId String
+  recipientEmail  String
+  variables       Json                     @map("variablesJson")
+  status          String
+  attemptCount    Int                      @default(0)
+  nextAttemptAt   DateTime                 @db.Timestamptz(3)
+  subject         String?
+  lastError       String?
+  createdAt       DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime                 @updatedAt @db.Timestamptz(3)
+  sentAt          DateTime?                @db.Timestamptz(3)
+  claimedAt       DateTime?                @db.Timestamptz(3)
+  leaseOwner      String?
+  leaseExpiresAt  DateTime?                @db.Timestamptz(3)
+  automation      MarketingEmailAutomation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@unique([automationId, recipientUserId])
+  @@index([status, nextAttemptAt, leaseExpiresAt, createdAt])
+  @@index([status, leaseExpiresAt])
 }

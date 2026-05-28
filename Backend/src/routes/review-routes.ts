@@ -131,7 +131,7 @@ reviewRoutes.post('/characters/:characterId/reviews', requireAuth, async (reques
 
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       response.status(409).json({
-        message: 'You have already reviewed this character.'
+        message: 'You have already commented on this character.'
       })
       return
     }

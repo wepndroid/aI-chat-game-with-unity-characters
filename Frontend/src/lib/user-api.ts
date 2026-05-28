@@ -1,4 +1,4 @@
-import { apiDelete, apiPostFormData } from '@/lib/api-client'
+import { apiDelete, apiPatch, apiPostFormData } from '@/lib/api-client'
 
 const uploadUserAvatar = async (file: File) => {
   const formData = new FormData()
@@ -10,4 +10,10 @@ const removeUserAvatar = async () => {
   return apiDelete<{ data: { avatarUrl: string | null } }>('/users/me/avatar')
 }
 
-export { removeUserAvatar, uploadUserAvatar }
+const updateMyPlayerName = async (playerName: string) => {
+  return apiPatch<{ data: { id: string; username: string; player_name: string; updated_at: string } }>('/users/me/profile', {
+    player_name: playerName
+  })
+}
+
+export { removeUserAvatar, updateMyPlayerName, uploadUserAvatar }

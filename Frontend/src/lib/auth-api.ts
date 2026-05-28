@@ -20,9 +20,13 @@ type SessionUserWire = {
   id: string
   email: string
   username: string
+  playerName?: string
+  player_name?: string
   role: SessionUser['role']
   isEmailVerified?: boolean
   is_email_verified?: boolean
+  hasPassword?: boolean
+  has_password?: boolean
   avatarUrl?: string | null
   avatar_url?: string | null
   unreadNotificationCount?: number
@@ -33,6 +37,8 @@ type SessionUserWire = {
   updated_at?: string
   tierCode?: string | null
   tier_code?: string | null
+  effectiveTierCode?: string | null
+  effective_tier_code?: string | null
   tier?: SessionUserTierWire | null
 }
 
@@ -94,6 +100,10 @@ type ResetPasswordPayload = {
   password: string
 }
 
+type SetPasswordPayload = {
+  password: string
+}
+
 
 type GoogleOAuthIntent = 'signin' | 'signup'
 
@@ -115,13 +125,16 @@ const normalizeSessionUser = (user: SessionUserWire): SessionUser => {
     id: user.id,
     email: user.email,
     username: user.username,
+    playerName: user.player_name ?? user.playerName ?? user.username,
     role: user.role,
     isEmailVerified: user.is_email_verified ?? user.isEmailVerified ?? false,
+    hasPassword: user.has_password ?? user.hasPassword ?? false,
     avatarUrl: user.avatar_url ?? user.avatarUrl ?? null,
     unreadNotificationCount: user.unread_notification_count ?? user.unreadNotificationCount ?? 0,
     createdAt: user.created_at ?? user.createdAt,
     updatedAt: user.updated_at ?? user.updatedAt,
     tierCode: user.tier_code ?? user.tierCode ?? null,
+    effectiveTierCode: user.effective_tier_code ?? user.effectiveTierCode ?? null,
     tier: normalizedTier
   }
 }
@@ -180,15 +193,62 @@ type WebGlBridgeTokenResponseWire = {
   }
 }
 
+type WebglStoryLaunchContextResponse = {
+  data: {
+    launchToken: string
+    storyId: string
+    characterId: string
+    launchMode: 'fresh_session'
+    expiresAt: string
+  }
+}
+
+type WebglStoryLaunchContextResponseWire = {
+  data: {
+    launch_token: string
+    story_id: string
+    character_id: string
+    launch_mode: 'fresh_session'
+    expires_at: string
+  }
+}
+
 /** Short-lived API token for Unity WebGL (`Authorization: Bearer`). Requires cookie session. */
 const getWebGlBridgeToken = async (): Promise<WebGlBridgeTokenResponse> => {
-  const response = await apiGet<WebGlBridgeTokenResponseWire>('/auth/webgl-token')
+  const response = await apiGet<WebGlBridgeTokenResponseWire>('/auth/webgl-token', { cache: 'no-store' })
 
   return {
     data: {
       token: response.data.token,
       expiresAt: response.data.expires_at ?? response.data.expiresAt ?? '',
       tokenType: response.data.token_type ?? response.data.tokenType ?? 'Bearer'
+    }
+  }
+}
+
+const issueWebglStoryLaunchContext = async (storyId: string): Promise<WebglStoryLaunchContextResponse> => {
+  const normalizedStoryId = storyId.trim()
+
+  if (!normalizedStoryId) {
+    throw new Error('A story is required before launching chat.')
+  }
+
+  const response = await apiPost<WebglStoryLaunchContextResponseWire>(
+    '/auth/webgl-launch-context',
+    {
+      story_id: normalizedStoryId,
+      launch_mode: 'fresh_session'
+    },
+    { cache: 'no-store' }
+  )
+
+  return {
+    data: {
+      launchToken: response.data.launch_token,
+      storyId: response.data.story_id,
+      characterId: response.data.character_id,
+      launchMode: response.data.launch_mode,
+      expiresAt: response.data.expires_at
     }
   }
 }
@@ -219,6 +279,10 @@ const resetPasswordWithToken = async (payload: ResetPasswordPayload) => {
   return apiPost<{ data: { reset: boolean } }>('/auth/reset-password', payload)
 }
 
+const setPasswordForCurrentUser = async (payload: SetPasswordPayload) => {
+  return apiPost<{ data: { set: boolean } }>('/auth/set-password', payload)
+}
+
 
 const getGoogleOauthStartUrl = (redirectAfter = '/profile', intent: GoogleOAuthIntent = 'signin') => {
   const query = new URLSearchParams({
@@ -235,6 +299,7 @@ export {
   getCurrentSessionUser,
   getWebGlBridgeToken,
   getGoogleOauthStartUrl,
+  issueWebglStoryLaunchContext,
   isGoogleOauthEnabled,
   loginWithPassword,
   logoutSession,
@@ -242,6 +307,7 @@ export {
   requestPasswordResetLink,
   resendVerificationCode,
   resetPasswordWithToken,
+  setPasswordForCurrentUser,
   verifyEmailCode
 }
 export type {
@@ -251,6 +317,7 @@ export type {
   RegisterAuthPayload,
   RegisterAuthResponse,
   ResetPasswordPayload,
+  SetPasswordPayload,
   VerifyEmailCodePayload
 }
 

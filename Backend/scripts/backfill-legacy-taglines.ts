@@ -2,15 +2,7 @@ import 'dotenv/config'
 import { PrismaClient } from '@prisma/client'
 import { runLegacyTaglineBackfill } from '../src/lib/legacy-character-import'
 
-const DEFAULT_DATABASE_URL = 'file:./prisma/dev.db'
-
-const prisma = new PrismaClient({
-  datasources: {
-    db: {
-      url: process.env.DATABASE_URL?.trim() || DEFAULT_DATABASE_URL
-    }
-  }
-})
+const prisma = new PrismaClient()
 
 const forceUpdate = process.argv.includes('--force')
 

@@ -4,16 +4,19 @@ import path from 'node:path'
 import type { Request } from 'express'
 import { Router } from 'express'
 import multer from 'multer'
+import sharp from 'sharp'
 import { z } from 'zod'
 import { sendApiData, sendApiError } from '../lib/api-contract'
+import { tryDeleteTrustedUploadFile } from '../lib/delete-local-upload-file'
 import { prisma } from '../lib/prisma'
 import { getRuntimeAdminSettings } from '../lib/runtime-admin-settings'
+import { buildUploadUrl, ensureUploadFolder, uploadFolders } from '../lib/upload-paths'
 import { requireAdmin, requireAuth, requireVerifiedEmail } from '../middleware/auth-middleware'
 
 const imageGenerationRoutes = Router()
-const uploadsRoot = path.join(process.cwd(), 'uploads')
+const thumbnailUploadRoot = ensureUploadFolder(uploadFolders.thumbnails)
 
-fs.mkdirSync(uploadsRoot, { recursive: true })
+fs.mkdirSync(thumbnailUploadRoot, { recursive: true })
 
 const previewGenerationCooldownState = new Map<
   string,
@@ -25,6 +28,8 @@ const previewGenerationCooldownState = new Map<
 
 const PREVIEW_GENERATION_WINDOW_MS = 12 * 60 * 60 * 1000
 const PREVIEW_GENERATION_COOLDOWN_SECONDS = [0, 0, 0, 60, 5 * 60, 15 * 60, 30 * 60]
+const CARD_THUMBNAIL_WIDTH = 360
+const CARD_THUMBNAIL_HEIGHT = 620
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -210,6 +215,19 @@ const storePreviewCooldownSnapshot = (cooldownKey: string, successTimestamps: nu
     successTimestamps,
     cooldownUntil
   })
+}
+
+const resizeReferenceImageForCard = async (sourceBuffer: Buffer) => {
+  return sharp(sourceBuffer, { failOn: 'none' })
+    .rotate()
+    .resize({
+      width: CARD_THUMBNAIL_WIDTH,
+      height: CARD_THUMBNAIL_HEIGHT,
+      fit: 'cover',
+      position: 'attention'
+    })
+    .png({ compressionLevel: 9, adaptiveFiltering: true })
+    .toBuffer()
 }
 
 const parseJsonObject = (value: string) => {
@@ -511,6 +529,39 @@ imageGenerationRoutes.post(
         sampler_name: thumbnailGenerationSettings.samplerName
       }
 
+      const referenceFileName = `${randomUUID()}-thumbnail-reference.png`
+      const referenceRelativePath = path.join(uploadFolders.thumbnails, referenceFileName)
+      const referencePath = path.join(thumbnailUploadRoot, referenceFileName)
+      await fs.promises.writeFile(referencePath, await resizeReferenceImageForCard(characterImageFile.buffer))
+      const referenceImageUrl = buildUploadUrl(resolvePublicOrigin(request), referenceRelativePath)
+
+      if (payload.characterId) {
+        const existingCharacter = await prisma.character.findFirst({
+          where: {
+            OR: [{ id: payload.characterId }, { slug: payload.characterId }]
+          },
+          select: {
+            id: true,
+            thumbnailReferenceImageUrl: true
+          }
+        })
+
+        if (existingCharacter?.id) {
+          await prisma.character.update({
+            where: {
+              id: existingCharacter.id
+            },
+            data: {
+              thumbnailReferenceImageUrl: referenceImageUrl
+            }
+          })
+
+          if (existingCharacter.thumbnailReferenceImageUrl && existingCharacter.thumbnailReferenceImageUrl !== referenceImageUrl) {
+            await tryDeleteTrustedUploadFile(existingCharacter.thumbnailReferenceImageUrl)
+          }
+        }
+      }
+
       const upstreamResponse = await fetch(buildImageGenerationUrl('prompt-pose'), {
         method: 'POST',
         headers: {
@@ -547,7 +598,8 @@ imageGenerationRoutes.post(
 
       const outputBuffer = Buffer.from(firstImageBase64, 'base64')
       const previewFileName = `${randomUUID()}.png`
-      const previewPath = path.join(uploadsRoot, previewFileName)
+      const previewRelativePath = path.join(uploadFolders.thumbnails, previewFileName)
+      const previewPath = path.join(thumbnailUploadRoot, previewFileName)
       await fs.promises.writeFile(previewPath, outputBuffer)
 
       const now = Date.now()
@@ -563,7 +615,8 @@ imageGenerationRoutes.post(
       }
 
       sendApiData(response, {
-        previewImageUrl: `${resolvePublicOrigin(request)}/uploads/${previewFileName}`,
+        previewImageUrl: buildUploadUrl(resolvePublicOrigin(request), previewRelativePath),
+        referenceImageUrl,
         cooldownSecondsRemaining: nextCooldownSeconds,
         successfulGenerationsInWindow: successCount,
         instantGenerationsRemaining: isCooldownExempt ? Number.MAX_SAFE_INTEGER : Math.max(0, 3 - successCount),

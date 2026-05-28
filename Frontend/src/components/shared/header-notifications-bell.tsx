@@ -1,7 +1,12 @@
 'use client'
 
 import { useAuth } from '@/components/providers/auth-provider'
-import { getMyNotifications, markNotificationRead, type NotificationFeedItem } from '@/lib/notifications-api'
+import {
+  clearMyNotifications,
+  getMyNotifications,
+  markNotificationRead,
+  type NotificationFeedItem
+} from '@/lib/notifications-api'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -24,6 +29,7 @@ const HeaderNotificationsBell = () => {
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<NotificationFeedItem[]>([])
   const [loading, setLoading] = useState(false)
+  const [clearing, setClearing] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const markingReadIdsRef = useRef<Set<string>>(new Set())
@@ -75,6 +81,25 @@ const HeaderNotificationsBell = () => {
     }
     setOpen(true)
     loadFeed()
+  }
+
+  const handleClearAll = async () => {
+    if (loading || clearing || items.length === 0) {
+      return
+    }
+
+    setClearing(true)
+    setLoadError(null)
+
+    try {
+      await clearMyNotifications()
+      setItems([])
+      await refreshSessionUser()
+    } catch {
+      setLoadError('Could not clear notifications.')
+    } finally {
+      setClearing(false)
+    }
   }
 
   const handleItemActivate = async (item: NotificationFeedItem) => {
@@ -190,9 +215,18 @@ const HeaderNotificationsBell = () => {
           className="absolute right-0 z-[60] mt-2 w-[min(calc(100vw-2rem),20rem)] rounded-lg border border-ember-500/45 bg-[#0a0a0a] py-1 shadow-[0_16px_48px_rgba(0,0,0,0.65),0_0_0_1px_rgba(244,99,19,0.12)_inset] backdrop-blur-md"
           role="menu"
         >
-          <p className="border-b border-white/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/55">
-            Notifications
-          </p>
+          <div className="flex items-center justify-between gap-3 border-b border-white/10 px-3 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/55">Notifications</p>
+            <button
+              type="button"
+              className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ember-300 transition hover:text-ember-200 disabled:cursor-not-allowed disabled:text-white/25"
+              onClick={() => void handleClearAll()}
+              disabled={loading || clearing || items.length === 0}
+              aria-label="Clear all notifications"
+            >
+              {clearing ? 'Clearing...' : 'Clear all'}
+            </button>
+          </div>
           <div className="max-h-[min(60vh,320px)] overflow-y-auto">
             {loading ? (
               <p className="px-3 py-4 text-center text-xs text-white/45">Loading…</p>

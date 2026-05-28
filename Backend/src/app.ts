@@ -5,9 +5,12 @@ import express from 'express'
 import helmet from 'helmet'
 import morgan from 'morgan'
 import { rateLimit } from 'express-rate-limit'
-import { ZodError } from 'zod'
 import { sendApiError } from './lib/api-contract'
-import authRoutes from './routes/auth-routes'
+import { installRuntimeLogCapture } from './lib/runtime-log-buffer'
+import { applyWebglReleaseStaticHeaders } from './lib/webgl-release-static-headers'
+import { apiErrorHandler } from './middleware/api-error-handler'
+import adminLogRoutes from './routes/admin-log-routes'
+import authRoutes, { setWebglLaunchResolveNoStoreCacheControl } from './routes/auth-routes'
 import characterAssetUploadRoutes from './routes/character-asset-upload-routes'
 import characterRoutes from './routes/character-routes'
 import healthRoutes from './routes/health-routes'
@@ -18,15 +21,24 @@ import { runtimeAdminSettingsMiddleware } from './middleware/runtime-admin-setti
 import patreonRoutes from './routes/patreon-routes'
 import reviewRoutes from './routes/review-routes'
 import imageGenerationRoutes from './routes/image-generation-routes'
+import marketingRoutes from './routes/marketing-routes'
 import statsRoutes from './routes/stats-routes'
 import landingPageRoutes from './routes/landing-page-routes'
 import userRoutes from './routes/user-routes'
 import chatQuotaRoutes from './routes/chat-quota-routes'
+import ttsRoutes from './routes/tts-routes'
 import storyRoutes from './routes/story-routes'
 import userAvatarRoutes from './routes/user-avatar-routes'
 import userNotificationRoutes from './routes/user-notification-routes'
+import unityHelperLlmRoutes from './routes/unity-helper-llm-routes'
+import unityQuotaFixtureRoutes from './routes/unity-quota-fixture-routes'
+import unityTtsFixtureRoutes from './routes/unity-tts-fixture-routes'
+import staticPageRoutes from './routes/static-page-routes'
+import newsRoutes from './routes/news-routes'
 
 const app = express()
+
+installRuntimeLogCapture()
 
 const isProduction = process.env.NODE_ENV === 'production'
 const configuredOrigins = process.env.CORS_ORIGIN?.split(',').map((origin) => normalizeOrigin(origin)).filter(Boolean) ?? []
@@ -97,6 +109,15 @@ const assetUploadRateLimit = rateLimit({
   handler: buildRateLimitHandler('Too many upload attempts. Please try again later.')
 })
 
+const unityHelperLlmRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isProduction ? 60 : 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: rateLimitValidateRelaxed,
+  handler: buildRateLimitHandler('Too many structured helper requests. Please try again later.')
+})
+
 app.use(
   cors({
     credentials: true,
@@ -128,7 +149,15 @@ app.use(
     crossOriginResourcePolicy: { policy: 'cross-origin' }
   })
 )
-app.use(express.json({ limit: '10mb' }))
+app.use('/api', setWebglLaunchResolveNoStoreCacheControl)
+app.use(
+  express.json({
+    limit: '10mb',
+    verify: (request, _response, buffer) => {
+      ;(request as express.Request & { rawBody?: string }).rawBody = buffer.toString('utf8')
+    }
+  })
+)
 app.use(express.urlencoded({ extended: false, limit: '1mb', parameterLimit: 100 }))
 app.use(cookieParser())
 app.use(morgan('dev'))
@@ -138,7 +167,8 @@ app.use(
   '/api',
   createCsrfOriginMiddleware({
     allowedOrigins,
-    isProduction
+    isProduction,
+    csrfExemptPaths: new Set(['/auth/unity-token', '/patreon/webhook'])
   })
 )
 /**
@@ -148,17 +178,27 @@ app.use(
 app.use('/api/auth/me', authSessionProbeRateLimit)
 app.use('/api/auth/webgl-token', authSessionProbeRateLimit)
 app.use('/api/auth/login', authRateLimit)
+app.use('/api/auth/unity-token', authRateLimit)
+app.use('/api/auth/webgl-launch-context', authRateLimit)
 app.use('/api/auth/register', authRateLimit)
 app.use('/api/auth/forgot-password', authRateLimit)
 app.use('/api/auth/reset-password', authRateLimit)
+app.use('/api/auth/set-password', authRateLimit)
 app.use('/api/auth/resend-verification', authRateLimit)
 app.use('/api/characters/assets/upload', assetUploadRateLimit)
 app.use('/api/users/me/avatar', assetUploadRateLimit)
+app.use('/api/unity/llm/structured-generate', unityHelperLlmRateLimit)
 
 const uploadsRoot = path.join(process.cwd(), 'uploads')
 app.use(
   '/uploads',
   (request, response, next) => {
+    // WebGL releases are embedded inside the frontend /play page, which lives on a
+    // different origin in local/dev and can also be split in production.
+    // Helmet sets X-Frame-Options: SAMEORIGIN by default, so remove it for uploads.
+    response.removeHeader('X-Frame-Options')
+    response.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
+
     const pathname = request.path.toLowerCase()
     // Raw VRM / VRMA files must only be served through signed endpoints.
     if (pathname.endsWith('.vrm') || pathname.endsWith('.vrma')) {
@@ -169,41 +209,47 @@ app.use(
     }
     next()
   },
-  express.static(uploadsRoot)
+  express.static(uploadsRoot, {
+    setHeaders: (response, filePath) => {
+      applyWebglReleaseStaticHeaders(response, path.relative(uploadsRoot, filePath))
+    }
+  })
 )
 
 app.use('/api', healthRoutes)
+app.use('/api', adminLogRoutes)
 app.use('/api', authRoutes)
 app.use('/api', userRoutes)
 app.use('/api', userNotificationRoutes)
 app.use('/api', userAvatarRoutes)
+app.use('/api', staticPageRoutes)
+app.use('/api', newsRoutes)
 app.use('/api', characterAssetUploadRoutes)
 app.use('/api', characterRoutes)
 app.use('/api', legacyImportRoutes)
 app.use('/api', reviewRoutes)
 app.use('/api', imageGenerationRoutes)
+app.use('/api', marketingRoutes)
 app.use('/api', statsRoutes)
 app.use('/api', landingPageRoutes)
 app.use('/api', patreonRoutes)
 app.use('/api', chatQuotaRoutes)
+app.use('/api', ttsRoutes)
+app.use('/api', unityHelperLlmRoutes)
+app.use('/api', unityQuotaFixtureRoutes)
+app.use('/api', unityTtsFixtureRoutes)
 app.use('/api', storyRoutes)
 app.use('/', legacyRoutes)
+
+if (isProduction) {
+  const { default: gameReleaseRoutes } = require('./routes/game-release-routes') as typeof import('./routes/game-release-routes')
+  app.use('/api', gameReleaseRoutes)
+}
 
 app.use((_request, response) => {
   sendApiError(response, 404, 'NOT_FOUND', 'Route not found.')
 })
 
-app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
-  if (error instanceof ZodError) {
-    const first = error.issues[0]
-    sendApiError(response, 400, 'VALIDATION_FAILED', first?.message ?? 'Validation failed.', {
-      issues: error.issues
-    })
-    return
-  }
-
-  console.error(error)
-  sendApiError(response, 500, 'INTERNAL_ERROR', 'Internal server error.')
-})
+app.use(apiErrorHandler)
 
 export default app

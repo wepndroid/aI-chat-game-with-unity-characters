@@ -1,7 +1,10 @@
 'use client'
 
 import AdminPageShell from '@/components/shared/admin-page-shell'
-import { getLandingPagesAnalytics, type LandingPagesAnalyticsResponse } from '@/lib/landing-page-api'
+import {
+  getLandingPagesTrafficReport,
+  type LandingPagesTrafficReportResponse
+} from '@/lib/landing-page-api'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
@@ -11,293 +14,140 @@ const formatNumber = (value: number) =>
     maximumFractionDigits: 0
   }).format(value)
 
+const formatCurrencyCents = (value: number) =>
+  new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 2
+  }).format(value / 100)
+
 const formatPercent = (value: number) => `${value.toFixed(1)}%`
 
-const formatDayLabel = (value: string | null) => {
+const formatDayLabel = (value: string) =>
+  new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  }).format(new Date(`${value}T00:00:00Z`))
+
+const formatDateTime = (value: string | null) => {
   if (!value) {
-    return 'N/A'
+    return 'Not yet'
   }
 
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
-    day: 'numeric'
-  }).format(new Date(`${value}T00:00:00Z`))
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  }).format(new Date(value))
 }
 
-type DailyStatRow = LandingPagesAnalyticsResponse['data']['landingPages'][number]['dailyStats'][number]
-type ReportSeverity = 'critical' | 'warning' | 'info'
-type ReportScope = 'landing-page' | 'variant'
-type ReportIssueType =
-  | 'no-data'
-  | 'traffic-drop'
-  | 'signup-drop'
-  | 'no-signups'
-  | 'no-sales'
-  | 'low-signup-cvr'
-  | 'low-sale-cvr'
-
-type SortKey =
-  | 'severity'
-  | 'scope'
-  | 'entityName'
-  | 'issueType'
-  | 'visitors'
-  | 'clicks'
-  | 'signups'
-  | 'sales'
-  | 'signupRate'
-  | 'saleRate'
-  | 'lastSeenDate'
-
-type ReportRow = {
-  id: string
-  severity: ReportSeverity
-  severityRank: number
-  scope: ReportScope
-  issueType: ReportIssueType
-  issueLabel: string
-  entityName: string
-  landingPageId: string
-  landingPageName: string
-  variantId: string | null
-  variantName: string | null
-  routePath: string
-  isActive: boolean
-  visitors: number
-  clicks: number
-  signups: number
-  sales: number
-  signupRate: number
-  saleRate: number
-  lastSeenDate: string | null
-  recommendation: string
-  detail: string
-}
-
-const severityPillClassName: Record<ReportSeverity, string> = {
-  critical: 'border-rose-400/30 bg-rose-500/10 text-rose-100',
-  warning: 'border-amber-300/30 bg-amber-400/10 text-amber-100',
-  info: 'border-sky-400/30 bg-sky-500/10 text-sky-100'
-}
-
-const scopeLabelMap: Record<ReportScope, string> = {
-  'landing-page': 'Landing Page',
-  variant: 'Variant'
-}
-
-const issueLabelMap: Record<ReportIssueType, string> = {
-  'no-data': 'No recent data',
-  'traffic-drop': 'Traffic drop',
-  'signup-drop': 'Signup rate drop',
-  'no-signups': 'Clicks without signups',
-  'no-sales': 'Signups without sales',
-  'low-signup-cvr': 'Low signup CVR',
-  'low-sale-cvr': 'Low sale CVR'
-}
-
-const sumMetric = (
-  dailyStats: DailyStatRow[],
-  key: keyof Pick<DailyStatRow, 'uniqueVisitors' | 'signupClicks' | 'signups' | 'patreonSales'>
-) =>
-  dailyStats.reduce((totalValue, day) => totalValue + day[key], 0)
-
-const getRecentWindow = (dailyStats: DailyStatRow[], size: number) => dailyStats.slice(Math.max(0, dailyStats.length - size))
-
-const getPreviousWindow = (dailyStats: DailyStatRow[], size: number) =>
-  dailyStats.slice(Math.max(0, dailyStats.length - size * 2), Math.max(0, dailyStats.length - size))
-
-const createReportRowsForEntity = ({
-  entityId,
-  scope,
-  entityName,
-  landingPageId,
-  landingPageName,
-  variantId,
-  variantName,
-  routePath,
-  isActive,
-  uniqueVisitors,
-  clicks,
-  signups,
-  sales,
-  signupRate,
-  saleRate,
-  dailyStats
-}: {
-  entityId: string
-  scope: ReportScope
-  entityName: string
-  landingPageId: string
-  landingPageName: string
-  variantId: string | null
-  variantName: string | null
-  routePath: string
-  isActive: boolean
+type UserRow = LandingPagesTrafficReportResponse['data']['users'][number]
+type SourceBreakdownRow = {
+  source: string
+  landingPageNames: string[]
   uniqueVisitors: number
-  clicks: number
+  totalVisits: number
+  uniqueUsers: number
+  signupClicks: number
   signups: number
-  sales: number
-  signupRate: number
-  saleRate: number
-  dailyStats: DailyStatRow[]
-}) => {
-  const reportRows: ReportRow[] = []
-  const recentDays = getRecentWindow(dailyStats, 3)
-  const previousDays = getPreviousWindow(dailyStats, 3)
-  const recentVisitors = sumMetric(recentDays, 'uniqueVisitors')
-  const previousVisitors = sumMetric(previousDays, 'uniqueVisitors')
-  const recentClicks = sumMetric(recentDays, 'signupClicks')
-  const previousClicks = sumMetric(previousDays, 'signupClicks')
-  const recentSignups = sumMetric(recentDays, 'signups')
-  const previousSignups = sumMetric(previousDays, 'signups')
-  const lastSeenDate = dailyStats[dailyStats.length - 1]?.date ?? null
-  const clickToSignupRate = clicks > 0 ? (signups / clicks) * 100 : 0
-
-  const pushRow = (row: Omit<ReportRow, 'id' | 'scope' | 'entityName' | 'landingPageId' | 'landingPageName' | 'variantId' | 'variantName' | 'routePath' | 'isActive' | 'visitors' | 'clicks' | 'signups' | 'sales' | 'signupRate' | 'saleRate' | 'lastSeenDate'>) => {
-    reportRows.push({
-      id: `${entityId}-${row.issueType}`,
-      scope,
-      entityName,
-      landingPageId,
-      landingPageName,
-      variantId,
-      variantName,
-      routePath,
-      isActive,
-      visitors: uniqueVisitors,
-      clicks,
-      signups,
-      sales,
-      signupRate,
-      saleRate,
-      lastSeenDate,
-      ...row
-    })
-  }
-
-  if (isActive && dailyStats.length === 0) {
-    pushRow({
-      severity: 'critical',
-      severityRank: 3,
-      issueType: 'no-data',
-      issueLabel: issueLabelMap['no-data'],
-      recommendation: 'Verify tracking is firing and the route is still receiving spend.',
-      detail: 'This active asset has no daily analytics history yet.'
-    })
-  }
-
-  if (isActive && dailyStats.length > 0 && recentVisitors === 0 && uniqueVisitors > 0) {
-    pushRow({
-      severity: 'critical',
-      severityRank: 3,
-      issueType: 'no-data',
-      issueLabel: issueLabelMap['no-data'],
-      recommendation: 'Check that traffic is still routed here and the page remains active in your campaigns.',
-      detail: 'There has been no traffic in the latest 3-day window.'
-    })
-  }
-
-  if (previousVisitors >= 40 && recentVisitors <= previousVisitors * 0.55) {
-    pushRow({
-      severity: 'warning',
-      severityRank: 2,
-      issueType: 'traffic-drop',
-      issueLabel: issueLabelMap['traffic-drop'],
-      recommendation: 'Review source delivery, budgets, and recent creative or URL changes.',
-      detail: `${formatNumber(previousVisitors)} visitors fell to ${formatNumber(recentVisitors)} in the latest 3-day window.`
-    })
-  }
-
-  const previousClickToSignupRate = previousClicks > 0 ? (previousSignups / previousClicks) * 100 : 0
-  const recentClickToSignupRate = recentClicks > 0 ? (recentSignups / recentClicks) * 100 : 0
-
-  if (clicks >= 20 && signups === 0) {
-    pushRow({
-      severity: 'critical',
-      severityRank: 3,
-      issueType: 'no-signups',
-      issueLabel: issueLabelMap['no-signups'],
-      recommendation: 'Audit CTA clarity, page load health, and signup form completion.',
-      detail: `${formatNumber(clicks)} signup modal opens have produced zero signups.`
-    })
-  }
-
-  if (signups >= 12 && sales === 0) {
-    pushRow({
-      severity: 'warning',
-      severityRank: 2,
-      issueType: 'no-sales',
-      issueLabel: issueLabelMap['no-sales'],
-      recommendation: 'Check Patreon handoff quality, pricing, and purchase flow continuity.',
-      detail: `${formatNumber(signups)} signups have not converted into a single sale yet.`
-    })
-  }
-
-  if (clicks >= 20 && clickToSignupRate > 0 && clickToSignupRate < 30) {
-    pushRow({
-      severity: 'warning',
-      severityRank: 2,
-      issueType: 'low-signup-cvr',
-      issueLabel: issueLabelMap['low-signup-cvr'],
-      recommendation: 'Review signup modal friction, field count, and message match after the click.',
-      detail: `Only ${formatPercent(clickToSignupRate)} of signup modal opens are turning into signups.`
-    })
-  }
-
-  if (previousClicks >= 20 && recentClicks >= 10 && previousClickToSignupRate >= 30 && recentClickToSignupRate <= previousClickToSignupRate * 0.6) {
-    pushRow({
-      severity: 'warning',
-      severityRank: 2,
-      issueType: 'signup-drop',
-      issueLabel: issueLabelMap['signup-drop'],
-      recommendation: 'Check whether the signup modal flow or validation changed recently.',
-      detail: `Click-to-signup rate dropped from ${formatPercent(previousClickToSignupRate)} to ${formatPercent(recentClickToSignupRate)}.`
-    })
-  }
-
-  if (signups >= 10 && saleRate < 1.5) {
-    pushRow({
-      severity: 'info',
-      severityRank: 1,
-      issueType: 'low-sale-cvr',
-      issueLabel: issueLabelMap['low-sale-cvr'],
-      recommendation: 'Review post-signup follow-through and Patreon messaging.',
-      detail: `Sale conversion is ${formatPercent(saleRate)} on meaningful signup volume.`
-    })
-  }
-
-  return reportRows
+  patreonSales: number
+  totalPurchases: number
+  firstPurchaseRevenueCents: number
+  totalRevenueCents: number
+  currentMonthlySubscriptionEarningCents: number
+  currentSubscribers: number
+  clickThroughRate: number
+  signupConversionRate: number
+  patreonSaleRate: number
 }
 
-const compareValues = (leftValue: string | number | null, rightValue: string | number | null, direction: 'asc' | 'desc') => {
-  const normalizedLeft = leftValue ?? ''
-  const normalizedRight = rightValue ?? ''
+const pageSize = 25
 
-  if (normalizedLeft < normalizedRight) {
-    return direction === 'asc' ? -1 : 1
+const dailyColumnTooltips = {
+  date: 'Calendar day for the tracked landing-page activity.',
+  views: 'Total landing-page visits recorded on this date, including repeat visits.',
+  clicks: 'Signup CTA clicks recorded on this date.',
+  signups: 'Users who completed signup from attributed landing-page visits.',
+  buyers: 'Attributed users who generated at least one purchase.',
+  purchases: 'Total purchase events attributed to these landing-page visits.',
+  currentMonthly: 'Current monthly recurring subscription value from active attributed subscribers. Yearly plans are shown as monthly equivalent.',
+  subscribers: 'Active attributed subscribers contributing current monthly subscription value.',
+  firstPurchaseRevenue: 'Revenue from each buyer first attributed purchase.',
+  lifetimeRevenue: 'All tracked revenue attributed to these visits, including repeat purchases.'
+}
+
+const getPaginationBounds = (totalItems: number, currentPage: number) => {
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
+  const safePage = Math.min(Math.max(currentPage, 1), totalPages)
+  const startIndex = (safePage - 1) * pageSize
+
+  return {
+    totalPages,
+    safePage,
+    startIndex,
+    endIndex: Math.min(startIndex + pageSize, totalItems)
   }
+}
 
-  if (normalizedLeft > normalizedRight) {
-    return direction === 'asc' ? 1 : -1
-  }
+const PaginatedSectionFooter = ({
+  currentPage,
+  itemLabel,
+  onPageChange,
+  totalItems
+}: {
+  currentPage: number
+  itemLabel: string
+  onPageChange: (page: number) => void
+  totalItems: number
+}) => {
+  const { endIndex, safePage, startIndex, totalPages } = getPaginationBounds(totalItems, currentPage)
 
-  return 0
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-5 py-4 text-sm text-white/55">
+      <span>
+        Showing {totalItems === 0 ? 0 : startIndex + 1}-{endIndex} of {formatNumber(totalItems)} {itemLabel}
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={safePage <= 1}
+          onClick={() => onPageChange(safePage - 1)}
+        >
+          Previous
+        </button>
+        <span className="min-w-20 text-center text-white/60">
+          {safePage} / {totalPages}
+        </span>
+        <button
+          type="button"
+          className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={safePage >= totalPages}
+          onClick={() => onPageChange(safePage + 1)}
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  )
 }
 
 const LandingPagesReportPage = () => {
   const searchParams = useSearchParams()
-  const [analytics, setAnalytics] = useState<LandingPagesAnalyticsResponse['data'] | null>(null)
+  const [report, setReport] = useState<LandingPagesTrafficReportResponse['data'] | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [searchValue, setSearchValue] = useState('')
-  const [severityFilter, setSeverityFilter] = useState<'all' | ReportSeverity>('all')
-  const [scopeFilter, setScopeFilter] = useState<'all' | ReportScope>('all')
-  const [issueTypeFilter, setIssueTypeFilter] = useState<'all' | ReportIssueType>('all')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active')
   const [landingPageFilter, setLandingPageFilter] = useState<string>(searchParams.get('landingPageId') ?? 'all')
-  const [variantFilter, setVariantFilter] = useState<string>(searchParams.get('variantId') ?? 'all')
-  const [sortKey, setSortKey] = useState<SortKey>('severity')
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
+  const [shortUrlFilter, setShortUrlFilter] = useState<string>(searchParams.get('shortUrlId') ?? 'all')
+  const [sourceFilter, setSourceFilter] = useState<string>('all')
+  const [purchaseFilter, setPurchaseFilter] = useState<'all' | 'buyers' | 'non-buyers'>('all')
+  const [dailyPage, setDailyPage] = useState(1)
+  const [sourcePage, setSourcePage] = useState(1)
+  const [userPage, setUserPage] = useState(1)
 
   useEffect(() => {
     const run = async () => {
@@ -305,10 +155,10 @@ const LandingPagesReportPage = () => {
       setErrorMessage(null)
 
       try {
-        const payload = await getLandingPagesAnalytics()
-        setAnalytics(payload.data)
+        const payload = await getLandingPagesTrafficReport()
+        setReport(payload.data)
       } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'Unable to load landing page report.')
+        setErrorMessage(error instanceof Error ? error.message : 'Unable to load traffic report.')
       } finally {
         setIsLoading(false)
       }
@@ -317,85 +167,34 @@ const LandingPagesReportPage = () => {
     void run()
   }, [])
 
-  const reportRows = useMemo(() => {
-    if (!analytics) {
+  const sourceOptions = useMemo(() => {
+    if (!report) {
       return []
     }
 
-    return analytics.landingPages.flatMap((landingPage) => {
-      const landingPageRows = createReportRowsForEntity({
-        entityId: landingPage.id,
-        scope: 'landing-page',
-        entityName: landingPage.name,
-        landingPageId: landingPage.id,
-        landingPageName: landingPage.name,
-        variantId: null,
-        variantName: null,
-        routePath: landingPage.basePath ?? 'N/A',
-        isActive: landingPage.isActive,
-        uniqueVisitors: landingPage.kpis.uniqueVisitors,
-        clicks: landingPage.kpis.signupClicks,
-        signups: landingPage.kpis.signups,
-        sales: landingPage.kpis.patreonSales,
-        signupRate: landingPage.kpis.signupConversionRate,
-        saleRate: landingPage.kpis.patreonSaleRate,
-        dailyStats: landingPage.dailyStats
-      })
+    return [...new Set(report.sources.map((sourceRow) => sourceRow.source))].sort((left, right) => left.localeCompare(right))
+  }, [report])
 
-      const variantRows = landingPage.variants.flatMap((variant) =>
-        createReportRowsForEntity({
-          entityId: variant.id,
-          scope: 'variant',
-          entityName: variant.name,
-          landingPageId: landingPage.id,
-          landingPageName: landingPage.name,
-          variantId: variant.id,
-          variantName: variant.name,
-          routePath: variant.routePath,
-          isActive: variant.isActive,
-          uniqueVisitors: variant.uniqueVisitors,
-          clicks: variant.signupClicks,
-          signups: variant.signups,
-          sales: variant.patreonSales,
-          signupRate: variant.signupConversionRate,
-          saleRate: variant.patreonSaleRate,
-          dailyStats: variant.dailyStats
-        })
-      )
+  const filteredSources = useMemo(() => {
+    if (!report) {
+      return []
+    }
 
-      return [...landingPageRows, ...variantRows]
-    })
-  }, [analytics])
-
-  const filteredRows = useMemo(() => {
     const normalizedSearchValue = searchValue.trim().toLowerCase()
+    const selectedShortUrlKey = shortUrlFilter === 'all'
+      ? null
+      : report.shortUrls.find((shortUrl) => shortUrl.id === shortUrlFilter)?.key ?? null
 
-    return reportRows.filter((row) => {
-      if (severityFilter !== 'all' && row.severity !== severityFilter) {
+    return report.sources.filter((sourceRow) => {
+      if (landingPageFilter !== 'all' && sourceRow.landingPageId !== landingPageFilter) {
         return false
       }
 
-      if (scopeFilter !== 'all' && row.scope !== scopeFilter) {
+      if (selectedShortUrlKey && sourceRow.shortUrlKey !== selectedShortUrlKey) {
         return false
       }
 
-      if (issueTypeFilter !== 'all' && row.issueType !== issueTypeFilter) {
-        return false
-      }
-
-      if (statusFilter === 'active' && !row.isActive) {
-        return false
-      }
-
-      if (statusFilter === 'inactive' && row.isActive) {
-        return false
-      }
-
-      if (landingPageFilter !== 'all' && row.landingPageId !== landingPageFilter) {
-        return false
-      }
-
-      if (variantFilter !== 'all' && row.variantId !== variantFilter) {
+      if (sourceFilter !== 'all' && sourceRow.source !== sourceFilter) {
         return false
       }
 
@@ -403,203 +202,307 @@ const LandingPagesReportPage = () => {
         return true
       }
 
-      const searchHaystack = [
-        row.entityName,
-        row.landingPageName,
-        row.variantName,
-        row.issueLabel,
-        row.detail,
-        row.routePath
+      return [sourceRow.landingPageName, sourceRow.source, sourceRow.medium, sourceRow.campaign, sourceRow.content, sourceRow.term, sourceRow.shortUrlKey]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(normalizedSearchValue)
+    })
+  }, [landingPageFilter, report, searchValue, shortUrlFilter, sourceFilter])
+
+  const sourceBreakdownRows = useMemo(() => {
+    const sourceMap = new Map<string, SourceBreakdownRow & { landingPageNameSet: Set<string> }>()
+
+    for (const sourceRow of filteredSources) {
+      const existingRow = sourceMap.get(sourceRow.source) ?? {
+        source: sourceRow.source,
+        landingPageNames: [],
+        landingPageNameSet: new Set<string>(),
+        uniqueVisitors: 0,
+        totalVisits: 0,
+        uniqueUsers: 0,
+        signupClicks: 0,
+        signups: 0,
+        patreonSales: 0,
+        totalPurchases: 0,
+        firstPurchaseRevenueCents: 0,
+        totalRevenueCents: 0,
+        currentMonthlySubscriptionEarningCents: 0,
+        currentSubscribers: 0,
+        clickThroughRate: 0,
+        signupConversionRate: 0,
+        patreonSaleRate: 0
+      }
+
+      existingRow.landingPageNameSet.add(sourceRow.landingPageName)
+      existingRow.uniqueVisitors += sourceRow.uniqueVisitors
+      existingRow.totalVisits += sourceRow.totalVisits
+      existingRow.uniqueUsers += sourceRow.uniqueUsers
+      existingRow.signupClicks += sourceRow.signupClicks
+      existingRow.signups += sourceRow.signups
+      existingRow.patreonSales += sourceRow.patreonSales
+      existingRow.totalPurchases += sourceRow.totalPurchases
+      existingRow.firstPurchaseRevenueCents += sourceRow.firstPurchaseRevenueCents
+      existingRow.totalRevenueCents += sourceRow.totalRevenueCents
+      existingRow.currentMonthlySubscriptionEarningCents += sourceRow.currentMonthlySubscriptionEarningCents
+      existingRow.currentSubscribers += sourceRow.currentSubscribers
+      sourceMap.set(sourceRow.source, existingRow)
+    }
+
+    return [...sourceMap.values()]
+      .map((sourceRow) => ({
+        ...sourceRow,
+        landingPageNames: [...sourceRow.landingPageNameSet].sort((left, right) => left.localeCompare(right)),
+        clickThroughRate: sourceRow.uniqueVisitors > 0 ? (sourceRow.signupClicks / sourceRow.uniqueVisitors) * 100 : 0,
+        signupConversionRate: sourceRow.uniqueVisitors > 0 ? (sourceRow.signups / sourceRow.uniqueVisitors) * 100 : 0,
+        patreonSaleRate: sourceRow.uniqueVisitors > 0 ? (sourceRow.patreonSales / sourceRow.uniqueVisitors) * 100 : 0
+      }))
+      .sort((left, right) => {
+        if (right.totalRevenueCents !== left.totalRevenueCents) {
+          return right.totalRevenueCents - left.totalRevenueCents
+        }
+
+        if (right.signups !== left.signups) {
+          return right.signups - left.signups
+        }
+
+        return right.signupClicks - left.signupClicks
+      })
+  }, [filteredSources])
+
+  const filteredUsers = useMemo(() => {
+    if (!report) {
+      return []
+    }
+
+    const normalizedSearchValue = searchValue.trim().toLowerCase()
+    const selectedShortUrlKey = shortUrlFilter === 'all'
+      ? null
+      : report.shortUrls.find((shortUrl) => shortUrl.id === shortUrlFilter)?.key ?? null
+
+    return report.users.filter((userRow) => {
+      if (landingPageFilter !== 'all' && userRow.landingPageId !== landingPageFilter) {
+        return false
+      }
+
+      if (selectedShortUrlKey && userRow.shortUrlKey !== selectedShortUrlKey) {
+        return false
+      }
+
+      if (sourceFilter !== 'all' && userRow.source !== sourceFilter) {
+        return false
+      }
+
+      if (purchaseFilter === 'buyers' && userRow.totalPurchases === 0) {
+        return false
+      }
+
+      if (purchaseFilter === 'non-buyers' && userRow.totalPurchases > 0) {
+        return false
+      }
+
+      if (!normalizedSearchValue) {
+        return true
+      }
+
+      return [
+        userRow.username,
+        userRow.email,
+        userRow.landingPageName,
+        userRow.source,
+        userRow.medium,
+        userRow.campaign,
+        userRow.content,
+        userRow.term,
+        userRow.shortUrlKey
       ]
         .filter(Boolean)
         .join(' ')
         .toLowerCase()
-
-      return searchHaystack.includes(normalizedSearchValue)
+        .includes(normalizedSearchValue)
     })
-  }, [issueTypeFilter, landingPageFilter, reportRows, scopeFilter, searchValue, severityFilter, statusFilter, variantFilter])
+  }, [landingPageFilter, purchaseFilter, report, searchValue, shortUrlFilter, sourceFilter])
 
-  const sortedRows = useMemo(() => {
-    const rowList = [...filteredRows]
-
-    rowList.sort((leftRow, rightRow) => {
-      switch (sortKey) {
-        case 'severity':
-          return compareValues(leftRow.severityRank, rightRow.severityRank, sortDirection)
-        case 'scope':
-          return compareValues(leftRow.scope, rightRow.scope, sortDirection)
-        case 'entityName':
-          return compareValues(leftRow.entityName, rightRow.entityName, sortDirection)
-        case 'issueType':
-          return compareValues(leftRow.issueLabel, rightRow.issueLabel, sortDirection)
-        case 'visitors':
-          return compareValues(leftRow.visitors, rightRow.visitors, sortDirection)
-        case 'clicks':
-          return compareValues(leftRow.clicks, rightRow.clicks, sortDirection)
-        case 'signups':
-          return compareValues(leftRow.signups, rightRow.signups, sortDirection)
-        case 'sales':
-          return compareValues(leftRow.sales, rightRow.sales, sortDirection)
-        case 'signupRate':
-          return compareValues(leftRow.signupRate, rightRow.signupRate, sortDirection)
-        case 'saleRate':
-          return compareValues(leftRow.saleRate, rightRow.saleRate, sortDirection)
-        case 'lastSeenDate':
-          return compareValues(leftRow.lastSeenDate, rightRow.lastSeenDate, sortDirection)
-        default:
-          return 0
-      }
-    })
-
-    return rowList
-  }, [filteredRows, sortDirection, sortKey])
-
-  const summary = useMemo(
+  const sourceSummary = useMemo(
     () => ({
-      critical: reportRows.filter((row) => row.severity === 'critical').length,
-      warning: reportRows.filter((row) => row.severity === 'warning').length,
-      info: reportRows.filter((row) => row.severity === 'info').length
+      totalRevenueCents: filteredSources.reduce((sum, sourceRow) => sum + sourceRow.totalRevenueCents, 0),
+      currentMonthlySubscriptionEarningCents: filteredSources.reduce(
+        (sum, sourceRow) => sum + sourceRow.currentMonthlySubscriptionEarningCents,
+        0
+      ),
+      signups: filteredSources.reduce((sum, sourceRow) => sum + sourceRow.signups, 0),
+      purchases: filteredSources.reduce((sum, sourceRow) => sum + sourceRow.totalPurchases, 0)
     }),
-    [reportRows]
+    [filteredSources]
   )
 
-  const variantOptions = useMemo(() => {
-    if (!analytics) {
-      return []
+  const userSummary = useMemo(
+    () => ({
+      buyers: filteredUsers.filter((userRow) => userRow.totalPurchases > 0).length,
+      nonBuyers: filteredUsers.filter((userRow) => userRow.totalPurchases === 0).length,
+      totalRevenueCents: filteredUsers.reduce((sum, userRow) => sum + userRow.totalRevenueCents, 0),
+      currentMonthlySubscriptionEarningCents: filteredUsers.reduce(
+        (sum, userRow) => sum + userRow.currentMonthlySubscriptionEarningCents,
+        0
+      ),
+      currentSubscribers: filteredUsers.filter((userRow) => userRow.currentMonthlySubscriptionEarningCents > 0).length
+    }),
+    [filteredUsers]
+  )
+
+  const dailyBreakdown = useMemo(() => {
+    const dayMap = new Map<
+      string,
+      {
+        date: string
+        views: number
+        signupClicks: number
+        signups: number
+        buyers: number
+        totalPurchases: number
+        firstPurchaseRevenueCents: number
+        totalRevenueCents: number
+        currentMonthlySubscriptionEarningCents: number
+        currentSubscribers: number
+      }
+    >()
+
+    const ensureDay = (date: string) => {
+      const existingDay = dayMap.get(date) ?? {
+        date,
+        views: 0,
+        signupClicks: 0,
+        signups: 0,
+        buyers: 0,
+        totalPurchases: 0,
+        firstPurchaseRevenueCents: 0,
+        totalRevenueCents: 0,
+        currentMonthlySubscriptionEarningCents: 0,
+        currentSubscribers: 0
+      }
+
+      dayMap.set(date, existingDay)
+      return existingDay
     }
 
-    const matchingLandingPage =
-      landingPageFilter === 'all' ? null : analytics.landingPages.find((landingPage) => landingPage.id === landingPageFilter)
-
-    return matchingLandingPage
-      ? matchingLandingPage.variants
-      : analytics.landingPages.flatMap((landingPage) =>
-          landingPage.variants.map((variant) => ({
-            ...variant,
-            name: `${landingPage.name} / ${variant.name}`
-          }))
-        )
-  }, [analytics, landingPageFilter])
-
-  const handleSortChange = (nextSortKey: SortKey) => {
-    if (sortKey === nextSortKey) {
-      setSortDirection((currentValue) => (currentValue === 'asc' ? 'desc' : 'asc'))
-      return
+    for (const sourceRow of filteredSources) {
+      for (const dayStat of sourceRow.dailyStats) {
+        const dayEntry = ensureDay(dayStat.date)
+        dayEntry.views += dayStat.totalVisits
+        dayEntry.signupClicks += dayStat.signupClicks
+        dayEntry.signups += dayStat.signups
+        dayEntry.buyers += dayStat.patreonSales
+        dayEntry.totalPurchases += dayStat.totalPurchases
+        dayEntry.firstPurchaseRevenueCents += dayStat.firstPurchaseRevenueCents
+        dayEntry.totalRevenueCents += dayStat.totalRevenueCents
+        dayEntry.currentMonthlySubscriptionEarningCents += dayStat.currentMonthlySubscriptionEarningCents
+        dayEntry.currentSubscribers += dayStat.currentSubscribers
+      }
     }
 
-    setSortKey(nextSortKey)
-    setSortDirection(nextSortKey === 'entityName' || nextSortKey === 'scope' || nextSortKey === 'issueType' ? 'asc' : 'desc')
+    return [...dayMap.values()].sort((left, right) => right.date.localeCompare(left.date))
+  }, [filteredSources])
+
+  useEffect(() => {
+    setDailyPage(1)
+    setSourcePage(1)
+    setUserPage(1)
+  }, [landingPageFilter, purchaseFilter, searchValue, shortUrlFilter, sourceFilter])
+
+  const dailyPagination = getPaginationBounds(dailyBreakdown.length, dailyPage)
+  const sourcePagination = getPaginationBounds(sourceBreakdownRows.length, sourcePage)
+  const userPagination = getPaginationBounds(filteredUsers.length, userPage)
+  const paginatedDailyBreakdown = dailyBreakdown.slice(dailyPagination.startIndex, dailyPagination.endIndex)
+  const paginatedSourceBreakdownRows = sourceBreakdownRows.slice(sourcePagination.startIndex, sourcePagination.endIndex)
+  const paginatedUsers = filteredUsers.slice(userPagination.startIndex, userPagination.endIndex)
+
+  const performanceReportHref = new URLSearchParams()
+  if (landingPageFilter !== 'all') {
+    performanceReportHref.set('landingPageId', landingPageFilter)
   }
+  if (shortUrlFilter !== 'all') {
+    performanceReportHref.set('shortUrlId', shortUrlFilter)
+  }
+  const renderedPerformanceReportHref = performanceReportHref.toString()
+    ? `/admin/landing-pages/performance?${performanceReportHref.toString()}`
+    : '/admin/landing-pages/performance'
 
   return (
     <AdminPageShell activeKey="landing-pages">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="font-[family-name:var(--font-heading)] text-[22px] font-normal leading-tight text-white sm:text-[26px] md:text-[29px] md:leading-none">
-            Landing Page Report
+            Traffic Report
           </h1>
           <p className="mt-2 max-w-4xl text-sm text-[#95a6c1]">
-            Review delivery and conversion issues across landing pages and variants in a single diagnostics table with advertiser-style filtering and sorting.
+            Full source performance and per-user revenue follow-up view. This is where you can see signup timing, first purchase value, recurring revenue, and who may still be worth nudging after signup.
           </p>
         </div>
-        <Link
-          href="/admin/landing-pages"
-          className="inline-flex min-h-11 items-center justify-center rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
-        >
-          Back to Landing Pages
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={renderedPerformanceReportHref}
+            className="inline-flex min-h-11 items-center justify-center rounded-lg border border-amber-300/30 bg-amber-400/10 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:border-amber-200/40 hover:bg-amber-400/15 hover:text-white"
+          >
+            Open Performance Report
+          </Link>
+          <Link
+            href="/admin/landing-pages"
+            className="inline-flex min-h-11 items-center justify-center rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
+          >
+            Back to Landing Pages
+          </Link>
+        </div>
       </div>
 
       {errorMessage ? (
         <p className="mt-4 rounded-md border border-rose-300/30 bg-rose-300/10 px-3 py-2 text-sm text-rose-100">{errorMessage}</p>
       ) : null}
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-5 py-4">
-          <p className="text-[11px] uppercase tracking-[0.08em] text-white/50">Open issues</p>
-          <p className="mt-2 text-3xl font-semibold text-white">{formatNumber(reportRows.length)}</p>
-          <p className="mt-1 text-xs text-white/45">{formatNumber(sortedRows.length)} match your current filters</p>
+          <p className="text-[11px] uppercase tracking-[0.08em] text-white/50">Attributed Users</p>
+          <p className="mt-2 text-3xl font-semibold text-white">{formatNumber(report?.summary.attributedUsers ?? 0)}</p>
+          <p className="mt-1 text-xs text-white/45">{formatNumber(filteredUsers.length)} match your filters</p>
         </div>
-        <div className="rounded-2xl border border-rose-400/20 bg-rose-500/5 px-5 py-4">
-          <p className="text-[11px] uppercase tracking-[0.08em] text-rose-100/80">Critical</p>
-          <p className="mt-2 text-3xl font-semibold text-rose-100">{formatNumber(summary.critical)}</p>
-          <p className="mt-1 text-xs text-rose-100/60">Immediate fixes or traffic checks</p>
+        <div className="rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-5 py-4">
+          <p className="text-[11px] uppercase tracking-[0.08em] text-white/50">First Purchase Revenue</p>
+          <p className="mt-2 text-3xl font-semibold text-white">{formatCurrencyCents(report?.summary.firstPurchaseRevenueCents ?? 0)}</p>
+          <p className="mt-1 text-xs text-white/45">{formatNumber(report?.summary.purchasingUsers ?? 0)} buying users</p>
         </div>
-        <div className="rounded-2xl border border-amber-300/20 bg-amber-400/5 px-5 py-4">
-          <p className="text-[11px] uppercase tracking-[0.08em] text-amber-100/80">Warning</p>
-          <p className="mt-2 text-3xl font-semibold text-amber-100">{formatNumber(summary.warning)}</p>
-          <p className="mt-1 text-xs text-amber-100/60">Performance is slipping</p>
+        <div className="rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-5 py-4">
+          <p className="text-[11px] uppercase tracking-[0.08em] text-white/50">Lifetime Revenue</p>
+          <p className="mt-2 text-3xl font-semibold text-white">{formatCurrencyCents(report?.summary.totalRevenueCents ?? 0)}</p>
+          <p className="mt-1 text-xs text-white/45">{formatNumber(report?.summary.totalPurchases ?? 0)} tracked purchases</p>
         </div>
-        <div className="rounded-2xl border border-sky-400/20 bg-sky-500/5 px-5 py-4">
-          <p className="text-[11px] uppercase tracking-[0.08em] text-sky-100/80">Info</p>
-          <p className="mt-2 text-3xl font-semibold text-sky-100">{formatNumber(summary.info)}</p>
-          <p className="mt-1 text-xs text-sky-100/60">Optimization opportunities</p>
+        <div className="rounded-2xl border border-white/10 bg-[#0c0f14]/95 px-5 py-4">
+          <p className="text-[11px] uppercase tracking-[0.08em] text-white/50">Current Monthly</p>
+          <p className="mt-2 text-3xl font-semibold text-white">{formatCurrencyCents(userSummary.currentMonthlySubscriptionEarningCents)}</p>
+          <p className="mt-1 text-xs text-white/45">
+            {formatNumber(userSummary.currentSubscribers)} active subscribers in filter
+          </p>
         </div>
       </div>
 
       <section className="mt-5 rounded-2xl border border-white/10 bg-[#0c0f14]/95 p-4 sm:p-5">
-        <div className="grid gap-3 xl:grid-cols-[1.4fr_repeat(5,minmax(0,1fr))]">
+        <div className="grid gap-3 xl:grid-cols-[1.4fr_repeat(4,minmax(0,1fr))]">
           <label className="grid gap-2 text-xs uppercase tracking-[0.08em] text-white/55">
             Search
             <input
               value={searchValue}
               onChange={(event) => setSearchValue(event.target.value)}
-              placeholder="Search page, variant, issue, path..."
+              placeholder="Search by source, user, campaign, short URL..."
               className="rounded-lg border border-white/10 bg-[#11161e] px-3 py-2.5 text-sm normal-case tracking-normal text-white placeholder:text-white/30"
             />
-          </label>
-          <label className="grid gap-2 text-xs uppercase tracking-[0.08em] text-white/55">
-            Severity
-            <select
-              value={severityFilter}
-              onChange={(event) => setSeverityFilter(event.target.value as 'all' | ReportSeverity)}
-              className="rounded-lg border border-white/10 bg-[#11161e] px-3 py-2.5 text-sm normal-case tracking-normal text-white"
-            >
-              <option value="all">All severities</option>
-              <option value="critical">Critical</option>
-              <option value="warning">Warning</option>
-              <option value="info">Info</option>
-            </select>
-          </label>
-          <label className="grid gap-2 text-xs uppercase tracking-[0.08em] text-white/55">
-            Scope
-            <select
-              value={scopeFilter}
-              onChange={(event) => setScopeFilter(event.target.value as 'all' | ReportScope)}
-              className="rounded-lg border border-white/10 bg-[#11161e] px-3 py-2.5 text-sm normal-case tracking-normal text-white"
-            >
-              <option value="all">All scopes</option>
-              <option value="landing-page">Landing pages</option>
-              <option value="variant">Variants</option>
-            </select>
-          </label>
-          <label className="grid gap-2 text-xs uppercase tracking-[0.08em] text-white/55">
-            Issue Type
-            <select
-              value={issueTypeFilter}
-              onChange={(event) => setIssueTypeFilter(event.target.value as 'all' | ReportIssueType)}
-              className="rounded-lg border border-white/10 bg-[#11161e] px-3 py-2.5 text-sm normal-case tracking-normal text-white"
-            >
-              <option value="all">All issues</option>
-              {Object.entries(issueLabelMap).map(([issueType, label]) => (
-                <option key={issueType} value={issueType}>
-                  {label}
-                </option>
-              ))}
-            </select>
           </label>
           <label className="grid gap-2 text-xs uppercase tracking-[0.08em] text-white/55">
             Landing Page
             <select
               value={landingPageFilter}
-              onChange={(event) => {
-                setLandingPageFilter(event.target.value)
-                setVariantFilter('all')
-              }}
+              onChange={(event) => setLandingPageFilter(event.target.value)}
               className="rounded-lg border border-white/10 bg-[#11161e] px-3 py-2.5 text-sm normal-case tracking-normal text-white"
             >
               <option value="all">All landing pages</option>
-              {analytics?.landingPages.map((landingPage) => (
+              {report?.landingPages.map((landingPage) => (
                 <option key={landingPage.id} value={landingPage.id}>
                   {landingPage.name}
                 </option>
@@ -607,118 +510,296 @@ const LandingPagesReportPage = () => {
             </select>
           </label>
           <label className="grid gap-2 text-xs uppercase tracking-[0.08em] text-white/55">
-            Variant / Status
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-              <select
-                value={variantFilter}
-                onChange={(event) => setVariantFilter(event.target.value)}
-                className="rounded-lg border border-white/10 bg-[#11161e] px-3 py-2.5 text-sm normal-case tracking-normal text-white"
-              >
-                <option value="all">All variants</option>
-                {variantOptions.map((variant) => (
-                  <option key={variant.id} value={variant.id}>
-                    {variant.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value as 'all' | 'active' | 'inactive')}
-                className="rounded-lg border border-white/10 bg-[#11161e] px-3 py-2.5 text-sm normal-case tracking-normal text-white"
-              >
-                <option value="active">Active only</option>
-                <option value="all">All statuses</option>
-                <option value="inactive">Inactive only</option>
-              </select>
-            </div>
+            Short URL
+            <select
+              value={shortUrlFilter}
+              onChange={(event) => setShortUrlFilter(event.target.value)}
+              className="rounded-lg border border-white/10 bg-[#11161e] px-3 py-2.5 text-sm normal-case tracking-normal text-white"
+            >
+              <option value="all">All short URLs</option>
+              {report?.shortUrls.map((shortUrl) => (
+                <option key={shortUrl.id} value={shortUrl.id}>
+                  /s/{shortUrl.key} · {shortUrl.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-2 text-xs uppercase tracking-[0.08em] text-white/55">
+            Source
+            <select
+              value={sourceFilter}
+              onChange={(event) => setSourceFilter(event.target.value)}
+              className="rounded-lg border border-white/10 bg-[#11161e] px-3 py-2.5 text-sm normal-case tracking-normal text-white"
+            >
+              <option value="all">All sources</option>
+              {sourceOptions.map((source) => (
+                <option key={source} value={source}>
+                  {source}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-2 text-xs uppercase tracking-[0.08em] text-white/55">
+            Buyer Status
+            <select
+              value={purchaseFilter}
+              onChange={(event) => setPurchaseFilter(event.target.value as 'all' | 'buyers' | 'non-buyers')}
+              className="rounded-lg border border-white/10 bg-[#11161e] px-3 py-2.5 text-sm normal-case tracking-normal text-white"
+            >
+              <option value="all">All users</option>
+              <option value="buyers">Buyers only</option>
+              <option value="non-buyers">Non-buyers only</option>
+            </select>
           </label>
         </div>
       </section>
 
-      <section className="mt-5 overflow-hidden rounded-2xl border border-white/10 bg-[#0c0f14]/95">
+      <section className="mt-6 rounded-2xl border border-white/10 bg-[#0c0f14]/95">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Daily Breakdown</h2>
+            <p className="mt-1 text-sm text-white/55">
+              Daily traffic and revenue rollup for the selected landing page view.
+            </p>
+          </div>
+        </div>
         <div className="overflow-x-auto">
-          <table className="min-w-[1180px] text-left text-sm text-white/85">
+          <table className="min-w-[1120px] text-left text-sm text-white/85">
             <thead className="bg-white/[0.03] text-[11px] uppercase tracking-[0.08em] text-white/45">
               <tr>
-                {[
-                  ['severity', 'Severity'],
-                  ['scope', 'Scope'],
-                  ['entityName', 'Entity'],
-                  ['issueType', 'Issue'],
-                  ['visitors', 'Visitors'],
-                  ['clicks', 'Clicks'],
-                  ['signups', 'Signups'],
-                  ['sales', 'Sales'],
-                  ['signupRate', 'Signup CVR'],
-                  ['saleRate', 'Sale CVR'],
-                  ['lastSeenDate', 'Last Seen']
-                ].map(([columnKey, label]) => (
-                  <th key={columnKey} className="px-4 py-3">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 transition hover:text-white"
-                      onClick={() => handleSortChange(columnKey as SortKey)}
-                    >
-                      {label}
-                      <span className={sortKey === columnKey ? 'text-white' : 'text-white/20'}>
-                        {sortKey === columnKey ? (sortDirection === 'asc' ? '↑' : '↓') : '↕'}
-                      </span>
-                    </button>
-                  </th>
-                ))}
-                <th className="px-4 py-3">Details</th>
-                <th className="px-4 py-3">Recommendation</th>
+                <th className="px-4 py-3" title={dailyColumnTooltips.date}>Date</th>
+                <th className="px-4 py-3" title={dailyColumnTooltips.views}>Views</th>
+                <th className="px-4 py-3" title={dailyColumnTooltips.clicks}>Clicks</th>
+                <th className="px-4 py-3" title={dailyColumnTooltips.signups}>Signups</th>
+                <th className="px-4 py-3" title={dailyColumnTooltips.buyers}>Buyers</th>
+                <th className="px-4 py-3" title={dailyColumnTooltips.purchases}>Purchases</th>
+                <th className="px-4 py-3" title={dailyColumnTooltips.currentMonthly}>Current Monthly</th>
+                <th className="px-4 py-3" title={dailyColumnTooltips.subscribers}>Subscribers</th>
+                <th className="px-4 py-3" title={dailyColumnTooltips.firstPurchaseRevenue}>1st Purchase Revenue</th>
+                <th className="px-4 py-3" title={dailyColumnTooltips.lifetimeRevenue}>Lifetime Revenue</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={12} className="px-4 py-8 text-center text-sm text-white/55">
-                    Loading report...
+                  <td colSpan={10} className="px-4 py-8 text-center text-sm text-white/55">
+                    Loading daily breakdown...
                   </td>
                 </tr>
               ) : null}
-              {!isLoading && sortedRows.length === 0 ? (
+              {!isLoading && dailyBreakdown.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="px-4 py-8 text-center text-sm text-white/55">
-                    No report rows match the current filters.
+                  <td colSpan={10} className="px-4 py-8 text-center text-sm text-white/55">
+                    No daily data matches the current filters.
                   </td>
                 </tr>
               ) : null}
               {!isLoading
-                ? sortedRows.map((row) => (
-                    <tr key={row.id} className="border-t border-white/5 align-top">
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${severityPillClassName[row.severity]}`}>
-                          {row.severity}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-white/70">{scopeLabelMap[row.scope]}</td>
-                      <td className="px-4 py-3">
-                        <div className="space-y-1">
-                          <div className="font-medium text-white">{row.entityName}</div>
-                          <div className="text-xs text-white/45">{row.landingPageName}</div>
-                          <div className="font-mono text-[11px] text-white/35">{row.routePath}</div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-white">{row.issueLabel}</div>
-                      </td>
-                      <td className="px-4 py-3">{formatNumber(row.visitors)}</td>
-                      <td className="px-4 py-3">{formatNumber(row.clicks)}</td>
-                      <td className="px-4 py-3">{formatNumber(row.signups)}</td>
-                      <td className="px-4 py-3">{formatNumber(row.sales)}</td>
-                      <td className="px-4 py-3 text-emerald-300">{formatPercent(row.signupRate)}</td>
-                      <td className="px-4 py-3 text-amber-300">{formatPercent(row.saleRate)}</td>
-                      <td className="px-4 py-3 text-white/60">{formatDayLabel(row.lastSeenDate)}</td>
-                      <td className="px-4 py-3 text-sm text-white/65">{row.detail}</td>
-                      <td className="px-4 py-3 text-sm text-white/55">{row.recommendation}</td>
+                ? paginatedDailyBreakdown.map((dayRow) => (
+                    <tr key={dayRow.date} className="border-t border-white/5">
+                      <td className="px-4 py-3 font-medium text-white">{formatDayLabel(dayRow.date)}</td>
+                      <td className="px-4 py-3">{formatNumber(dayRow.views)}</td>
+                      <td className="px-4 py-3">{formatNumber(dayRow.signupClicks)}</td>
+                      <td className="px-4 py-3">{formatNumber(dayRow.signups)}</td>
+                      <td className="px-4 py-3">{formatNumber(dayRow.buyers)}</td>
+                      <td className="px-4 py-3">{formatNumber(dayRow.totalPurchases)}</td>
+                      <td className="px-4 py-3">{formatCurrencyCents(dayRow.currentMonthlySubscriptionEarningCents)}</td>
+                      <td className="px-4 py-3">{formatNumber(dayRow.currentSubscribers)}</td>
+                      <td className="px-4 py-3">{formatCurrencyCents(dayRow.firstPurchaseRevenueCents)}</td>
+                      <td className="px-4 py-3">{formatCurrencyCents(dayRow.totalRevenueCents)}</td>
                     </tr>
                   ))
                 : null}
             </tbody>
           </table>
         </div>
+        <PaginatedSectionFooter
+          currentPage={dailyPagination.safePage}
+          itemLabel="days"
+          onPageChange={setDailyPage}
+          totalItems={dailyBreakdown.length}
+        />
+      </section>
+
+      <section className="mt-6 rounded-2xl border border-white/10 bg-[#0c0f14]/95">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Source Breakdown</h2>
+            <p className="mt-1 text-sm text-white/55">
+              {formatCurrencyCents(sourceSummary.currentMonthlySubscriptionEarningCents)} current monthly, {formatCurrencyCents(sourceSummary.totalRevenueCents)} lifetime revenue, {formatNumber(sourceSummary.signups)} signups.
+            </p>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-[1280px] text-left text-sm text-white/85">
+            <thead className="bg-white/[0.03] text-[11px] uppercase tracking-[0.08em] text-white/45">
+              <tr>
+                <th className="px-4 py-3">Source</th>
+                <th className="px-4 py-3">Landing Pages</th>
+                <th className="px-4 py-3">Visitors</th>
+                <th className="px-4 py-3">Views</th>
+                <th className="px-4 py-3">Users</th>
+                <th className="px-4 py-3">Clicks</th>
+                <th className="px-4 py-3">Signups</th>
+                <th className="px-4 py-3">Buyers</th>
+                <th className="px-4 py-3">Current Monthly</th>
+                <th className="px-4 py-3">Subscribers</th>
+                <th className="px-4 py-3">1st Purchase</th>
+                <th className="px-4 py-3">Lifetime Revenue</th>
+                <th className="px-4 py-3">Signup CVR</th>
+                <th className="px-4 py-3">Sale Rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={14} className="px-4 py-8 text-center text-sm text-white/55">
+                    Loading traffic report...
+                  </td>
+                </tr>
+              ) : null}
+              {!isLoading && sourceBreakdownRows.length === 0 ? (
+                <tr>
+                  <td colSpan={14} className="px-4 py-8 text-center text-sm text-white/55">
+                    No source rows match the current filters.
+                  </td>
+                </tr>
+              ) : null}
+              {!isLoading
+                ? paginatedSourceBreakdownRows.map((sourceRow) => (
+                    <tr key={sourceRow.source} className="border-t border-white/5">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-white">{sourceRow.source}</div>
+                      </td>
+                      <td className="px-4 py-3 text-white/70">
+                        {sourceRow.landingPageNames.length === 0 ? 'n/a' : sourceRow.landingPageNames.join(', ')}
+                      </td>
+                      <td className="px-4 py-3">{formatNumber(sourceRow.uniqueVisitors)}</td>
+                      <td className="px-4 py-3">{formatNumber(sourceRow.totalVisits)}</td>
+                      <td className="px-4 py-3">{formatNumber(sourceRow.uniqueUsers)}</td>
+                      <td className="px-4 py-3">{formatNumber(sourceRow.signupClicks)}</td>
+                      <td className="px-4 py-3">{formatNumber(sourceRow.signups)}</td>
+                      <td className="px-4 py-3">{formatNumber(sourceRow.patreonSales)}</td>
+                      <td className="px-4 py-3">{formatCurrencyCents(sourceRow.currentMonthlySubscriptionEarningCents)}</td>
+                      <td className="px-4 py-3">{formatNumber(sourceRow.currentSubscribers)}</td>
+                      <td className="px-4 py-3">{formatCurrencyCents(sourceRow.firstPurchaseRevenueCents)}</td>
+                      <td className="px-4 py-3">{formatCurrencyCents(sourceRow.totalRevenueCents)}</td>
+                      <td className="px-4 py-3 text-emerald-300">{formatPercent(sourceRow.signupConversionRate)}</td>
+                      <td className="px-4 py-3 text-amber-300">{formatPercent(sourceRow.patreonSaleRate)}</td>
+                    </tr>
+                  ))
+                : null}
+            </tbody>
+          </table>
+        </div>
+        <PaginatedSectionFooter
+          currentPage={sourcePagination.safePage}
+          itemLabel="sources"
+          onPageChange={setSourcePage}
+          totalItems={sourceBreakdownRows.length}
+        />
+      </section>
+
+      <section className="mt-6 rounded-2xl border border-white/10 bg-[#0c0f14]/95">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Attributed Users</h2>
+            <p className="mt-1 text-sm text-white/55">
+              See when each user signed up, how much the first purchase was, and how much subscription revenue has accumulated so far.
+            </p>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-[1580px] text-left text-sm text-white/85">
+            <thead className="bg-white/[0.03] text-[11px] uppercase tracking-[0.08em] text-white/45">
+              <tr>
+                <th className="px-4 py-3">User</th>
+                <th className="px-4 py-3">Landing Page</th>
+                <th className="px-4 py-3">Source</th>
+                <th className="px-4 py-3">Short URL</th>
+                <th className="px-4 py-3">Signed Up</th>
+                <th className="px-4 py-3">1st Purchase</th>
+                <th className="px-4 py-3">1st Amount</th>
+                <th className="px-4 py-3">Last Purchase</th>
+                <th className="px-4 py-3">Purchases</th>
+                <th className="px-4 py-3">Current Monthly</th>
+                <th className="px-4 py-3">Lifetime Revenue</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Purchase History</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={13} className="px-4 py-8 text-center text-sm text-white/55">
+                    Loading users...
+                  </td>
+                </tr>
+              ) : null}
+              {!isLoading && filteredUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={13} className="px-4 py-8 text-center text-sm text-white/55">
+                    No users match the current filters.
+                  </td>
+                </tr>
+              ) : null}
+              {!isLoading
+                ? paginatedUsers.map((userRow: UserRow) => (
+                    <tr key={userRow.userId} className="border-t border-white/5 align-top">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-white">{userRow.username}</div>
+                        <div className="text-xs text-white/50">{userRow.email}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-white">{userRow.landingPageName}</div>
+                        <div className="font-mono text-[11px] text-white/35">{userRow.basePath || userRow.landingPageKey}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-white">{userRow.source}</div>
+                        <div className="text-xs text-white/45">
+                          {[userRow.medium, userRow.campaign, userRow.content, userRow.term].filter(Boolean).join(' / ') || 'n/a'}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-white/70">{userRow.shortUrlKey || 'n/a'}</td>
+                      <td className="px-4 py-3 text-white/70">{formatDateTime(userRow.signedUpAt)}</td>
+                      <td className="px-4 py-3 text-white/70">{formatDateTime(userRow.firstPurchaseAt)}</td>
+                      <td className="px-4 py-3">{formatCurrencyCents(userRow.firstPurchaseAmountCents)}</td>
+                      <td className="px-4 py-3 text-white/70">{formatDateTime(userRow.lastPurchaseAt)}</td>
+                      <td className="px-4 py-3">{formatNumber(userRow.totalPurchases)}</td>
+                      <td className="px-4 py-3">{formatCurrencyCents(userRow.currentMonthlySubscriptionEarningCents)}</td>
+                      <td className="px-4 py-3">{formatCurrencyCents(userRow.totalRevenueCents)}</td>
+                      <td className="px-4 py-3 text-white/70">
+                        <div>{userRow.membershipStatus}</div>
+                        <div className="text-xs text-white/40">
+                          {userRow.currentTierCents > 0 ? formatCurrencyCents(userRow.currentTierCents) : 'No active tier'}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {userRow.purchaseHistory.length === 0 ? (
+                          <span className="text-white/45">No purchases yet</span>
+                        ) : (
+                          <div className="space-y-1 text-xs text-white/65">
+                            {userRow.purchaseHistory.map((purchase) => (
+                              <div key={purchase.id}>
+                                {formatDateTime(purchase.chargedAt)} · {purchase.kind.toLowerCase().replace(/_/g, ' ')} ·{' '}
+                                {formatCurrencyCents(purchase.amountCents)}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                : null}
+            </tbody>
+          </table>
+        </div>
+        <PaginatedSectionFooter
+          currentPage={userPagination.safePage}
+          itemLabel="users"
+          onPageChange={setUserPage}
+          totalItems={filteredUsers.length}
+        />
       </section>
     </AdminPageShell>
   )

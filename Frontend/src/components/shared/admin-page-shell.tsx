@@ -20,24 +20,32 @@ const AdminPageShell = ({
   const activeLabel = useMemo(() => {
     const labelMap: Record<AdminSidebarKey, string> = {
       dashboard: 'Dashboard',
+      'static-pages': 'Static Pages',
       'landing-pages': 'Landing Pages',
+      marketing: 'Marketing',
       'legacy-import': 'Legacy Transfer',
       activity: 'Activity',
       users: 'Users',
       'community-vrms': 'Community VRMs',
       'official-vrms': 'Official VRMs',
       stories: 'Stories',
+      news: 'News',
       'review-queue': 'Review Queue',
       'global-settings': 'Global Settings',
-      'image-lab': 'Image Lab'
+      'game-releases': 'Game Releases',
+      logs: 'Error Logs',
+      'image-lab': 'Image Lab',
+      'character-thumbnails': 'Character Thumbnails'
     }
 
     return labelMap[activeKey]
   }, [activeKey])
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setIsMobileSidebarOpen(false)
   }, [activeKey])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (!isMobileSidebarOpen) {

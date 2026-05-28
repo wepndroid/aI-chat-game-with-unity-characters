@@ -94,7 +94,7 @@ Use placeholders only in `.env.example`. Put real values only in local `.env` / 
 - `PATREON_CLIENT_ID`
 - `PATREON_CLIENT_SECRET`
 - `PATREON_REDIRECT_URI`
-- `PATREON_SCOPES`
+- `PATREON_SCOPES` (use `identity identity.memberships campaigns`)
 - `PATREON_CAMPAIGN_ID` (optional but recommended in production)
 - `PATREON_TOKEN_ENCRYPTION_KEY` (must resolve to 32 bytes)
 

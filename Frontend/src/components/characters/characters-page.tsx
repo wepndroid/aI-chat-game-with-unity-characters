@@ -8,8 +8,7 @@ import PaginationControls from '@/components/ui-elements/pagination-controls'
 import SearchField from '@/components/ui-elements/search-field'
 import { listCharacters, type CharacterListRecord } from '@/lib/character-api'
 import { buildAiGirlfriendRouteKey } from '@/lib/ai-girlfriend-route'
-import { apiGet } from '@/lib/api-client'
-import { resolveAvailableTierCents, type PatreonStatusSnapshot } from '@/lib/patreon-access'
+import { formatCompactCount } from '@/lib/format-compact-count'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 type CharacterCategory = 'all' | 'curated' | 'community' | 'your-characters'
@@ -64,38 +63,6 @@ const toUserFriendlyCharactersError = (error: unknown, hasSearchQuery: boolean):
     : 'We could not load AI girlfriends right now. Please refresh and try again.'
 }
 
-const formatCompactNumber = (value: number) => {
-  if (!Number.isFinite(value)) {
-    return '0'
-  }
-
-  return new Intl.NumberFormat('en-US', {
-    notation: 'compact',
-    maximumFractionDigits: 1
-  }).format(value)
-}
-
-const resolveCharacterGatedAccess = (
-  characterRecord: CharacterListRecord,
-  sessionUser: { id: string; role: 'USER' | 'CREATOR' | 'ADMIN' } | null,
-  availableTierCents: number
-) => {
-  if (!characterRecord.isPatreonGated) {
-    return true
-  }
-
-  if (!sessionUser) {
-    return false
-  }
-
-  if (sessionUser.role === 'ADMIN' || sessionUser.id === characterRecord.owner.id) {
-    return true
-  }
-
-  const requiredTierCents = characterRecord.minimumTierCents ?? 1
-  return availableTierCents >= requiredTierCents
-}
-
 const CharactersPage = ({ initialCharacterList = [] }: CharactersPageProps) => {
   const { sessionUser, isAuthLoading } = useAuth()
   const { isMaintenanceActive } = useMaintenance()
@@ -106,10 +73,8 @@ const CharactersPage = ({ initialCharacterList = [] }: CharactersPageProps) => {
   const [searchValue, setSearchValue] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [isCharactersLoading, setIsCharactersLoading] = useState(initialCharacterList.length === 0)
-  const [isPatreonLoading, setIsPatreonLoading] = useState(false)
   const [charactersErrorMessage, setCharactersErrorMessage] = useState<string | null>(null)
   const [characterList, setCharacterList] = useState<CharacterListRecord[]>(initialCharacterList)
-  const [patreonStatusSnapshot, setPatreonStatusSnapshot] = useState<PatreonStatusSnapshot | null>(null)
   const [actionAlertMessage, setActionAlertMessage] = useState<string | null>(null)
 
   useEffect(() => {
@@ -181,67 +146,6 @@ const CharactersPage = ({ initialCharacterList = [] }: CharactersPageProps) => {
       isCancelled = true
     }
   }, [isAuthLoading, sessionUserId, activeCategory, searchValue])
-
-  useEffect(() => {
-    if (isAuthLoading) {
-      return
-    }
-
-    if (!sessionUserId) {
-      return
-    }
-
-    let isCancelled = false
-
-    Promise.resolve().then(async () => {
-      if (isCancelled) {
-        return
-      }
-
-      setIsPatreonLoading(true)
-
-      try {
-        const payload = await apiGet<{ data: PatreonStatusSnapshot }>('/patreon/status')
-
-        if (isCancelled) {
-          return
-        }
-
-        setPatreonStatusSnapshot(payload.data)
-      } catch {
-        if (!isCancelled) {
-          setPatreonStatusSnapshot(null)
-        }
-      } finally {
-        if (!isCancelled) {
-          setIsPatreonLoading(false)
-        }
-      }
-    })
-
-    return () => {
-      isCancelled = true
-    }
-  }, [isAuthLoading, sessionUserId])
-
-  const availableTierCents = useMemo(() => {
-    if (!sessionUser || !patreonStatusSnapshot) {
-      return 0
-    }
-
-    return resolveAvailableTierCents(patreonStatusSnapshot)
-  }, [patreonStatusSnapshot, sessionUser])
-
-  useEffect(() => {
-    if (sessionUserId) {
-      return
-    }
-
-    Promise.resolve().then(() => {
-      setPatreonStatusSnapshot(null)
-      setIsPatreonLoading(false)
-    })
-  }, [sessionUserId])
 
   useEffect(() => {
     if (!actionAlertMessage) {
@@ -330,23 +234,20 @@ const CharactersPage = ({ initialCharacterList = [] }: CharactersPageProps) => {
             ) : null}
             {!isCharactersLoading && !charactersErrorMessage
               ? paginatedCharacters.map((characterItem, index) => {
-                  const hasGatedAccess = resolveCharacterGatedAccess(characterItem, sessionUser, availableTierCents)
-
                   return (
                     <CharacterGalleryCard
                       key={characterItem.id}
-                  routeId={buildAiGirlfriendRouteKey(characterItem.name, characterItem.id)}
+                      routeId={buildAiGirlfriendRouteKey(characterItem.name, characterItem.id)}
                       name={characterItem.name}
-                      likes={formatCompactNumber(characterItem.heartsCount)}
-                      chats={formatCompactNumber(characterItem.viewsCount)}
+                      likes={formatCompactCount(characterItem.heartsCount)}
+                      messages={formatCompactCount(characterItem.messageCount)}
                       gradientClassName={defaultGradientVariants[index % defaultGradientVariants.length]}
                       className="w-full overflow-hidden rounded-[26px] border border-[#8a4f2b]/80 bg-[#111111] shadow-[0_18px_34px_rgba(0,0,0,0.4)]"
                       tagline={characterItem.tagline ?? undefined}
                       description={characterItem.description ?? undefined}
                       previewImageUrl={characterItem.previewImageUrl}
-                      isPatreonGated={characterItem.isPatreonGated}
-                      hasGatedAccess={hasGatedAccess}
-                      requiredTierCents={characterItem.minimumTierCents}
+                      cardThumbnailDesktopUrl={characterItem.cardThumbnailDesktopUrl}
+                      cardThumbnailMobileUrl={characterItem.cardThumbnailMobileUrl}
                       moderationStatus={characterItem.status}
                       showModerationBadge={activeCategory === 'your-characters'}
                       suppressPendingModerationBadge={
@@ -392,7 +293,6 @@ const CharactersPage = ({ initialCharacterList = [] }: CharactersPageProps) => {
             <PaginationControls currentPage={visiblePage} totalPages={totalPages} onPageChange={setCurrentPage} />
             <p className="text-[14px] text-white/75 sm:text-xs">
               {filteredAndSortedCharacters.length} AI Anime Girlfriends
-              {isPatreonLoading ? ' | Syncing membership...' : ''}
             </p>
           </div>
         </div>

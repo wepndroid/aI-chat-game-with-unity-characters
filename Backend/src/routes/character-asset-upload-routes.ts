@@ -10,18 +10,31 @@ import {
   isObjectStorageConfigured,
   uploadVrmBufferToObjectStorage
 } from '../lib/object-storage'
+import {
+  buildUploadUrl,
+  ensureUploadFolder,
+  ensureUploadFolders,
+  getUploadRelativePathFromAbsolutePath,
+  uploadFolders
+} from '../lib/upload-paths'
+import { enqueueUploadedVoiceProviderRegistration, PROVIDER_UPLOAD_MAX_BYTES } from '../lib/tts-provider-uploaded-voice-alias'
 
 const characterAssetUploadRoutes = Router()
 
-const uploadsRoot = path.join(process.cwd(), 'uploads')
-
-fs.mkdirSync(uploadsRoot, { recursive: true })
+ensureUploadFolders([
+  uploadFolders.communityVrms,
+  uploadFolders.officialVrms,
+  uploadFolders.poses,
+  uploadFolders.thumbnails,
+  uploadFolders.voiceClips
+])
 
 const GLB_HEADER_BYTES = 12
 const GLB_CHUNK_HEADER_BYTES = 8
 const GLB_JSON_CHUNK_TYPE = 0x4e4f534a // "JSON" little-endian
 const GLB_BINARY_MAGIC = 0x46546c67 // "glTF" little-endian
 const VRMA_EXTENSION_NAME = 'VRMC_vrm_animation'
+const WAV_HEADER_BYTES = 12
 
 const parseVrmaJsonChunk = async (filePath: string) => {
   const fileBuffer = await fs.promises.readFile(filePath)
@@ -94,6 +107,26 @@ const validateVrmaFile = async (filePath: string) => {
   }
 }
 
+const validateWavFile = async (filePath: string) => {
+  const handle = await fs.promises.open(filePath, 'r')
+  try {
+    const header = Buffer.alloc(WAV_HEADER_BYTES)
+    const { bytesRead } = await handle.read(header, 0, WAV_HEADER_BYTES, 0)
+
+    if (bytesRead < WAV_HEADER_BYTES) {
+      throw new Error('Voice file is too small to be a valid WAV file.')
+    }
+
+    const riff = header.toString('ascii', 0, 4)
+    const wave = header.toString('ascii', 8, 12)
+    if (riff !== 'RIFF' || wave !== 'WAVE') {
+      throw new Error('Voice upload must be a valid .wav file.')
+    }
+  } finally {
+    await handle.close()
+  }
+}
+
 const previewExtFromMime = (mime: string) => {
   if (mime === 'image/jpeg') {
     return '.jpg'
@@ -115,8 +148,29 @@ const previewExtFromMime = (mime: string) => {
 }
 
 const storage = multer.diskStorage({
-  destination: (_request, _file, callback) => {
-    callback(null, uploadsRoot)
+  destination: (request, file, callback) => {
+    if (file.fieldname === 'vrm') {
+      const targetFolder = request.authUser?.role === 'ADMIN' ? uploadFolders.officialVrms : uploadFolders.communityVrms
+      callback(null, ensureUploadFolder(targetFolder))
+      return
+    }
+
+    if (file.fieldname === 'pose') {
+      callback(null, ensureUploadFolder(uploadFolders.poses))
+      return
+    }
+
+    if (file.fieldname === 'preview') {
+      callback(null, ensureUploadFolder(uploadFolders.thumbnails))
+      return
+    }
+
+    if (file.fieldname === 'voice') {
+      callback(null, ensureUploadFolder(uploadFolders.voiceClips))
+      return
+    }
+
+    callback(new Error('Unexpected field.'), '')
   },
   filename: (_request, file, callback) => {
     const id = randomUUID()
@@ -136,6 +190,11 @@ const storage = multer.diskStorage({
       const ext = fromName && ['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(fromName) ? fromName : fromMime || '.png'
       const normalizedExt = ext === '.jpeg' ? '.jpg' : ext
       callback(null, `${id}${normalizedExt}`)
+      return
+    }
+
+    if (file.fieldname === 'voice') {
+      callback(null, `${id}.wav`)
       return
     }
 
@@ -175,6 +234,15 @@ const upload = multer({
       return
     }
 
+    if (file.fieldname === 'voice') {
+      if (!file.originalname.toLowerCase().endsWith('.wav')) {
+        callback(new Error('Voice upload must be a .wav file.'))
+        return
+      }
+      callback(null, true)
+      return
+    }
+
     callback(new Error('Unexpected upload field.'))
   }
 })
@@ -204,7 +272,8 @@ characterAssetUploadRoutes.post(
     upload.fields([
       { name: 'vrm', maxCount: 1 },
       { name: 'pose', maxCount: 1 },
-      { name: 'preview', maxCount: 1 }
+      { name: 'preview', maxCount: 1 },
+      { name: 'voice', maxCount: 1 }
     ])(request, response, (error) => {
       if (error) {
         response.status(400).json({
@@ -221,10 +290,11 @@ characterAssetUploadRoutes.post(
     const vrmFile = fileMap?.vrm?.[0]
     const poseFile = fileMap?.pose?.[0]
     const previewFile = fileMap?.preview?.[0]
+    const voiceFile = fileMap?.voice?.[0]
 
-    if (!vrmFile && !poseFile && !previewFile) {
+    if (!vrmFile && !poseFile && !previewFile && !voiceFile) {
       response.status(400).json({
-        message: 'Provide a VRM file, pose file, and/or a preview image.'
+        message: 'Provide a VRM file, pose file, preview image, and/or a voice WAV file.'
       })
       return
     }
@@ -233,6 +303,7 @@ characterAssetUploadRoutes.post(
     const uploadLimits = runtimeSettings?.uploadLimits
     const maxVrmBytes = (uploadLimits?.maxVrmSizeMb ?? 100) * 1024 * 1024
     const maxPreviewBytes = (uploadLimits?.maxPreviewImageSizeMb ?? 10) * 1024 * 1024
+    const maxVoiceBytes = PROVIDER_UPLOAD_MAX_BYTES
     const allowedPreviewMimeTypes = uploadLimits?.allowedPreviewMimeTypes ?? ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 
     if (vrmFile && vrmFile.size > maxVrmBytes) {
@@ -278,8 +349,34 @@ characterAssetUploadRoutes.post(
       return
     }
 
+    if (voiceFile && voiceFile.size > maxVoiceBytes) {
+      fs.unlink(voiceFile.path, () => {})
+      response.status(400).json({
+        message: 'Voice WAV exceeds max size limit (25MiB).'
+      })
+      return
+    }
+
+    if (voiceFile) {
+      try {
+        await validateWavFile(voiceFile.path)
+      } catch (error) {
+        fs.unlink(voiceFile.path, () => {})
+        response.status(400).json({
+          message: error instanceof Error ? error.message : 'Voice file failed WAV validation.'
+        })
+        return
+      }
+    }
+
     const origin = resolvePublicOrigin(request)
-    const data: { vroidFileUrl?: string; poseFileUrl?: string; previewImageUrl?: string } = {}
+    const data: {
+      vroidFileUrl?: string
+      poseFileUrl?: string
+      previewImageUrl?: string
+      voiceFileUrl?: string
+      voiceFileName?: string
+    } = {}
 
     if (vrmFile) {
       if (isObjectStorageConfigured()) {
@@ -295,15 +392,49 @@ characterAssetUploadRoutes.post(
           fs.unlink(vrmFile.path, () => {})
         }
       } else {
-        data.vroidFileUrl = `${origin}/uploads/${vrmFile.filename}`
+        const relativePath = getUploadRelativePathFromAbsolutePath(vrmFile.path)
+        if (!relativePath) {
+          response.status(500).json({ message: 'Uploaded VRM path is invalid.' })
+          return
+        }
+        data.vroidFileUrl = buildUploadUrl(origin, relativePath)
       }
     }
     if (poseFile) {
-      data.poseFileUrl = `${origin}/uploads/${poseFile.filename}`
+      const relativePath = getUploadRelativePathFromAbsolutePath(poseFile.path)
+      if (!relativePath) {
+        response.status(500).json({ message: 'Uploaded pose path is invalid.' })
+        return
+      }
+      data.poseFileUrl = buildUploadUrl(origin, relativePath)
     }
 
     if (previewFile) {
-      data.previewImageUrl = `${origin}/uploads/${previewFile.filename}`
+      const relativePath = getUploadRelativePathFromAbsolutePath(previewFile.path)
+      if (!relativePath) {
+        response.status(500).json({ message: 'Uploaded preview path is invalid.' })
+        return
+      }
+      data.previewImageUrl = buildUploadUrl(origin, relativePath)
+    }
+
+    if (voiceFile) {
+      const relativePath = getUploadRelativePathFromAbsolutePath(voiceFile.path)
+      if (!relativePath) {
+        response.status(500).json({ message: 'Uploaded voice path is invalid.' })
+        return
+      }
+      data.voiceFileUrl = buildUploadUrl(origin, relativePath)
+      data.voiceFileName = voiceFile.originalname.trim() || voiceFile.filename
+      try {
+        await enqueueUploadedVoiceProviderRegistration(relativePath)
+      } catch {
+        fs.unlink(voiceFile.path, () => {})
+        response.status(500).json({
+          message: 'Voice upload could not be prepared for runtime TTS.'
+        })
+        return
+      }
     }
 
     response.json({ data })

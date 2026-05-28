@@ -1,13 +1,17 @@
 'use client'
 
-import { useWebglWarm } from '@/components/providers/webgl-warm-provider'
+import {
+  scenarioStatusLabel,
+  scenarioStatusPillClass
+} from '@/components/your-characters/your-scenarios-helpers'
+import { useWebglPreloadIntent } from '@/components/providers/webgl-preload-provider'
 import FilterTab from '@/components/ui-elements/filter-tab'
 import FirstMessagePreviewBox from '@/components/ui-elements/first-message-preview-box'
 import StartChatIcon from '@/components/ui-elements/start-chat-icon'
 import type { CharacterDetailRecord } from '@/lib/character-api'
+import { formatCompactCount } from '@/lib/format-compact-count'
 import type { StoryListRecord } from '@/lib/story-api'
-import { scenarioTypeBadgeClass, scenarioTypeDisplayLabel } from '@/lib/story-scenario-types'
-import { parseWebglPlayContextFromHref } from '@/lib/webgl-embed-url'
+import { buildPrimaryCharacterStoryCardDisplay } from '@/components/character/character-story-catalog-display-policy'
 import Link from 'next/link'
 import type { MouseEvent } from 'react'
 
@@ -15,30 +19,62 @@ type CommunitySortMode = 'trending' | 'newest'
 
 type CharacterCommunityStoriesProps = {
   character: CharacterDetailRecord
+  officialStory: StoryListRecord | null
   stories: StoryListRecord[]
   /** Set when the list API failed (e.g. validation or network); avoids a silent empty list that looks like "no scenarios". */
   storiesLoadError?: string | null
   isLoading: boolean
   sortMode: CommunitySortMode
   onSortChange: (mode: CommunitySortMode) => void
-  officialPlayHref: string
+  officialPlayHref: string | null
+  onOfficialPlayClick?: (event: MouseEvent<HTMLAnchorElement>) => void
+  officialStoryLikesCount: number
+  officialStoryHasLiked: boolean
   buildScenarioPlayHref: (storyId: string) => string
+  onScenarioPlayClick?: (event: MouseEvent<HTMLAnchorElement>, storyId: string) => void
+  buildScenarioEditHref: (story: StoryListRecord) => string
   /** Set when the current viewer can start the create-story flow from this character page. */
   writeStoryHref: string | null
   /** Used for heart rules (e.g. authors and character owner cannot like). */
   viewerUserId?: string | null
-  onPlayIntent: () => void
+  /** Signed-in viewer's linked stories that are not public yet. */
+  viewerLinkedStories: StoryListRecord[]
   onOfficialHeartClick: () => void
   officialHeartDisabled: boolean
   onStoryHeartClick: (storyId: string) => void
   storyHeartSubmittingId: string | null
 }
 
-const formatCompactNumber = (value: number) => {
-  return new Intl.NumberFormat('en-US', {
-    notation: 'compact',
-    maximumFractionDigits: 1
-  }).format(value)
+const getStoryBadges = (story: Pick<StoryListRecord, 'origin' | 'isDefault'> | null | undefined) => {
+  if (!story) {
+    return []
+  }
+
+  return [
+    story.origin === 'OFFICIAL' ? 'Official' : 'Community',
+    ...(story.isDefault ? ['Default'] : [])
+  ]
+}
+
+const StoryBadgeList = ({ story }: { story: Pick<StoryListRecord, 'origin' | 'isDefault'> | null | undefined }) => {
+  const badges = getStoryBadges(story)
+
+  if (badges.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {badges.map((badge) => (
+        <span
+          key={badge}
+          className="rounded-md border border-[#e67d34]/45 bg-[#e67d34]/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#ffb06c]"
+        >
+          {badge}
+        </span>
+      ))}
+    </div>
+  )
 }
 
 const splitScenarioPreview = (raw: string) => {
@@ -95,68 +131,58 @@ const HeartStatIcon = ({ className = 'size-4' }: { className?: string }) => {
 
 const CharacterCommunityStories = ({
   character,
+  officialStory,
   stories,
   storiesLoadError,
   isLoading,
   sortMode,
   onSortChange,
   officialPlayHref,
+  onOfficialPlayClick,
+  officialStoryLikesCount,
+  officialStoryHasLiked,
   buildScenarioPlayHref,
+  onScenarioPlayClick,
+  buildScenarioEditHref,
   writeStoryHref,
   viewerUserId,
-  onPlayIntent,
+  viewerLinkedStories,
   onOfficialHeartClick,
   officialHeartDisabled,
   onStoryHeartClick,
   storyHeartSubmittingId
 }: CharacterCommunityStoriesProps) => {
-  const warm = useWebglWarm()
+  const { preloadOnIntent } = useWebglPreloadIntent()
   const viewerIsCharacterOwner = Boolean(viewerUserId && character.owner.id === viewerUserId)
-  const displayName = (character.fullName?.trim() || character.name).trim()
-  const scenarioText = (character.scenario?.trim() || character.description?.trim() || 'No scenario text yet.') ?? ''
-  const firstMsg = character.firstMessage?.trim() || ''
-
-  const handlePlayDemoLinkClick = (event: MouseEvent<HTMLAnchorElement>, href: string) => {
-    if (!href.startsWith('/play-demo')) {
-      return
-    }
-
-    const context = parseWebglPlayContextFromHref(href)
-    if (context && warm.tryOpenWarmPlay(context)) {
-      event.preventDefault()
-    }
-
-    onPlayIntent()
-  }
+  const primaryStoryDisplay = buildPrimaryCharacterStoryCardDisplay({
+    character,
+    story: officialStory
+  })
+  const totalVisibleStories = stories.length + viewerLinkedStories.length
 
   return (
     <section className="min-w-0">
       <article className="min-w-0 overflow-hidden rounded-[24px] border border-[#d97a3a]/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.02))] p-5 shadow-[0_24px_70px_rgba(0,0,0,0.35)] md:p-6">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex min-w-0 flex-wrap items-center gap-3">
-              <h3 className="min-w-0 max-w-full font-[family-name:var(--font-heading)] text-[30px] font-semibold italic uppercase leading-none text-white [overflow-wrap:anywhere] md:text-[36px]">
-                {displayName}
-              </h3>
-              <span className="rounded-md border border-[#e67d34]/45 bg-[#e67d34]/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#ffb06c]">
-                Official story
-              </span>
-            </div>
-            <p className="mt-2 inline-flex items-center gap-2 text-[10px] font-medium text-white/52">
-              <span className="text-white/40">Created by</span>
-              <span>{character.officialListing ? 'Admin' : character.owner.username}</span>
+            <StoryBadgeList story={officialStory} />
+            <h2 className="mt-3 min-w-0 max-w-full font-[family-name:var(--font-heading)] text-[24px] font-semibold italic uppercase leading-none text-white [overflow-wrap:anywhere] md:text-[30px]">
+              {primaryStoryDisplay.title}
+            </h2>
+            <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.09em] text-white/45">
+              Created by {primaryStoryDisplay.creatorName}
             </p>
             <p className="mt-5 max-w-3xl whitespace-pre-line text-[14px] leading-7 text-white/76 [overflow-wrap:anywhere]">
-              {scenarioText}
+              {primaryStoryDisplay.scenarioText}
             </p>
             <div className="mt-5 flex flex-wrap items-center gap-5 text-[11px] font-medium text-white/42">
               <span className="inline-flex items-center gap-2">
                 <ChatStatIcon className="size-[18px]" />
-                {formatCompactNumber(character.viewsCount)} chats
+                {formatCompactCount(character.messageCount)} messages
               </span>
               <span className="inline-flex items-center gap-2">
                 <HeartStatIcon className="size-[18px]" />
-                {formatCompactNumber(character.heartsCount)} likes
+                {formatCompactCount(officialStoryLikesCount)} likes
               </span>
             </div>
             <details className="group mt-5 rounded-xl border border-white/10 bg-black/20 px-4 py-3">
@@ -174,7 +200,7 @@ const CharacterCommunityStories = ({
                 </svg>
               </summary>
               <div className="mt-4">
-                <FirstMessagePreviewBox firstMessage={firstMsg || null} />
+                <FirstMessagePreviewBox firstMessage={primaryStoryDisplay.firstMessage || null} />
               </div>
             </details>
           </div>
@@ -185,11 +211,11 @@ const CharacterCommunityStories = ({
             className={`inline-flex size-10 shrink-0 items-center justify-center rounded-full border text-xs transition disabled:cursor-not-allowed disabled:opacity-40 ${
               officialHeartDisabled
                 ? 'border-[#5c4a42]/45 bg-[#1f1815] text-white/30'
-                : character.hasHearted
+                : officialStoryHasLiked
                   ? 'border-[#ff74d8] bg-[#3a102c] text-[#ffd8f4] shadow-[0_0_0_1px_rgba(255,255,255,0.12)_inset,0_0_18px_rgba(247,93,232,0.45)]'
                   : 'border-[#775844] bg-[#261c17] text-white/95 hover:border-[#8f6447] hover:bg-[#2c201a]'
             }`}
-            aria-label={character.hasHearted ? 'Remove favorite' : 'Favorite character'}
+            aria-label={officialStoryHasLiked ? 'Unlike official scenario' : 'Like official scenario'}
           >
             <svg viewBox="0 0 24 24" className="size-[16px]" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
               <path
@@ -202,14 +228,28 @@ const CharacterCommunityStories = ({
         </div>
 
         <div className="mt-7">
-          <Link
-            href={officialPlayHref}
-            onClick={(event) => handlePlayDemoLinkClick(event, officialPlayHref)}
-            className="inline-flex h-14 w-full items-center justify-center gap-3 rounded-[14px] bg-gradient-to-r from-ember-400 to-ember-500 px-5 font-[family-name:var(--font-heading)] text-[17px] font-semibold italic uppercase tracking-[0.06em] leading-none text-white shadow-[0_16px_30px_rgba(244,99,19,0.28)] transition hover:brightness-110"
-          >
-            <StartChatIcon className="size-6 text-white" />
-            START CHAT
-          </Link>
+          {officialPlayHref ? (
+            <Link
+              href={officialPlayHref}
+              onClick={onOfficialPlayClick}
+              onPointerEnter={preloadOnIntent}
+              onFocus={preloadOnIntent}
+              onTouchStart={preloadOnIntent}
+              className="inline-flex h-14 w-full items-center justify-center gap-3 rounded-[14px] bg-gradient-to-r from-ember-400 to-ember-500 px-5 font-[family-name:var(--font-heading)] text-[17px] font-semibold italic uppercase tracking-[0.06em] leading-none text-white shadow-[0_16px_30px_rgba(244,99,19,0.28)] transition hover:brightness-110"
+            >
+              <StartChatIcon className="size-6 text-white" />
+              START CHAT
+            </Link>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="inline-flex h-14 w-full cursor-not-allowed items-center justify-center gap-3 rounded-[14px] border border-white/10 bg-white/[0.06] px-5 font-[family-name:var(--font-heading)] text-[17px] font-semibold italic uppercase tracking-[0.06em] leading-none text-white/45"
+            >
+              <StartChatIcon className="size-6 text-white/45" />
+              START CHAT
+            </button>
+          )}
         </div>
       </article>
 
@@ -220,7 +260,7 @@ const CharacterCommunityStories = ({
               Community stories
             </h2>
             <span className="rounded-md border border-white/10 bg-white/6 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-white/55">
-              {stories.length > 0 ? `${stories.length} available` : 'No stories yet'}
+              {totalVisibleStories > 0 ? `${totalVisibleStories} visible to you` : 'No stories yet'}
             </span>
           </div>
           {writeStoryHref ? (
@@ -229,10 +269,51 @@ const CharacterCommunityStories = ({
               className="inline-flex min-h-[44px] items-center justify-center gap-2 self-start rounded-xl border border-white/10 bg-white/[0.06] px-5 py-2.5 text-sm font-semibold uppercase tracking-[0.08em] text-white/90 transition hover:border-white/20 hover:bg-white/[0.09] sm:self-auto"
             >
               <span className="text-[22px] leading-none">+</span>
-              Create Story
+              Create Custom Story
             </Link>
           ) : null}
         </div>
+        {viewerLinkedStories.length > 0 ? (
+          <div className="rounded-[18px] border border-amber-400/20 bg-amber-500/10 px-5 py-4">
+            <p className="text-sm font-semibold text-amber-100">Your custom stories for this character</p>
+            <p className="mt-2 text-xs leading-relaxed text-amber-100/80">
+              These are visible only to you until they are approved. That is why they do not appear in the public community list for other people yet.
+            </p>
+            <div className="mt-4 space-y-3">
+              {viewerLinkedStories.map((story) => (
+                <div
+                  key={story.id}
+                  className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/20 px-4 py-3 sm:flex-row sm:items-start sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-[family-name:var(--font-heading)] text-[18px] font-semibold italic text-white">
+                        {story.title}
+                      </p>
+                      <StoryBadgeList story={story} />
+                      <span
+                        className={`inline-flex rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] ${scenarioStatusPillClass(story)}`}
+                      >
+                        {scenarioStatusLabel(story)}
+                      </span>
+                    </div>
+                    {story.moderationStatus === 'REJECTED' && story.moderationRejectReason?.trim() ? (
+                      <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-white/70">
+                        {story.moderationRejectReason.trim()}
+                      </p>
+                    ) : null}
+                  </div>
+                  <Link
+                    href={buildScenarioEditHref(story)}
+                    className="inline-flex h-11 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/[0.06] px-4 text-sm font-semibold uppercase tracking-[0.08em] text-white/90 transition hover:border-white/25 hover:bg-white/[0.1]"
+                  >
+                    Edit scenario
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center gap-3 sm:justify-end">
           <FilterTab
             label="Trending"
@@ -268,7 +349,7 @@ const CharacterCommunityStories = ({
             <p className="mx-auto mt-3 max-w-md text-xs leading-relaxed text-white/40">
               Scenarios show here only when they are published with this character linked.
               {writeStoryHref
-                ? ' If you already published one, edit it and choose this character.'
+                ? ' Create a new scenario from this page to link it to this character.'
                 : ' Sign in to create the first scenario for this character.'}
             </p>
             {!writeStoryHref ? (
@@ -277,8 +358,6 @@ const CharacterCommunityStories = ({
           </div>
         ) : (
           stories.map((story) => {
-            const scenarioLabel = scenarioTypeDisplayLabel(story.scenarioType)
-            const scenarioBadge = scenarioTypeBadgeClass(story.scenarioType)
             const leftRaw = story.scenarioStory?.trim() ?? ''
             const rightRaw = story.scenarioChat?.trim() ?? ''
             const fallbackRaw = story.bodyPreview.replace(/\.\.\.$/, '').trim()
@@ -320,30 +399,19 @@ const CharacterCommunityStories = ({
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <div className="flex min-w-0 flex-col gap-1.5">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/50">
-                        {(story.character?.name ?? character.name).trim()}
-                      </p>
-                      <span
-                        className={`inline-flex w-fit rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] ${scenarioBadge}`}
-                      >
-                        {scenarioLabel}
-                      </span>
-                    </div>
-                    <h3 className="mt-2 min-w-0 max-w-full font-[family-name:var(--font-heading)] text-[22px] font-semibold italic uppercase leading-none text-white [overflow-wrap:anywhere] md:text-[26px]">
+                    <h3 className="min-w-0 max-w-full font-[family-name:var(--font-heading)] text-[22px] font-semibold italic uppercase leading-none text-white [overflow-wrap:anywhere] md:text-[26px]">
                       {story.title}
                     </h3>
                     <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.09em] text-white/45">
                       Created by {story.author.username}
                     </p>
+                    <div className="mt-3">
+                      <StoryBadgeList story={story} />
+                    </div>
                     <div className="mt-3 flex flex-wrap items-center gap-5 text-[11px] font-medium text-white/42">
                       <span className="inline-flex items-center gap-2">
-                        <ChatStatIcon className="size-[18px]" />
-                        chats
-                      </span>
-                      <span className="inline-flex items-center gap-2">
                         <HeartStatIcon className="size-[18px]" />
-                        {formatCompactNumber(story.likesCount)} likes
+                        {formatCompactCount(story.likesCount)} likes
                       </span>
                     </div>
                   </div>
@@ -406,7 +474,10 @@ const CharacterCommunityStories = ({
                 <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
                   <Link
                     href={buildScenarioPlayHref(story.id)}
-                    onClick={(event) => handlePlayDemoLinkClick(event, buildScenarioPlayHref(story.id))}
+                    onClick={(event) => onScenarioPlayClick?.(event, story.id)}
+                    onPointerEnter={preloadOnIntent}
+                    onFocus={preloadOnIntent}
+                    onTouchStart={preloadOnIntent}
                     className="inline-flex h-14 w-full items-center justify-center gap-3 rounded-[14px] border border-[#7b5335] bg-[linear-gradient(180deg,#332118,#271811)] px-5 font-[family-name:var(--font-heading)] text-[17px] font-semibold italic uppercase tracking-[0.06em] leading-none text-[#ffd8bf] shadow-[0_12px_24px_rgba(0,0,0,0.22)] transition hover:border-[#9d6843] hover:bg-[linear-gradient(180deg,#3d281d,#2d1c14)]"
                   >
                     <StartChatIcon className="size-6 text-[#ffcfab]" />

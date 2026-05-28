@@ -1,6 +1,7 @@
 import type { UserRole } from '@prisma/client'
 
 type PasswordHashAlgorithm = 'argon2' | 'scrypt'
+type EmailProvider = 'smtp' | 'mailgun'
 
 const parseDuration = (value: string | undefined, fallbackValue: number) => {
   const parsed = Number.parseInt(value ?? '', 10)
@@ -62,21 +63,40 @@ const authConfig = {
 }
 
 type EmailConfig = {
+  provider: EmailProvider
   from: string
   smtpHost: string
   smtpPort: number
   smtpSecure: boolean
   smtpUser: string
   smtpPass: string
+  mailgunDomain: string
+  mailgunApiKey: string
+  mailgunRegion: 'us' | 'eu'
+}
+
+const getEmailProvider = (): EmailProvider => {
+  const configuredProvider = process.env.EMAIL_PROVIDER?.trim().toLowerCase()
+
+  if (configuredProvider === 'smtp' || configuredProvider === 'mailgun') {
+    return configuredProvider
+  }
+
+  const hasMailgunConfig = Boolean(process.env.MAILGUN_DOMAIN?.trim() && process.env.MAILGUN_API_KEY?.trim())
+  return hasMailgunConfig ? 'mailgun' : 'smtp'
 }
 
 const getEmailConfig = (): EmailConfig => ({
+  provider: getEmailProvider(),
   from: process.env.EMAIL_FROM?.trim() || 'SecretWaifu <no-reply@secretwaifu.local>',
   smtpHost: process.env.EMAIL_SMTP_HOST?.trim() || '',
   smtpPort: parseDuration(process.env.EMAIL_SMTP_PORT, 587),
   smtpSecure: parseBoolean(process.env.EMAIL_SMTP_SECURE, false),
   smtpUser: process.env.EMAIL_SMTP_USER?.trim() || '',
-  smtpPass: process.env.EMAIL_SMTP_PASS?.trim() || ''
+  smtpPass: process.env.EMAIL_SMTP_PASS?.trim() || '',
+  mailgunDomain: process.env.MAILGUN_DOMAIN?.trim() || '',
+  mailgunApiKey: process.env.MAILGUN_API_KEY?.trim() || '',
+  mailgunRegion: process.env.MAILGUN_REGION?.trim().toLowerCase() === 'eu' ? 'eu' : 'us'
 })
 
 const getIsSecureCookie = () => process.env.NODE_ENV === 'production'
@@ -86,4 +106,4 @@ const getEffectiveUserRoleForTesting = (role: UserRole): UserRole => {
 }
 
 export { authConfig, forceAllUsersAdminForTesting, getEffectiveUserRoleForTesting, getEmailConfig, getIsSecureCookie }
-export type { EmailConfig, PasswordHashAlgorithm }
+export type { EmailConfig, EmailProvider, PasswordHashAlgorithm }

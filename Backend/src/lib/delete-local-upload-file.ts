@@ -1,9 +1,8 @@
 import fs from 'node:fs/promises'
-import path from 'node:path'
 
 import { isDevLoopbackSelfHostedUpload, isTrustedSelfHostedAssetUrl } from './character-asset-url'
-
-const uploadsRoot = path.join(process.cwd(), 'uploads')
+import { deleteUploadedVoiceProviderRegistration } from './tts-provider-uploaded-voice-alias'
+import { getUploadRelativePathFromUrl, resolveUploadPath } from './upload-paths'
 
 const isDeletableSelfHostedUploadUrl = (rawUrl: string) => {
   return isTrustedSelfHostedAssetUrl(rawUrl) || isDevLoopbackSelfHostedUpload(rawUrl)
@@ -24,33 +23,26 @@ const tryDeleteTrustedUploadFile = async (rawUrl: string | null | undefined) => 
     return
   }
 
-  let parsed: URL
-  try {
-    parsed = new URL(trimmed)
-  } catch {
+  const relativePath = getUploadRelativePathFromUrl(trimmed)
+  const targetPath = resolveUploadPath(relativePath)
+  if (!targetPath) {
     return
   }
 
-  const baseName = path.basename(parsed.pathname)
-  if (!baseName || baseName === '.' || baseName === '..') {
-    return
-  }
-
-  const resolvedRoot = path.resolve(uploadsRoot)
-  const targetPath = path.resolve(path.join(uploadsRoot, baseName))
-  const relativeToRoot = path.relative(resolvedRoot, targetPath)
-
-  if (relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
-    return
-  }
-
+  let bFileDeletedOrMissing = false
   try {
     await fs.unlink(targetPath)
+    bFileDeletedOrMissing = true
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
     if (code !== 'ENOENT') {
       throw error
     }
+    bFileDeletedOrMissing = true
+  }
+
+  if (bFileDeletedOrMissing && relativePath?.replace(/\\/g, '/').startsWith('voice-clips/')) {
+    await deleteUploadedVoiceProviderRegistration(relativePath)
   }
 }
 

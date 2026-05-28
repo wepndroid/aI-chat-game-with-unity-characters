@@ -91,6 +91,45 @@ userNotificationRoutes.get('/users/me/notifications', requireAuth, async (reques
   }
 })
 
+userNotificationRoutes.post('/users/me/notifications/clear', requireAuth, async (request, response, next) => {
+  try {
+    const authUser = request.authUser
+    if (!authUser) {
+      response.status(401).json({ message: 'Authentication required.' })
+      return
+    }
+
+    const userId = authUser.userId
+
+    await prisma.$transaction([
+      prisma.userNotification.deleteMany({
+        where: {
+          userId
+        }
+      }),
+      prisma.storyPost.updateMany({
+        where: {
+          authorId: userId,
+          publicationStatus: 'PUBLISHED',
+          moderationStatus: 'REJECTED',
+          authorReadRejectionAt: null
+        },
+        data: {
+          authorReadRejectionAt: new Date()
+        }
+      })
+    ])
+
+    response.json({
+      data: {
+        cleared: true
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 userNotificationRoutes.post('/users/me/notifications/mark-read', requireAuth, async (request, response, next) => {
   try {
     const authUser = request.authUser

@@ -13,15 +13,7 @@ type ParsedArgs = {
   options: LegacyImportOptions
 }
 
-const DEFAULT_DATABASE_URL = 'file:./prisma/dev.db'
-
-const prisma = new PrismaClient({
-  datasources: {
-    db: {
-      url: process.env.DATABASE_URL?.trim() || DEFAULT_DATABASE_URL
-    }
-  }
-})
+const prisma = new PrismaClient()
 
 const parseNumberOption = (label: string, value: string) => {
   const parsed = Number.parseInt(value, 10)

@@ -1,4 +1,10 @@
-import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api-client'
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from '@/lib/api-client'
+import {
+  normalizeCharacterStoryCatalogResponse,
+  type CharacterStoryCatalogApiResponse,
+  type CharacterStoryCatalogRecord,
+  type CharacterStoryCatalogResponse
+} from '@/lib/character-story-catalog-normalizer'
 import type { StoryScenarioType } from '@/lib/story-scenario-types'
 
 export type { StoryScenarioType } from '@/lib/story-scenario-types'
@@ -19,10 +25,19 @@ type StoryCharacterRef = {
 type StoryPublicationStatus = 'DRAFT' | 'PUBLISHED'
 
 type StoryModerationStatus = 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED'
+type StoryOrigin = 'OFFICIAL' | 'COMMUNITY'
 
 type StoryListRecord = {
   id: string
   title: string
+  promptDescription: string | null
+  personality: string | null
+  scenario: string | null
+  firstMessage: string | null
+  exampleDialogs: string | null
+  voiceFileUrl: string | null
+  voiceFileName: string | null
+  origin: StoryOrigin
   /** Left column text (may be empty on very old rows before backfill). */
   scenarioStory: string
   /** Right column: dialogue + direction (mini-markup). */
@@ -36,6 +51,7 @@ type StoryListRecord = {
   likesCount: number
   /** Present on public catalog rows when the viewer is signed in. */
   hasLiked?: boolean
+  isDefault?: boolean
   characterId: string
   scenarioType: string | null
   author: StoryAuthor
@@ -47,10 +63,18 @@ type StoryListRecord = {
 type StoryDetailRecord = {
   id: string
   title: string
+  promptDescription: string | null
+  personality: string | null
+  scenario: string | null
+  firstMessage: string | null
+  exampleDialogs: string | null
+  voiceFileUrl: string | null
+  voiceFileName: string | null
   scenarioStory: string
   scenarioChat: string
   /** Combined scenario (search / legacy). */
   body: string
+  origin: StoryOrigin
   publicationStatus: StoryPublicationStatus
   moderationStatus: StoryModerationStatus
   moderationRejectReason: string | null
@@ -61,6 +85,7 @@ type StoryDetailRecord = {
   author: StoryAuthor
   character: StoryCharacterRef
   hasLiked: boolean
+  isDefault?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -105,6 +130,23 @@ const listStories = async (params: ListStoriesParams = {}) => {
   return Array.isArray(response) ? { data: response } : response
 }
 
+const listCharacterStories = async (
+  characterId: string,
+  params: Pick<ListStoriesParams, 'sort' | 'limit'> & { cursor?: string | null } = {}
+) => {
+  const normalizedCharacterId = characterId.trim()
+  const searchParams = new URLSearchParams()
+
+  if (params.sort) searchParams.set('sort', params.sort)
+  if (params.limit) searchParams.set('limit', String(params.limit))
+  if (params.cursor) searchParams.set('cursor', params.cursor)
+
+  const query = searchParams.toString()
+  const path = `/characters/${encodeURIComponent(normalizedCharacterId)}/stories${query ? `?${query}` : ''}`
+  const response = await apiGet<CharacterStoryCatalogApiResponse>(path)
+  return normalizeCharacterStoryCatalogResponse(response)
+}
+
 const listAdminStories = async (params: ListAdminStoriesParams = {}) => {
   const searchParams = new URLSearchParams()
 
@@ -126,6 +168,13 @@ const getStory = async (storyId: string) => {
 
 type CreateStoryPayload = {
   title: string
+  promptDescription: string
+  personality: string
+  scenario: string
+  firstMessage: string
+  exampleDialogs?: string
+  voiceFileUrl?: string
+  voiceFileName?: string
   scenarioStory: string
   scenarioChat: string
   characterId: string
@@ -137,6 +186,13 @@ const createStory = async (payload: CreateStoryPayload) => {
   const publicationStatus = payload.publicationStatus ?? 'PUBLISHED'
   return apiPost<{ data: StoryDetailRecord }>('/stories', {
     title: payload.title,
+    promptDescription: payload.promptDescription,
+    personality: payload.personality,
+    scenario: payload.scenario,
+    firstMessage: payload.firstMessage,
+    ...(payload.exampleDialogs !== undefined ? { exampleDialogs: payload.exampleDialogs } : {}),
+    ...(payload.voiceFileUrl !== undefined ? { voiceFileUrl: payload.voiceFileUrl } : {}),
+    ...(payload.voiceFileName !== undefined ? { voiceFileName: payload.voiceFileName } : {}),
     scenarioStory: payload.scenarioStory,
     scenarioChat: payload.scenarioChat,
     characterId: payload.characterId,
@@ -147,9 +203,15 @@ const createStory = async (payload: CreateStoryPayload) => {
 
 type UpdateStoryPayload = {
   title?: string
+  promptDescription?: string
+  personality?: string
+  scenario?: string
+  firstMessage?: string
+  exampleDialogs?: string
+  voiceFileUrl?: string | null
+  voiceFileName?: string | null
   scenarioStory?: string
   scenarioChat?: string
-  characterId?: string
   scenarioType?: StoryScenarioType | null
   publicationStatus?: StoryPublicationStatus
 }
@@ -174,28 +236,54 @@ const moderateStory = async (storyId: string, payload: ModerateStoryPayload) => 
   return apiPost<{ data: StoryDetailRecord }>(`/admin/stories/${encodeURIComponent(storyId)}/moderate`, payload)
 }
 
+const updateStoryOrigin = async (storyId: string, origin: StoryOrigin) => {
+  return apiPatch<{ data: StoryDetailRecord }>(`/admin/stories/${encodeURIComponent(storyId)}/origin`, {
+    origin
+  })
+}
+
+const setCharacterDefaultStory = async (characterId: string, storyId: string) => {
+  return apiPut<{ data: { characterId: string; defaultStoryId: string } }>(
+    `/admin/characters/${encodeURIComponent(characterId)}/default-story`,
+    { storyId }
+  )
+}
+
+const clearCharacterDefaultStory = async (characterId: string) => {
+  return apiDelete<{ data: { characterId: string; defaultStoryId: null } }>(
+    `/admin/characters/${encodeURIComponent(characterId)}/default-story`
+  )
+}
+
 const acknowledgeStoryRejections = async () => {
   return apiPost<{ data: { updatedCount: number } }>('/stories/acknowledge-rejections', {})
 }
 
 export {
   acknowledgeStoryRejections,
+  clearCharacterDefaultStory,
   createStory,
   deleteStory,
   getStory,
+  listCharacterStories,
   listAdminStories,
   listStories,
   moderateStory,
+  setCharacterDefaultStory,
   toggleStoryLike,
+  updateStoryOrigin,
   updateStory
 }
 
 export type {
   AdminStoriesListMeta,
+  CharacterStoryCatalogRecord,
+  CharacterStoryCatalogResponse,
   StoryAuthor,
   StoryCharacterRef,
   StoryDetailRecord,
   StoryListRecord,
   StoryModerationStatus,
+  StoryOrigin,
   StoryPublicationStatus
 }

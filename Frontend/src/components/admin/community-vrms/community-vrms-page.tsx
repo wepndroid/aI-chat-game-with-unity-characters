@@ -3,20 +3,22 @@
 
 import AdminPageShell from '@/components/shared/admin-page-shell'
 import AdminModalDialog from '@/components/ui-elements/admin-modal-dialog'
-import { AdminVrmMetricHeartIcon, AdminVrmMetricViewsIcon } from '@/components/ui-elements/admin-vrm-metric-icons'
+import { AdminVrmMetricHeartIcon, AdminVrmMetricMessagesIcon } from '@/components/ui-elements/admin-vrm-metric-icons'
 import { deleteCharacter, listCharacters, submitCharacterForReview, type CharacterListRecord } from '@/lib/character-api'
 import { ADMIN_OVERVIEW_REFRESH_EVENT } from '@/lib/admin-overview-events'
 import { apiPost } from '@/lib/api-client'
 import { buildAiGirlfriendRouteHref } from '@/lib/ai-girlfriend-route'
+import { formatCompactCount } from '@/lib/format-compact-count'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 
-type CommunityVrmFilterValue = 'all' | 'live' | 'draft' | 'removed'
+type CommunityVrmFilterValue = 'all' | 'live' | 'pending' | 'draft' | 'removed'
 
 const communityVrmFilterOptions: Array<{ value: CommunityVrmFilterValue; label: string }> = [
   { value: 'all', label: 'All status' },
   { value: 'live', label: 'Live' },
+  { value: 'pending', label: 'Pending' },
   { value: 'draft', label: 'Draft' },
   { value: 'removed', label: 'Removed' }
 ]
@@ -24,7 +26,7 @@ const communityVrmFilterOptions: Array<{ value: CommunityVrmFilterValue; label: 
 const isRemovedCharacter = (characterRecord: CharacterListRecord) =>
   characterRecord.status === 'REJECTED' || characterRecord.status === 'ARCHIVED'
 
-type CommunityVrmRowStatus = 'live' | 'draft' | 'removed'
+type CommunityVrmRowStatus = 'live' | 'pending' | 'draft' | 'removed'
 
 const getCommunityVrmRowStatus = (characterRecord: CharacterListRecord): CommunityVrmRowStatus => {
   if (isRemovedCharacter(characterRecord)) {
@@ -35,11 +37,16 @@ const getCommunityVrmRowStatus = (characterRecord: CharacterListRecord): Communi
     return 'live'
   }
 
+  if (characterRecord.status === 'PENDING') {
+    return 'pending'
+  }
+
   return 'draft'
 }
 
 const communityVrmRowStatusClassName: Record<CommunityVrmRowStatus, string> = {
   live: 'border border-blue-500/55 bg-blue-950/55 text-blue-400',
+  pending: 'border border-amber-400/55 bg-amber-950/45 text-amber-300',
   draft: 'border border-slate-600/65 bg-[#222831] text-[#b6c4d8]',
   removed: 'border border-red-500/55 bg-red-950/50 text-red-400'
 }
@@ -57,6 +64,10 @@ const matchesCommunityVrmFilter = (characterRecord: CharacterListRecord, filter:
 
   if (filter === 'live') {
     return characterRecord.status === 'APPROVED'
+  }
+
+  if (filter === 'pending') {
+    return characterRecord.status === 'PENDING'
   }
 
   if (filter === 'draft') {
@@ -92,6 +103,12 @@ const CommunityVrmEyeIcon = () => (
   </svg>
 )
 
+const CommunityVrmEditIcon = () => (
+  <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+    <path d="M4.8 15.6 15.9 4.5a2 2 0 0 1 2.8 0l.8.8a2 2 0 0 1 0 2.8L8.4 19.2l-4 .5.4-4.1Z" />
+  </svg>
+)
+
 const CommunityVrmReviewIcon = () => (
   <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
     <path d="M12 3v18M3 12h18" strokeLinecap="round" />
@@ -116,6 +133,14 @@ const CommunityVrmRowActions = ({ characterRecord, busyCharacterId, onReview, on
 
   return (
     <div className="inline-flex items-center gap-2">
+      <Link
+        href={`/upload-vrm?edit=${encodeURIComponent(characterRecord.id)}`}
+        className={communityVrmActionLinkClassName}
+        aria-label={`Edit ${characterRecord.name} submission`}
+      >
+        <CommunityVrmEditIcon />
+      </Link>
+
       <Link
         href={buildAiGirlfriendRouteHref(characterRecord.name, characterRecord.id)}
         className={communityVrmActionLinkClassName}
@@ -233,10 +258,6 @@ const CommunityVrmsPage = () => {
     const normalizedSearchValue = searchValue.trim().toLowerCase()
 
     return characterList.filter((characterRecord) => {
-      if (characterRecord.status === 'PENDING' || characterRecord.status === 'REJECTED') {
-        return false
-      }
-
       if (!matchesCommunityVrmFilter(characterRecord, communityFilter)) {
         return false
       }
@@ -310,11 +331,11 @@ const CommunityVrmsPage = () => {
             VRM Database
           </h1>
           <p className="mt-1 max-w-xl text-[13px] font-normal leading-snug text-[#8ea0bf] sm:text-[14px]">
-            Submissions awaiting approval are managed on the{' '}
+            Edit submitted community VRMs here, or process pending approvals on the{' '}
             <Link href="/admin/review-queue" className="text-ember-300 transition hover:text-ember-200">
               Review Queue
             </Link>{' '}
-            page. After a decision, they appear in this list.
+            page.
           </p>
         </div>
 
@@ -435,11 +456,11 @@ const CommunityVrmsPage = () => {
                           <div className="inline-flex items-center gap-3 text-xs font-normal text-[#a8b6d0]">
                             <span className="inline-flex items-center gap-1 text-pink-400">
                               <AdminVrmMetricHeartIcon />
-                              {characterRecord.heartsCount}
+                              {formatCompactCount(characterRecord.heartsCount)}
                             </span>
-                            <span className="inline-flex items-center gap-1" title="Views">
-                              <AdminVrmMetricViewsIcon />
-                              {characterRecord.viewsCount}
+                            <span className="inline-flex items-center gap-1" title="Messages">
+                              <AdminVrmMetricMessagesIcon />
+                              {formatCompactCount(characterRecord.messageCount)}
                             </span>
                           </div>
                         </td>

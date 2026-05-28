@@ -1,6 +1,5 @@
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import Image from 'next/image'
 import type { KeyboardEvent, MouseEvent } from 'react'
 import { AI_GIRLFRIEND_ROUTE_BASE } from '@/lib/ai-girlfriend-route'
 
@@ -8,15 +7,14 @@ type CharacterGalleryCardProps = {
   routeId: string
   name: string
   likes: string
-  chats: string
+  messages: string
   gradientClassName: string
   className?: string
   tagline?: string
   description?: string
   previewImageUrl?: string | null
-  isPatreonGated?: boolean
-  hasGatedAccess?: boolean
-  requiredTierCents?: number | null
+  cardThumbnailDesktopUrl?: string | null
+  cardThumbnailMobileUrl?: string | null
   onActionClick?: (event: MouseEvent<HTMLAnchorElement>) => void
   moderationStatus?: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'
   showModerationBadge?: boolean
@@ -49,7 +47,7 @@ const toDescriptionPreview = (value?: string) => {
   return normalized.length > 96 ? `${normalized.slice(0, 96).trimEnd()}...` : normalized
 }
 
-const ChatBubbleIcon = ({ className = 'size-6' }: { className?: string }) => {
+const MessageBubbleIcon = ({ className = 'size-6' }: { className?: string }) => {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
       <path
@@ -79,12 +77,14 @@ const CharacterGalleryCard = ({
   routeId,
   name,
   likes,
-  chats,
+  messages,
   gradientClassName,
   className = 'mx-auto w-3/4 overflow-hidden rounded-[26px] border border-[#8a4f2b]/80 bg-[#111111] shadow-[0_18px_34px_rgba(0,0,0,0.4)]',
   tagline,
   description,
   previewImageUrl,
+  cardThumbnailDesktopUrl,
+  cardThumbnailMobileUrl,
   onActionClick,
   moderationStatus,
   showModerationBadge = false,
@@ -105,6 +105,7 @@ const CharacterGalleryCard = ({
   const tagChipLabel = toTagChipLabel(tagline)
   const descriptionPreview = toDescriptionPreview(description)
   const isCardClickable = !isStatusOnlyAction
+  const responsiveImageSrc = cardThumbnailMobileUrl ?? cardThumbnailDesktopUrl ?? previewImageUrl ?? null
 
   const handleCardClick = () => {
     if (!isCardClickable) {
@@ -136,17 +137,18 @@ const CharacterGalleryCard = ({
       role={isCardClickable ? 'link' : undefined}
       aria-label={isCardClickable ? `${actionLabel} for ${name}` : undefined}
     >
-      <div className={`relative aspect-[5/8.7] w-full ${previewImageUrl ? 'bg-black' : `bg-gradient-to-b ${gradientClassName}`}`}>
-        {previewImageUrl ? (
+      <div className={`relative aspect-[18/31] w-full ${responsiveImageSrc ? 'bg-black' : `bg-gradient-to-b ${gradientClassName}`}`}>
+        {responsiveImageSrc ? (
           <>
             <div className="absolute inset-0">
-              <Image
-                src={previewImageUrl}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={responsiveImageSrc}
+                width={360}
+                height={620}
                 alt={`${name} preview`}
-                fill
-                unoptimized
-                sizes="(min-width: 1024px) 22vw, (min-width: 640px) 45vw, 92vw"
-                className="object-cover object-center transition duration-300 ease-out group-hover:scale-[1.04] group-focus-within:scale-[1.04]"
+                loading="lazy"
+                className="h-full w-full object-cover object-center transition duration-300 ease-out group-hover:scale-[1.04] group-focus-within:scale-[1.04]"
               />
             </div>
             <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-black/10 to-transparent" />
@@ -155,44 +157,44 @@ const CharacterGalleryCard = ({
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_8%,rgba(255,255,255,0.26),transparent_52%)]" />
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0)_38%,rgba(255,190,140,0.12)_100%)] opacity-0 transition duration-200 ease-out group-hover:opacity-100 group-focus-within:opacity-100" />
 
-        <div className="absolute right-2 top-2 flex items-center gap-1.5 sm:right-3 sm:top-3 sm:gap-2">
-          <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#b1774b]/70 bg-black/45 px-2.5 text-[15px] font-semibold text-white sm:h-7 sm:px-2 sm:text-[17px]">
+        <div className="absolute right-2 top-2 flex items-center gap-1 sm:right-3 sm:top-3 sm:gap-2">
+          <span className="inline-flex h-7 items-center gap-1 rounded-full border border-[#b1774b]/70 bg-black/45 px-2 text-[12px] font-semibold text-white sm:h-7 sm:px-2 sm:text-[17px]">
             <span className="text-[#f6b577]">
-              <ChatBubbleIcon className="size-4 sm:size-[18px]" />
+              <MessageBubbleIcon className="size-4 sm:size-[18px]" />
             </span>
-            {chats}
+            {messages}
           </span>
-          <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#b1774b]/70 bg-black/45 px-2.5 text-[15px] font-semibold text-white sm:h-7 sm:px-2 sm:text-[17px]">
+          <span className="inline-flex h-7 items-center gap-1 rounded-full border border-[#b1774b]/70 bg-black/45 px-2 text-[12px] font-semibold text-white sm:h-7 sm:px-2 sm:text-[17px]">
             <span className="text-[#f6b577]">
               <HeartOutlineIcon className="size-4 sm:size-[18px]" />
             </span>
             {likes}
           </span>
         </div>
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#f28b45]/95 via-[#f28b45]/60 to-transparent px-3 pb-4 pt-12 sm:px-4 sm:pb-5 sm:pt-16">
+        <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,rgba(235,122,49,0)_0%,rgba(235,122,49,0.46)_42%,rgba(235,122,49,0.92)_100%)] px-2.5 pb-3 pt-8 sm:bg-gradient-to-t sm:from-[#f28b45]/95 sm:via-[#f28b45]/60 sm:to-transparent sm:px-4 sm:pb-5 sm:pt-16">
           <div className="flex justify-center">
-            <span className="inline-flex max-w-[min(100%,15rem)] min-h-7 items-center justify-center rounded-lg border border-white/25 bg-white/12 px-2 py-1 text-center text-[11px] font-bold uppercase leading-none tracking-[0.08em] text-white/92 sm:min-h-5 sm:px-1.5 sm:py-0.5 sm:text-[9px]">
+            <span className="inline-flex max-w-[min(100%,15rem)] min-h-6 items-center justify-center rounded-lg border border-white/25 bg-white/12 px-2 py-1 text-center text-[9px] font-bold uppercase leading-none tracking-[0.08em] text-white/92 sm:min-h-5 sm:px-1.5 sm:py-0.5 sm:text-[9px]">
               {tagChipLabel}
             </span>
           </div>
-          <p className="mt-2 text-center font-[family-name:var(--font-heading)] text-[21px] font-black leading-[0.95] tracking-[-0.03em] text-white drop-shadow-[0_4px_10px_rgba(0,0,0,0.55)] sm:mt-1.5 sm:text-[20px]">
+          <p className="mt-1.5 text-center font-[family-name:var(--font-heading)] text-[17px] font-black leading-[0.96] tracking-[-0.025em] text-white drop-shadow-[0_4px_10px_rgba(0,0,0,0.55)] sm:mt-1.5 sm:text-[20px]">
             {name}
           </p>
           {descriptionPreview ? (
-            <p className="mt-2 line-clamp-3 text-center text-[15px] leading-5 text-white/86 sm:mt-1.5 sm:line-clamp-2 sm:text-[14px] sm:leading-5">
+            <p className="mt-1.5 line-clamp-2 text-center text-[12px] leading-4 text-white/84 sm:mt-1.5 sm:line-clamp-2 sm:text-[14px] sm:leading-5">
               {descriptionPreview}
             </p>
           ) : null}
-          <div className="mt-3 flex justify-center sm:mt-3">
+          <div className="mt-2.5 flex justify-center sm:mt-3">
             {isStatusOnlyAction ? (
-              <span className="inline-flex h-[40px] min-w-[132px] items-center justify-center rounded-xl border border-black/20 bg-[#201410]/90 px-4 font-[family-name:var(--font-heading)] text-[13px] font-semibold italic uppercase leading-none tracking-[0.03em] text-white/90 sm:h-[32px] sm:min-w-[124px] sm:px-3 sm:text-[12px]">
+              <span className="inline-flex h-[34px] min-w-[112px] items-center justify-center rounded-xl border border-black/20 bg-[#201410]/90 px-3 font-[family-name:var(--font-heading)] text-[11px] font-semibold italic uppercase leading-none tracking-[0.03em] text-white/90 sm:h-[32px] sm:min-w-[124px] sm:px-3 sm:text-[12px]">
                 {actionLabel}
               </span>
             ) : (
               <Link
                 href={actionHref}
                 onClick={onActionClick}
-                className="relative z-10 inline-flex h-[42px] min-w-[132px] items-center justify-center rounded-xl border border-[#ffd1a5]/20 bg-[linear-gradient(135deg,rgba(47,23,16,0.96),rgba(28,16,12,0.96))] px-4 font-[family-name:var(--font-heading)] text-[13px] font-semibold uppercase leading-none tracking-[0.08em] text-white shadow-[0_10px_24px_rgba(20,10,8,0.28)] transition duration-200 ease-out hover:-translate-y-0.5 hover:border-[#f6b577]/65 hover:bg-[linear-gradient(135deg,rgba(92,40,20,0.98),rgba(48,23,14,0.98))] hover:text-[#fff4e8] hover:shadow-[0_14px_28px_rgba(54,24,12,0.42)] sm:h-[32px] sm:min-w-[124px] sm:px-3 sm:text-[12px]"
+                className="relative z-10 inline-flex h-[34px] min-w-[112px] items-center justify-center rounded-xl border border-[#ffd1a5]/20 bg-[linear-gradient(135deg,rgba(47,23,16,0.96),rgba(28,16,12,0.96))] px-3 font-[family-name:var(--font-heading)] text-[11px] font-semibold uppercase leading-none tracking-[0.08em] text-white shadow-[0_10px_24px_rgba(20,10,8,0.28)] transition duration-200 ease-out hover:-translate-y-0.5 hover:border-[#f6b577]/65 hover:bg-[linear-gradient(135deg,rgba(92,40,20,0.98),rgba(48,23,14,0.98))] hover:text-[#fff4e8] hover:shadow-[0_14px_28px_rgba(54,24,12,0.42)] sm:h-[32px] sm:min-w-[124px] sm:px-3 sm:text-[12px]"
                 aria-label={`${actionLabel} for ${name}`}
               >
                 {actionLabel}

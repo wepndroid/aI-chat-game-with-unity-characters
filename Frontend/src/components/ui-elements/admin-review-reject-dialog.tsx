@@ -33,9 +33,14 @@ const AdminReviewRejectDialog = ({
 
   useEffect(() => {
     if (open) {
-      setReason('')
-      setLocalError(null)
+      const timeout = window.setTimeout(() => {
+        setReason('')
+        setLocalError(null)
+      }, 0)
+      return () => window.clearTimeout(timeout)
     }
+
+    return undefined
   }, [open])
 
   useEffect(() => {

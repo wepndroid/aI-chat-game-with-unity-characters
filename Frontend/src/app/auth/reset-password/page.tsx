@@ -3,7 +3,7 @@
 import AuthInputField from '@/components/ui-elements/auth-input-field'
 import { resetPasswordWithToken } from '@/lib/auth-api'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 const ResetPasswordPage = () => {
   const [resetToken, setResetToken] = useState('')
@@ -12,6 +12,19 @@ const ResetPasswordPage = () => {
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isResetComplete, setIsResetComplete] = useState(false)
+
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    const token = url.searchParams.get('token')?.trim()
+    if (!token) {
+      return
+    }
+
+    setResetToken(token)
+    url.searchParams.delete('token')
+    const query = url.searchParams.toString()
+    window.history.replaceState({}, '', query ? `${url.pathname}?${query}${url.hash}` : `${url.pathname}${url.hash}`)
+  }, [])
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()

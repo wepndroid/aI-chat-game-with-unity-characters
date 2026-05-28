@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SecretWaifu Unity API
-  version: 1.1.0
+  version: 1.2.0
   description: |
     Unity-facing API contract snapshot.
     This schema is the machine-readable source of truth for Unity integration.
@@ -71,6 +71,153 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  /auth/webgl-launch-context:
+    post:
+      summary: Mint a short-lived Unity WebGL launch context token
+      description: |
+        Website-side endpoint. Requires an authenticated cookie or bearer session and a selected
+        `character_id`. Returns a short-lived `launch_token` that Unity WebGL can exchange for a
+        bearer token via `/auth/webgl-launch-context/resolve`.
+      operationId: issueWebglLaunchContext
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebglLaunchContextIssueRequest'
+      responses:
+        '200':
+          description: Launch context issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebglLaunchContextIssueResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Character is tier-locked for current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Character not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          headers:
+            Retry-After:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /auth/webgl-launch-context/resolve:
+    get:
+      summary: Exchange Unity WebGL launch token for short-lived bearer token
+      description: |
+        Unity WebGL calls this endpoint with `launch_token` to receive a bearer token plus launch
+        metadata (`character_id`, `open_screen`). Designed to avoid browser-origin CSRF coupling.
+      operationId: resolveWebglLaunchContext
+      security: []
+      parameters:
+        - in: query
+          name: launch_token
+          required: true
+          schema:
+            type: string
+            minLength: 20
+            maxLength: 512
+      responses:
+        '200':
+          description: Bearer token issued from launch context
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebglLaunchContextResolveResponse'
+        '400':
+          description: Launch context invalid/expired/consumed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Account suspended or character tier-locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Character not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          headers:
+            Retry-After:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /auth/unity-token:
+    post:
+      summary: Issue bearer token for Unity Desktop/VR
+      description: |
+        Non-browser token issue endpoint for Unity Desktop/VR.
+        Accepts JSON email/password and returns a bearer token in the response body.
+        This route does not depend on browser cookie auth.
+      operationId: postUnityToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnityTokenIssueRequest'
+      responses:
+        '200':
+          description: Token issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnityTokenIssueResponse'
+        '401':
+          description: Invalid e-mail or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Account suspended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          headers:
+            Retry-After:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   /auth/logout:
     post:
       summary: Revoke presented session token and clear cookie (if present)
@@ -106,6 +253,11 @@ paths:
   /characters:
     get:
       summary: List characters
+      description: >
+        Public endpoint with optional auth context. `scope=mine` requires authentication.
+        Unity playability is driven by approved+published story rows (`story_count`, `default_story_id`).
+        For legacy approved characters created before enforcement, run the one-time backend
+        `backfill:character-default-stories` script to materialize missing default stories.
       operationId: listCharacters
       security: []
       parameters:
@@ -125,6 +277,13 @@ paths:
             type: string
             enum: [full, unity]
             default: full
+        - in: query
+          name: scope
+          required: false
+          description: Unity-friendly roster scope alias (`official` maps to curated/admin-owned rows).
+          schema:
+            type: string
+            enum: [all, official, community, mine]
       responses:
         '200':
           description: Character list
@@ -132,6 +291,58 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CharacterListResponse'
+        '401':
+          description: Authentication required for scope=mine
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          headers:
+            Retry-After:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /characters/{character_id}/vrm-signed-url:
+    get:
+      summary: Request a fresh signed VRM model URL for one character
+      operationId: getCharacterVrmSignedUrl
+      parameters:
+        - in: path
+          name: character_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Signed URL issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnityModelSignedUrlResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Access denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Character/model not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
         '429':
           description: Rate limited
           headers:
@@ -146,6 +357,7 @@ paths:
   /characters/{character_id}/stories:
     get:
       summary: List stories for one character
+      description: Public endpoint with optional auth context. Tier-gated characters return `403` when caller lacks required access.
       operationId: listCharacterStories
       security: []
       parameters:
@@ -417,7 +629,7 @@ paths:
   /sessions/{session_id}/messages:
     get:
       summary: List one session transcript with cursor pagination
-      description: Returns persisted chat message rows for the owned session. Incomplete turns that were never persisted are not included. No additional deleted/moderated filtering is currently applied.
+      description: Returns persisted chat message rows for the owned session. Incomplete turns that were never persisted are not included. Soft-deleted sessions return `404`.
       operationId: listSessionMessages
       parameters:
         - in: path
@@ -471,9 +683,137 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  /sessions/{session_id}:
+    delete:
+      summary: Soft-delete one owned chat session
+      description: Marks the session as deleted and hides it from session lists/read/send routes.
+      operationId: deleteSession
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Session soft-deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionDeleteResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: Rate limited
+          headers:
+            Retry-After:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /sessions/{session_id}/unity-state:
+    get:
+      summary: Get Unity-owned session metadata blob
+      description: Returns Unity gameplay/session metadata scoped to this session and owned by the caller.
+      operationId: getSessionUnityState
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Unity session metadata payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionUnityStateResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    put:
+      summary: Upsert Unity-owned session metadata blob
+      description: Stores Unity gameplay/session metadata as opaque JSON. Backend does not interpret gameplay fields.
+      operationId: putSessionUnityState
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [metadata_version, metadata]
+              properties:
+                metadata_version:
+                  type: integer
+                  minimum: 1
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Stored Unity session metadata payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionUnityStateResponse'
+        '400':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   /chat/send:
     post:
       summary: Send one chat turn with atomic quota + idempotency
+      description: |
+        Voice behavior:
+        - Unity only sends `voice_enabled=true|false` (no explicit voice id field required).
+        - When `voice_enabled=true`, backend resolves `voice_ref_path` from session character:
+          1) use configured character voice URL when present
+          2) otherwise fallback to `"default"` voice alias.
       operationId: sendChatMessage
       parameters:
         - in: header
@@ -491,7 +831,7 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [session_id, message, client_message_id]
+              required: [session_id, message]
               properties:
                 session_id:
                   type: string
@@ -499,6 +839,20 @@ paths:
                   type: string
                   minLength: 1
                   maxLength: 8000
+                unity_system_context:
+                  type: string
+                  minLength: 1
+                  maxLength: 20000
+                  description: >
+                    Unity-owned hidden system/context prompt text used for assistant generation.
+                    Not persisted as a transcript message.
+                voice_enabled:
+                  type: boolean
+                  default: false
+                  description: Enables backend voice generation with server-side voice resolution (character voice or `default` fallback).
+                stream:
+                  type: boolean
+                  default: false
                 client_message_id:
                   type: string
                   pattern: '^[a-zA-Z0-9._:-]+$'
@@ -518,6 +872,9 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/ChatSendSuccessResponse'
                   - $ref: '#/components/schemas/QuotaDataResponse'
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/ChatSseEvent'
         '400':
           description: Validation failed
           content:
@@ -575,6 +932,198 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  /chat/gameplay-send:
+    post:
+      summary: Persist gameplay/system event + assistant reply without consuming message or voice quota
+      description: |
+        Non-quota gameplay/system generation endpoint.
+        Calls to this endpoint do not consume message quota or voice quota units.
+        When `voice_enabled=true`, backend applies the same server-side voice resolution as `/chat/send`:
+        character voice when configured, otherwise `"default"` fallback.
+      operationId: sendGameplayChatMessage
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+            pattern: '^[a-zA-Z0-9._:-]+$'
+          description: Optional header alias for client_event_id. If both are provided, values must match.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [session_id, event_type, event_payload, event_display_text, unity_system_context]
+              properties:
+                session_id:
+                  type: string
+                event_type:
+                  type: string
+                  enum: [touch, undress, post_sex_return, sex_rejected, sex_postponed]
+                event_payload:
+                  type: object
+                  additionalProperties: true
+                event_display_text:
+                  type: string
+                  minLength: 1
+                  maxLength: 8000
+                unity_system_context:
+                  type: string
+                  minLength: 1
+                  maxLength: 20000
+                voice_enabled:
+                  type: boolean
+                  default: false
+                  description: Enables backend voice generation with server-side voice resolution (character voice or `default` fallback).
+                stream:
+                  type: boolean
+                  default: false
+                client_event_id:
+                  type: string
+                  pattern: '^[a-zA-Z0-9._:-]+$'
+                  maxLength: 128
+      responses:
+        '200':
+          description: Completed gameplay send result (fresh or replayed)
+          headers:
+            Idempotency-Replayed:
+              description: Present and true when backend replays an already-completed idempotent request.
+              schema:
+                type: string
+                enum: ['true']
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameplaySendSuccessResponse'
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/ChatSseEvent'
+        '400':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: Idempotency key is currently in progress
+          headers:
+            Retry-After:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '422':
+          description: Idempotency key was reused with different payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          description: AI provider failure or finalize failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /tts/request:
+    post:
+      summary: Queue one Unity-driven TTS segment and return voice_task_id
+      description: |
+        Unity calls this per sentence/chunk for playback orchestration.
+        This endpoint does not consume message quota; it only creates a voice task linked to an existing session/message context.
+      operationId: requestTtsTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TtsRequestBody'
+      responses:
+        '202':
+          description: TTS task accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TtsRequestResponse'
+        '400':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Session/message not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          description: TTS webhook not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /tts/stream/{voice_task_id}:
+    get:
+      summary: WebSocket upgrade endpoint for streaming voice PCM frames by task id
+      description: |
+        Unity opens this socket after receiving `voice_task_id` from `/api/chat/send` or `/api/chat/gameplay-send`.
+        Authentication can be provided via bearer header or query token.
+        Stream frame contract:
+        - text frame: `{"type":"metadata","task_id":"...","sample_rate":24000,"channels":1,"estimated_samples":...}` (initial control frame)
+        - binary frame: raw PCM bytes
+        - text frame: `{"type":"complete"}` stream finished
+        - text frame: `{"type":"error","message":"..."}` stream failed
+        - text frame: `{"type":"cancelled"}` stream cancelled
+        PCM format: Float32, mono, 24000 Hz, little-endian.
+      operationId: streamVoiceTask
+      parameters:
+        - in: path
+          name: voice_task_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: token
+          required: false
+          schema:
+            type: string
+          description: Optional bearer token alias for WebSocket clients that cannot set Authorization headers.
+      responses:
+        '101':
+          description: Switching Protocols (WebSocket)
+        '401':
+          description: Authentication required
+        '403':
+          description: Voice task not owned by authenticated user
+        '500':
+          description: Stream unavailable
+
   /chat/quota/check:
     post:
       summary: Advisory quota precheck (no consume, no reserve)
@@ -591,6 +1140,9 @@ paths:
                   type: string
                 user_id:
                   type: string
+                voice_enabled:
+                  type: boolean
+                  default: false
       responses:
         '200':
           description: Quota data
@@ -643,6 +1195,9 @@ paths:
                   type: string
                 user_id:
                   type: string
+                voice_enabled:
+                  type: boolean
+                  default: false
       responses:
         '200':
           description: Quota data
@@ -683,6 +1238,23 @@ paths:
     get:
       summary: Get current quota status
       operationId: getQuotaStatus
+      parameters:
+        - in: query
+          name: userId
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: user_id
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: voice_enabled
+          required: false
+          schema:
+            type: boolean
+            default: false
       responses:
         '200':
           description: Quota data
@@ -773,6 +1345,7 @@ components:
         - DUPLICATE_REQUEST
         - IDEMPOTENCY_IN_PROGRESS
         - IDEMPOTENCY_KEY_REUSED
+        - DEFAULT_STORY_REQUIRED
         - INTERNAL_ERROR
 
     StoryScenarioType:
@@ -781,7 +1354,7 @@ components:
 
     ChatMessageRole:
       type: string
-      enum: [USER, ASSISTANT]
+      enum: [USER, ASSISTANT, GAMEPLAY]
 
     StoryPublicationStatus:
       type: string
@@ -852,6 +1425,7 @@ components:
         - id
         - email
         - username
+        - player_name
         - role
         - is_email_verified
         - avatar_url
@@ -867,6 +1441,9 @@ components:
           type: string
         username:
           type: string
+        player_name:
+          type: string
+          description: In-game display name editable from profile (falls back to username when unset).
         role:
           type: string
           enum: [USER, ADMIN]
@@ -886,6 +1463,16 @@ components:
           type:
             - string
             - 'null'
+          description: Canonical product tier code (`free`, `basic`, `premium`). Legacy aliases may appear only during migration windows.
+        effective_tier_code:
+          type: string
+          enum: [free, basic, premium, admin]
+          description: Effective access tier resolved from active entitlements/Patreon (and `admin` for admin users). Use this for access gating checks.
+        effective_tier_cents:
+          type:
+            - integer
+            - 'null'
+          description: Effective Patreon-equivalent tier amount used by access logic (null for admin users).
         tier:
           oneOf:
             - $ref: '#/components/schemas/AuthMeTier'
@@ -921,6 +1508,121 @@ components:
               type: string
               enum: [Bearer]
 
+    UnityTokenIssueRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      additionalProperties: false
+
+    UnityTokenIssueUser:
+      type: object
+      required: [id, email, username, player_name, role, is_email_verified]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        username:
+          type: string
+        player_name:
+          type: string
+          description: In-game display name editable from profile (falls back to username when unset).
+        role:
+          type: string
+          enum: [USER, ADMIN]
+        is_email_verified:
+          type: boolean
+
+    UnityTokenIssueResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [access_token, token_type, expires_at, user]
+          properties:
+            access_token:
+              type: string
+            token_type:
+              type: string
+              enum: [Bearer]
+            expires_at:
+              type: string
+              format: date-time
+            user:
+              $ref: '#/components/schemas/UnityTokenIssueUser'
+
+    WebglLaunchContextIssueRequest:
+      type: object
+      required: [character_id]
+      properties:
+        character_id:
+          type: string
+        single_use:
+          type: boolean
+          default: true
+      additionalProperties: false
+
+    WebglLaunchContextIssueResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [launch_token, character_id, expires_at, single_use]
+          properties:
+            launch_token:
+              type: string
+            character_id:
+              type: string
+            expires_at:
+              type: string
+              format: date-time
+            single_use:
+              type: boolean
+
+    WebglLaunchContextResolveResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [access_token, token_type, expires_at, player_name, launch]
+          properties:
+            access_token:
+              type: string
+            token_type:
+              type: string
+              enum: [Bearer]
+            expires_at:
+              type: string
+              format: date-time
+            player_name:
+              type: string
+              description: In-game display name editable from profile (falls back to username when unset).
+            launch:
+              type: object
+              required: [character_id, open_screen]
+              properties:
+                character_id:
+                  type: string
+                open_screen:
+                  type: string
+                  enum: [story_select]
+
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
     CharacterUnityAsset:
       type: object
       required: [asset_key, model_url, model_hash, model_version, icon_url, signed_model_url_endpoint]
@@ -942,13 +1644,38 @@ components:
           type:
             - string
             - 'null'
+        voice_file_url:
+          type:
+            - string
+            - 'null'
+          description: Optional selected/static character voice clip URL for Unity. Backend uses this as preferred voice source when `voice_enabled=true`; falls back to `"default"` when null.
+        voice_file_name:
+          type:
+            - string
+            - 'null'
+          description: Optional selected/static character voice clip display filename.
         signed_model_url_endpoint:
           type: string
           format: uri
 
     CharacterUnity:
       type: object
-      required: [id, slug, name, preview_image_url, thumbnail_url, tier_code, story_count, default_story_id, unity_asset]
+      required:
+        [
+          id,
+          slug,
+          name,
+          preview_image_url,
+          thumbnail_url,
+          tier_code,
+          story_count,
+          default_story_id,
+          source_type,
+          is_mine,
+          uploader_display_name,
+          access_state,
+          unity_asset
+        ]
       properties:
         id:
           type: string
@@ -966,12 +1693,28 @@ components:
             - 'null'
         tier_code:
           type: string
+          description: Canonical product tier code (`free`, `basic`, `premium`) for Unity-facing responses.
         story_count:
           type: integer
+          description: Number of approved+published playable stories visible to Unity for this character.
         default_story_id:
           type:
             - string
             - 'null'
+          description: Default playable story id. Null means backend has no approved+published default story row yet.
+        source_type:
+          type: string
+          enum: [official, community]
+        is_mine:
+          type: boolean
+        uploader_display_name:
+          type: string
+        access_state:
+          type: string
+          enum: [accessible, tier_locked, unavailable]
+          description: >
+            Runtime access state for Unity. Characters without an approved published
+            default story are returned as `unavailable`.
         unity_asset:
           $ref: '#/components/schemas/CharacterUnityAsset'
 
@@ -994,7 +1737,7 @@ components:
 
     CharacterRef:
       type: object
-      required: [id, slug, name]
+      required: [id, slug, name, default_story_id]
       properties:
         id:
           type: string
@@ -1002,9 +1745,26 @@ components:
           type: string
         name:
           type: string
+        default_story_id:
+          type:
+            - string
+            - 'null'
+
+    StoryAuthorRef:
+      type: object
+      required: [id, username]
+      properties:
+        id:
+          type: string
+        username:
+          type: string
 
     StoryListItem:
       type: object
+      description: |
+        Story read DTO for Unity story selection.
+        New story authoring requires `prompt_description`, `personality`, `scenario`, and `first_message`.
+        `scenario_type` remains nullable/legacy and is not required for publish flow.
       required:
         - id
         - title
@@ -1016,6 +1776,8 @@ components:
         - published_at
         - likes_count
         - has_liked
+        - is_curated
+        - author
       properties:
         id:
           type: string
@@ -1050,6 +1812,10 @@ components:
           type: integer
         has_liked:
           type: boolean
+        is_curated:
+          type: boolean
+        author:
+          $ref: '#/components/schemas/StoryAuthorRef'
 
     CharacterStoriesData:
       type: object
@@ -1220,6 +1986,46 @@ components:
         data:
           $ref: '#/components/schemas/SessionItem'
 
+    SessionDeleteData:
+      type: object
+      required: [id, deleted, deleted_at]
+      properties:
+        id:
+          type: string
+        deleted:
+          type: boolean
+          enum: [true]
+        deleted_at:
+          type: string
+          format: date-time
+
+    SessionDeleteResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/SessionDeleteData'
+
+    SessionUnityStateData:
+      type: object
+      required: [session_id, metadata_version, metadata]
+      properties:
+        session_id:
+          type: string
+        metadata_version:
+          type: integer
+          minimum: 1
+        metadata:
+          type: object
+          additionalProperties: true
+
+    SessionUnityStateResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/SessionUnityStateData'
+
     SessionListResponse:
       type: object
       required: [data, page]
@@ -1231,9 +2037,13 @@ components:
         page:
           $ref: '#/components/schemas/PageInfo'
 
+    SessionMessageKind:
+      type: string
+      enum: [user_text, assistant_text, gameplay_event, gameplay_assistant]
+
     SessionMessageItem:
       type: object
-      required: [id, session_id, role, content, client_message_id, created_at]
+      required: [id, session_id, role, message_kind, content, client_message_id, client_event_id, audio_url, created_at]
       properties:
         id:
           type: string
@@ -1241,9 +2051,19 @@ components:
           type: string
         role:
           $ref: '#/components/schemas/ChatMessageRole'
+        message_kind:
+          $ref: '#/components/schemas/SessionMessageKind'
         content:
           type: string
         client_message_id:
+          type:
+            - string
+            - 'null'
+        client_event_id:
+          type:
+            - string
+            - 'null'
+        audio_url:
           type:
             - string
             - 'null'
@@ -1262,7 +2082,7 @@ components:
         page:
           $ref: '#/components/schemas/PageInfo'
 
-    MessageItem:
+    UserMessageItem:
       type: object
       required: [id, role, content, created_at]
       properties:
@@ -1276,23 +2096,150 @@ components:
           type: string
           format: date-time
 
+    AssistantMessageItem:
+      type: object
+      required: [id, role, content, created_at, audio_url]
+      properties:
+        id:
+          type: string
+        role:
+          $ref: '#/components/schemas/ChatMessageRole'
+        content:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        audio_url:
+          type:
+            - string
+            - 'null'
+
+    QuotaExhaustionReason:
+      oneOf:
+        - type: string
+          enum: [message_quota_exhausted, voice_quota_exhausted]
+        - type: 'null'
+
+    VoiceQuotaStatus:
+      type: string
+      enum: [not_requested, disabled, quota_exhausted, generated, generation_failed, not_generated]
+
+    MessageQuotaDetail:
+      type: object
+      required: [limit, used, reserved, remaining, unlimited]
+      properties:
+        limit:
+          oneOf:
+            - type: integer
+            - type: 'null'
+        used:
+          type: integer
+        reserved:
+          type: integer
+        remaining:
+          oneOf:
+            - type: integer
+            - type: 'null'
+        unlimited:
+          type: boolean
+
+    VoiceQuotaDetail:
+      type: object
+      required: [enabled, requested, allowed, status, limit, used, reserved, remaining, unlimited, audio_url, user_message]
+      properties:
+        enabled:
+          type: boolean
+        requested:
+          type: boolean
+        allowed:
+          type: boolean
+        status:
+          $ref: '#/components/schemas/VoiceQuotaStatus'
+        limit:
+          oneOf:
+            - type: integer
+            - type: 'null'
+        used:
+          type: integer
+        reserved:
+          type: integer
+        remaining:
+          oneOf:
+            - type: integer
+            - type: 'null'
+        unlimited:
+          type: boolean
+        audio_url:
+          type:
+            - string
+            - 'null'
+        user_message:
+          type:
+            - string
+            - 'null'
+
     ChatSendSuccessData:
       type: object
-      required: [allowed, session_id, remaining, user_message, assistant_message, provider]
+      required:
+        [
+          allowed,
+          exhaustion_reason,
+          can_send_text,
+          can_generate_voice,
+          user_id,
+          tier_code,
+          limit,
+          remaining,
+          period_ends_at,
+          message_quota,
+          voice_quota,
+          session_id,
+          user_message,
+          assistant_message,
+          voice_task_id,
+          provider
+        ]
       properties:
         allowed:
           type: boolean
           enum: [true]
+        exhaustion_reason:
+          $ref: '#/components/schemas/QuotaExhaustionReason'
+        can_send_text:
+          type: boolean
+          enum: [true]
+        can_generate_voice:
+          type: boolean
+        user_id:
+          type: string
+        tier_code:
+          type: string
+          description: Canonical product tier code (`free`, `basic`, `premium`, or `admin`).
+        limit:
+          type: integer
         idempotency_replayed:
           type: boolean
         session_id:
           type: string
         remaining:
-          type: integer
+          oneOf:
+            - type: integer
+            - type: 'null'
+        period_ends_at:
+          type: string
+          format: date-time
+        message_quota:
+          $ref: '#/components/schemas/MessageQuotaDetail'
+        voice_quota:
+          $ref: '#/components/schemas/VoiceQuotaDetail'
         user_message:
-          $ref: '#/components/schemas/MessageItem'
+          $ref: '#/components/schemas/UserMessageItem'
         assistant_message:
-          $ref: '#/components/schemas/MessageItem'
+          $ref: '#/components/schemas/AssistantMessageItem'
+        voice_task_id:
+          type:
+            - string
+            - 'null'
         provider:
           type: string
 
@@ -1303,18 +2250,183 @@ components:
         data:
           $ref: '#/components/schemas/ChatSendSuccessData'
 
+    GameplayEventMessageItem:
+      type: object
+      required: [id, role, content, client_event_id, created_at]
+      properties:
+        id:
+          type: string
+        role:
+          type: string
+          enum: [GAMEPLAY]
+        content:
+          type: string
+        client_event_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    GameplayAssistantMessageItem:
+      type: object
+      required: [id, role, content, client_event_id, created_at, audio_url]
+      properties:
+        id:
+          type: string
+        role:
+          type: string
+          enum: [ASSISTANT]
+        content:
+          type: string
+        client_event_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        audio_url:
+          type:
+            - string
+            - 'null'
+
+    GameplaySendSuccessData:
+      type: object
+      required:
+        [
+          session_id,
+          non_quota,
+          idempotency_replayed,
+          client_event_id,
+          event_type,
+          event_message,
+          assistant_message,
+          voice_task_id,
+          provider
+        ]
+      properties:
+        session_id:
+          type: string
+        non_quota:
+          type: boolean
+          enum: [true]
+        idempotency_replayed:
+          type: boolean
+        client_event_id:
+          type: string
+        event_type:
+          type: string
+          enum: [touch, undress, post_sex_return, sex_rejected, sex_postponed]
+        event_message:
+          $ref: '#/components/schemas/GameplayEventMessageItem'
+        assistant_message:
+          $ref: '#/components/schemas/GameplayAssistantMessageItem'
+        voice_task_id:
+          type:
+            - string
+            - 'null'
+        provider:
+          type: string
+
+    GameplaySendSuccessResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/GameplaySendSuccessData'
+
+    TtsRequestBody:
+      type: object
+      additionalProperties: false
+      required: [session_id, message_id, text]
+      properties:
+        session_id:
+          type: string
+        message_id:
+          type: string
+        text:
+          type: string
+          minLength: 1
+          maxLength: 8000
+        voice_ref:
+          type: string
+          description: Voice alias (`default`, `narrator`, or character alias).
+        voice_ref_path:
+          type: string
+          description: Explicit voice ref path override.
+        emotion:
+          type: string
+        emo_text:
+          type: string
+        emo_alpha:
+          type: number
+        emotion_vector:
+          type: string
+
+    TtsRequestData:
+      type: object
+      required: [voice_task_id, session_id, message_id, voice_ref_path, status]
+      properties:
+        voice_task_id:
+          type: string
+        session_id:
+          type: string
+        message_id:
+          type: string
+        voice_ref_path:
+          type: string
+        status:
+          type: string
+          enum: [queued]
+
+    TtsRequestResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/TtsRequestData'
+
+    ChatSseEvent:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [token, done, error]
+
     QuotaData:
       type: object
-      required: [allowed, user_id, remaining, tier_code, limit, period_ends_at, user_message]
+      required:
+        [
+          allowed,
+          exhaustion_reason,
+          can_send_text,
+          can_generate_voice,
+          user_id,
+          tier_code,
+          limit,
+          remaining,
+          period_ends_at,
+          user_message,
+          message_quota,
+          voice_quota
+        ]
       properties:
         allowed:
+          type: boolean
+        exhaustion_reason:
+          $ref: '#/components/schemas/QuotaExhaustionReason'
+        can_send_text:
+          type: boolean
+        can_generate_voice:
           type: boolean
         user_id:
           type: string
         remaining:
-          type: integer
+          oneOf:
+            - type: integer
+            - type: 'null'
         tier_code:
           type: string
+          description: Canonical product tier code (`free`, `basic`, `premium`, or `admin`).
         limit:
           type: integer
         period_ends_at:
@@ -1324,6 +2436,10 @@ components:
           type:
             - string
             - 'null'
+        message_quota:
+          $ref: '#/components/schemas/MessageQuotaDetail'
+        voice_quota:
+          $ref: '#/components/schemas/VoiceQuotaDetail'
 
     QuotaDataResponse:
       type: object
@@ -1331,3 +2447,31 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/QuotaData'
+
+    UnityModelSignedUrlData:
+      type: object
+      required: [character_id, model_url, expires_at, model_hash, model_version]
+      properties:
+        character_id:
+          type: string
+        model_url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+        model_hash:
+          type:
+            - string
+            - 'null'
+        model_version:
+          type: string
+          format: date-time
+
+    UnityModelSignedUrlResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/UnityModelSignedUrlData'
+

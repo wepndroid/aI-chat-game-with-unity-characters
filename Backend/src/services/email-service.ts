@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer'
 import { getEmailConfig } from '../lib/auth-config'
+import { getRenderedEmailTemplateByKey } from './email-template-service'
 
 type VerificationEmailPayload = {
   toEmail: string
@@ -17,9 +18,18 @@ type PasswordResetEmailPayload = {
   expiresAt: Date
 }
 
+type WelcomeEmailPayload = {
+  toEmail: string
+  username: string
+  ctaUrl: string
+  membersUrl: string
+}
+
 interface EmailService {
+  sendEmailMessage(payload: { toEmail: string; subject: string; text: string; html: string }): Promise<void>
   sendVerificationEmail(payload: VerificationEmailPayload): Promise<void>
   sendPasswordResetEmail(payload: PasswordResetEmailPayload): Promise<void>
+  sendWelcomeEmail(payload: WelcomeEmailPayload): Promise<void>
 }
 
 const parseDuration = (value: string | undefined, fallbackValue: number) => {
@@ -33,6 +43,29 @@ const parseDuration = (value: string | undefined, fallbackValue: number) => {
 }
 
 const emailSendTimeoutMs = parseDuration(process.env.EMAIL_SEND_TIMEOUT_MS, 6000)
+const frontendPublicUrl = process.env.FRONTEND_URL?.trim() || 'http://127.0.0.1:7000'
+
+const parseFromAddressToEmail = (value: string) => {
+  const angleMatch = /<([^>]+)>/.exec(value)
+
+  if (angleMatch?.[1]) {
+    return angleMatch[1].trim()
+  }
+
+  return value.trim()
+}
+
+const getBaseTemplateVariables = () => {
+  const emailConfig = getEmailConfig()
+
+  return {
+    app_name: 'SecretWaifu',
+    members_url: `${frontendPublicUrl}/members`,
+    login_url: `${frontendPublicUrl}/sign-up`,
+    cta_url: `${frontendPublicUrl}/members`,
+    support_email: parseFromAddressToEmail(emailConfig.from)
+  }
+}
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined
@@ -78,18 +111,75 @@ class EnvironmentEmailService implements EmailService {
     })
   }
 
-  private async sendMessage(toEmail: string, subject: string, text: string, html: string) {
+  private getMailgunApiBaseUrl() {
     const emailConfig = getEmailConfig()
-    const transporter = this.createTransporter()
+    return emailConfig.mailgunRegion === 'eu' ? 'https://api.eu.mailgun.net' : 'https://api.mailgun.net'
+  }
+
+  private async sendViaMailgunApi(toEmail: string, subject: string, text: string, html: string) {
+    const emailConfig = getEmailConfig()
+    const hasMinimumMailgunConfig = Boolean(emailConfig.mailgunDomain && emailConfig.mailgunApiKey && emailConfig.from)
+
+    if (!hasMinimumMailgunConfig) {
+      throw new Error('Mailgun provider is selected but required Mailgun settings are incomplete.')
+    }
+
+    const body = new URLSearchParams({
+      from: emailConfig.from,
+      to: toEmail,
+      subject,
+      text,
+      html
+    })
+
+    const controller = new AbortController()
+    const timeoutHandle = setTimeout(() => {
+      controller.abort()
+    }, emailSendTimeoutMs)
+
+    try {
+      const response = await fetch(`${this.getMailgunApiBaseUrl()}/v3/${emailConfig.mailgunDomain}/messages`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${Buffer.from(`api:${emailConfig.mailgunApiKey}`).toString('base64')}`,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body,
+        signal: controller.signal
+      })
+
+      if (!response.ok) {
+        const failureText = await response.text().catch(() => '')
+        throw new Error(`Mailgun send failed with ${response.status}${failureText ? `: ${failureText}` : '.'}`)
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new Error(`Email send timed out after ${emailSendTimeoutMs}ms.`)
+      }
+
+      throw error
+    } finally {
+      clearTimeout(timeoutHandle)
+    }
+  }
+
+  async sendEmailMessage(payload: { toEmail: string; subject: string; text: string; html: string }) {
+    const emailConfig = getEmailConfig()
+    const transporter = emailConfig.provider === 'smtp' ? this.createTransporter() : null
+
+    if (emailConfig.provider === 'mailgun') {
+      await this.sendViaMailgunApi(payload.toEmail, payload.subject, payload.text, payload.html)
+      return
+    }
 
     if (transporter) {
       await withTimeout(
         transporter.sendMail({
           from: emailConfig.from,
-          to: toEmail,
-          subject,
-          text,
-          html
+          to: payload.toEmail,
+          subject: payload.subject,
+          text: payload.text,
+          html: payload.html
         }),
         emailSendTimeoutMs
       )
@@ -97,8 +187,8 @@ class EnvironmentEmailService implements EmailService {
     }
 
     if (process.env.NODE_ENV !== 'production') {
-      console.info(`[EmailService:dev-fallback] To=${toEmail} | Subject=${subject}`)
-      console.info(text)
+      console.info(`[EmailService:dev-fallback] To=${payload.toEmail} | Subject=${payload.subject}`)
+      console.info(payload.text)
       return
     }
 
@@ -106,63 +196,58 @@ class EnvironmentEmailService implements EmailService {
   }
 
   async sendVerificationEmail(payload: VerificationEmailPayload) {
-    const expiryLabel = payload.expiresAt.toISOString()
-    const subject = 'Verify your SecretWaifu account email'
-    const textLines = [
-      `Hello ${payload.username},`,
-      '',
-      'Your SecretWaifu one-time verification code is:',
-      payload.verificationCode,
-      '',
-      `This code expires at ${expiryLabel}.`
-    ]
+    const { rendered } = await getRenderedEmailTemplateByKey('auth_verify_email', {
+      ...getBaseTemplateVariables(),
+      username: payload.username,
+      verification_code: payload.verificationCode,
+      verification_url: payload.verificationUrl ?? '',
+      expires_at: payload.expiresAt.toISOString()
+    })
 
-    if (payload.verificationUrl) {
-      textLines.push('', 'Optional quick link:', payload.verificationUrl)
-    }
-
-    const text = textLines.join('\n')
-    const html = `
-      <p>Hello ${payload.username},</p>
-      <p>Your SecretWaifu one-time verification code is:</p>
-      <p><strong style="font-size:20px; letter-spacing:2px;">${payload.verificationCode}</strong></p>
-      <p>This code expires at ${expiryLabel}.</p>
-      ${payload.verificationUrl ? `<p>Optional quick link: <a href="${payload.verificationUrl}">${payload.verificationUrl}</a></p>` : ''}
-    `
-
-    await this.sendMessage(payload.toEmail, subject, text, html)
+    await this.sendEmailMessage({
+      toEmail: payload.toEmail,
+      subject: rendered.subject,
+      text: rendered.text,
+      html: rendered.html
+    })
   }
 
   async sendPasswordResetEmail(payload: PasswordResetEmailPayload) {
-    const expiryLabel = payload.expiresAt.toISOString()
-    const subject = 'Reset your SecretWaifu account password'
-    const text = [
-      `Hello ${payload.username},`,
-      '',
-      'Your password reset code is:',
-      payload.resetCode,
-      '',
-      'Open this page and paste the code to reset your password:',
-      payload.resetUrl,
-      '',
-      `This code expires at ${expiryLabel}.`,
-      'If you did not request this, you can ignore this message.'
-    ].join('\n')
-    const html = `
-      <p>Hello ${payload.username},</p>
-      <p>Your password reset code is:</p>
-      <p><strong style="font-size:20px; letter-spacing:2px;">${payload.resetCode}</strong></p>
-      <p>Open this page and paste the code to reset your password:</p>
-      <p><a href="${payload.resetUrl}">${payload.resetUrl}</a></p>
-      <p>This code expires at ${expiryLabel}.</p>
-      <p>If you did not request this, you can ignore this message.</p>
-    `
+    const { rendered } = await getRenderedEmailTemplateByKey('auth_password_reset', {
+      ...getBaseTemplateVariables(),
+      username: payload.username,
+      reset_code: payload.resetCode,
+      reset_url: payload.resetUrl,
+      expires_at: payload.expiresAt.toISOString()
+    })
 
-    await this.sendMessage(payload.toEmail, subject, text, html)
+    await this.sendEmailMessage({
+      toEmail: payload.toEmail,
+      subject: rendered.subject,
+      text: rendered.text,
+      html: rendered.html
+    })
+  }
+
+  async sendWelcomeEmail(payload: WelcomeEmailPayload) {
+    const { rendered } = await getRenderedEmailTemplateByKey('welcome_new_account', {
+      ...getBaseTemplateVariables(),
+      username: payload.username,
+      cta_url: payload.ctaUrl,
+      members_url: payload.membersUrl,
+      email: payload.toEmail
+    })
+
+    await this.sendEmailMessage({
+      toEmail: payload.toEmail,
+      subject: rendered.subject,
+      text: rendered.text,
+      html: rendered.html
+    })
   }
 }
 
 const emailService: EmailService = new EnvironmentEmailService()
 
 export { emailService }
-export type { EmailService, PasswordResetEmailPayload, VerificationEmailPayload }
+export type { EmailService, PasswordResetEmailPayload, VerificationEmailPayload, WelcomeEmailPayload }

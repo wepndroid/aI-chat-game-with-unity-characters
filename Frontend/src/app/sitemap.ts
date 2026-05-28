@@ -5,6 +5,35 @@ import { absoluteUrl } from '@/lib/site'
 
 export const revalidate = 3600
 
+const loadCharacterSitemapRoutes = async (): Promise<MetadataRoute.Sitemap> => {
+  const characterRoutes: MetadataRoute.Sitemap = []
+  let cursor: string | null = null
+
+  do {
+    const payload = await listCharacters({
+      galleryScope: 'all',
+      sort: 'newest',
+      limit: 200,
+      cursor
+    })
+
+    characterRoutes.push(
+      ...payload.data
+        .filter((character) => character.status === 'APPROVED' && character.visibility === 'PUBLIC')
+        .map((character) => ({
+          url: absoluteUrl(`/ai-girlfriends/${buildAiGirlfriendRouteKey(character.name, character.id)}`),
+          lastModified: new Date(character.updatedAt),
+          changeFrequency: 'weekly' as const,
+          priority: 0.6
+        }))
+    )
+
+    cursor = payload.page?.nextCursor ?? null
+  } while (cursor)
+
+  return characterRoutes
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticRoutes: MetadataRoute.Sitemap = [
     {
@@ -25,21 +54,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ]
 
   try {
-    const payload = await listCharacters({
-      galleryScope: 'all',
-      sort: 'newest',
-      limit: 1000
-    })
-
-    const characterRoutes: MetadataRoute.Sitemap = payload.data
-      .filter((character) => character.status === 'APPROVED' && character.visibility === 'PUBLIC')
-      .map((character) => ({
-        url: absoluteUrl(`/ai-girlfriends/${buildAiGirlfriendRouteKey(character.name, character.id)}`),
-        lastModified: new Date(character.updatedAt),
-        changeFrequency: 'weekly',
-        priority: 0.6
-      }))
-
+    const characterRoutes = await loadCharacterSitemapRoutes()
     return [...staticRoutes, ...characterRoutes]
   } catch {
     return staticRoutes

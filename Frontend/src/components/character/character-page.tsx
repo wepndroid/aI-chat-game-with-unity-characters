@@ -1,15 +1,21 @@
 'use client'
 
 import { useAuth } from '@/components/providers/auth-provider'
+import { buildScenarioEditHref } from '@/components/your-characters/your-scenarios-helpers'
 import CharacterStatTile from '@/components/ui-elements/character-stat-tile'
 import CharacterCommunityStories from '@/components/character/character-community-stories'
 import {
+  collectViewerLinkedCharacterPageStories,
+  isLiveApprovedCharacterPageStory
+} from '@/components/character/character-story-catalog-display-policy'
+import {
   getCharacterDetail,
-  recordCharacterChatStart,
-  toggleCharacterHeart,
+  getCharacterVrmSignedUrl,
   type CharacterDetailRecord
 } from '@/lib/character-api'
-import { listStories, toggleStoryLike, type StoryListRecord } from '@/lib/story-api'
+import { ApiRequestError } from '@/lib/api-client'
+import { listCharacterStories, listStories, toggleStoryLike, type StoryListRecord } from '@/lib/story-api'
+import { resolveStartChatHref, resolveStartChatInterception } from '@/components/character/character-action-state'
 import {
   createCharacterReview,
   deleteCharacterReview,
@@ -17,7 +23,8 @@ import {
   updateCharacterReview,
   type CharacterReviewRecord
 } from '@/lib/review-api'
-import { buildAiGirlfriendRouteKey } from '@/lib/ai-girlfriend-route'
+import { buildAiGirlfriendRouteKey, extractAiGirlfriendIdFromRouteKey } from '@/lib/ai-girlfriend-route'
+import { formatCompactCount } from '@/lib/format-compact-count'
 import {
   createVrmGLTFLoader,
   getVrmFromGltfUserData,
@@ -26,22 +33,18 @@ import {
   type VRM,
   type VrmLoadedGltf
 } from '@/lib/vrm-three'
+import { EMAIL_VERIFICATION_PROFILE_HREF, REGISTERED_CHARACTER_SIGN_UP_HREF } from '@/lib/registered-character-access'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 
 type CharacterPageProps = {
   characterId?: string
   initialCharacterRecord?: CharacterDetailRecord | null
 }
 
-const formatCompactNumber = (value: number) => {
-  return new Intl.NumberFormat('en-US', {
-    notation: 'compact',
-    maximumFractionDigits: 1
-  }).format(value)
-}
+type EmailVerificationPromptAction = 'start-chat' | 'preview-3d'
 
 const formatReviewRelativeLabel = (value: string) => {
   const parsedDate = new Date(value)
@@ -124,8 +127,7 @@ const CharacterPreviewVisual = ({ previewImageUrl, characterName }: { previewIma
 
 const CharacterPage = ({ characterId, initialCharacterRecord = null }: CharacterPageProps) => {
   const pathname = usePathname()
-  const { sessionUser } = useAuth()
-  const initialCharacterRecordRef = useRef(initialCharacterRecord)
+  const { sessionUser, isAuthLoading } = useAuth()
   const [isLoading, setIsLoading] = useState(Boolean(characterId) && !initialCharacterRecord)
   const [errorMessage, setErrorMessage] = useState<string | null>(
     characterId ? null : 'No AI girlfriend selected. Open one from the gallery.'
@@ -136,9 +138,10 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
   const [threePreviewLoadProgress, setThreePreviewLoadProgress] = useState<number | null>(null)
   const [threePreviewErrorMessage, setThreePreviewErrorMessage] = useState<string | null>(null)
   const [isThreePreviewExpanded, setIsThreePreviewExpanded] = useState(false)
-  const [isHeartSubmitting, setIsHeartSubmitting] = useState(false)
+  const [signedVrmUrl, setSignedVrmUrl] = useState<string | null>(null)
   const [storyHeartSubmittingId, setStoryHeartSubmittingId] = useState<string | null>(null)
   const [heartToast, setHeartToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null)
+  const [emailVerificationPromptAction, setEmailVerificationPromptAction] = useState<EmailVerificationPromptAction | null>(null)
   const heartToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [reviewList, setReviewList] = useState<CharacterReviewRecord[]>([])
   const [isReviewsLoading, setIsReviewsLoading] = useState(false)
@@ -146,7 +149,9 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
   const [reviewInputBody, setReviewInputBody] = useState('')
   const [isReviewSubmitting, setIsReviewSubmitting] = useState(false)
   const [reviewActionMessage, setReviewActionMessage] = useState<string | null>(null)
+  const [officialStory, setOfficialStory] = useState<StoryListRecord | null>(null)
   const [communityStories, setCommunityStories] = useState<StoryListRecord[]>([])
+  const [viewerLinkedStories, setViewerLinkedStories] = useState<StoryListRecord[]>([])
   const [communitySort, setCommunitySort] = useState<'trending' | 'newest'>('trending')
   const [communityLoading, setCommunityLoading] = useState(false)
   const [communityStoriesError, setCommunityStoriesError] = useState<string | null>(null)
@@ -180,12 +185,10 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
     }
   }, [])
 
-  useEffect(() => {
-    if (!characterId) {
-      return
-    }
+  const hasCharacterRecord = Boolean(characterRecord)
 
-    if (initialCharacterRecordRef.current) {
+  useEffect(() => {
+    if (!characterId || isAuthLoading) {
       return
     }
 
@@ -196,7 +199,7 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
         return
       }
 
-      setIsLoading(true)
+      setIsLoading((previousLoading) => previousLoading || !hasCharacterRecord)
       setErrorMessage(null)
       if (heartToastTimeoutRef.current) {
         clearTimeout(heartToastTimeoutRef.current)
@@ -213,6 +216,8 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
 
         setCharacterRecord(payload.data)
         setIsThreePreviewOpen(false)
+        setSignedVrmUrl(null)
+        setIsThreePreviewExpanded(false)
         setThreePreviewErrorMessage(null)
       } catch (error) {
         if (isCancelled) {
@@ -231,7 +236,7 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
     return () => {
       isCancelled = true
     }
-  }, [characterId])
+  }, [characterId, hasCharacterRecord, isAuthLoading, sessionUser?.id, sessionUser?.isEmailVerified])
 
   useEffect(() => {
     if (!characterId) {
@@ -258,15 +263,16 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
 
   const selectedCharacterId = characterRecord?.id ?? null
 
-  /** API accepts id or slug; use URL segment first so we query before detail fetch finishes. */
+  /** Normalize slug-id route keys to the real id so story queries survive names that contain dashes. */
   const storiesCharacterKey = useMemo(() => {
     const fromRoute = characterId?.trim()
     if (fromRoute) {
-      return fromRoute
+      return extractAiGirlfriendIdFromRouteKey(fromRoute)
     }
 
     return characterRecord?.id ?? null
   }, [characterId, characterRecord?.id])
+  const viewerSessionUserId = sessionUser?.id ?? null
 
   useEffect(() => {
     if (!selectedCharacterId) {
@@ -281,7 +287,9 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
 
   /** Avoid showing the previous character’s scenarios while switching routes. */
   useEffect(() => {
+    setOfficialStory(null)
     setCommunityStories([])
+    setViewerLinkedStories([])
     setCommunityStoriesError(null)
   }, [characterId])
 
@@ -294,23 +302,50 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
     setCommunityStoriesError(null)
 
     try {
-      const payload = await listStories({
-        scope: 'all',
-        characterId: storiesCharacterKey,
+      const payload = await listCharacterStories(storiesCharacterKey, {
         sort: communitySort === 'trending' ? 'likes' : 'newest',
         limit: 80
       })
-      setCommunityStories(payload.data)
+      const viewerPayload = viewerSessionUserId
+        ? await listStories({
+            scope: 'mine',
+            characterId: storiesCharacterKey,
+            sort: 'newest',
+            publication: 'all',
+            limit: 80
+          }).catch(() => ({ data: [] as StoryListRecord[] }))
+        : { data: [] as StoryListRecord[] }
+
+      const defaultStoryId = payload.data.character.default_story_id ?? characterRecord?.defaultStoryId ?? null
+      const matchedOfficialStory =
+        payload.data.stories.find((story) => story.isDefault || story.id === defaultStoryId) ??
+        payload.data.stories.find((story) => story.origin === 'OFFICIAL' && isLiveApprovedCharacterPageStory(story)) ??
+        null
+      const visiblePublicStories = payload.data.stories.filter(
+        (story) => story.id !== matchedOfficialStory?.id && isLiveApprovedCharacterPageStory(story)
+      )
+      const viewerLinkedCharacterStories = collectViewerLinkedCharacterPageStories({
+        catalogStories: payload.data.stories,
+        ownerStories: viewerPayload.data,
+        viewerUserId: viewerSessionUserId,
+        officialStoryId: matchedOfficialStory?.id ?? null
+      })
+
+      setOfficialStory(matchedOfficialStory)
+      setCommunityStories(visiblePublicStories)
+      setViewerLinkedStories(viewerLinkedCharacterStories)
       setCommunityStoriesError(null)
     } catch (error: unknown) {
+      setOfficialStory(null)
       setCommunityStories([])
+      setViewerLinkedStories([])
       setCommunityStoriesError(
         error instanceof Error ? error.message : 'Could not load community scenarios.'
       )
     } finally {
       setCommunityLoading(false)
     }
-  }, [storiesCharacterKey, communitySort])
+  }, [storiesCharacterKey, communitySort, viewerSessionUserId, characterRecord?.defaultStoryId])
 
   /** Initial load + when sort or route segment changes (e.g. returning from write-scenario). */
   useEffect(() => {
@@ -346,15 +381,81 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
     setReviewInputBody('')
   }, [ownReview])
 
-  const canAccessGatedContent = characterRecord?.gatedAccess.hasAccess ?? false
-  const isPatreonGated = characterRecord?.isPatreonGated ?? false
-  const canUseCharacterActions = !isPatreonGated || canAccessGatedContent
-  const canOpenThreePreview = canUseCharacterActions && Boolean(characterRecord?.vroidFileUrl)
+  const canRequestThreePreview = Boolean(characterRecord?.hasVrmModel)
+  const canOpenThreePreview = Boolean(signedVrmUrl && characterRecord?.access.can_preview_3d)
 
-  const storyLikesTotal = useMemo(
-    () => communityStories.reduce((sum, row) => sum + row.likesCount, 0),
-    [communityStories]
-  )
+  const handleThreePreviewClick = useCallback(async () => {
+    if (!characterRecord) {
+      return
+    }
+
+    if (isThreePreviewOpen) {
+      setIsThreePreviewOpen(false)
+      setIsThreePreviewExpanded(false)
+      setSignedVrmUrl(null)
+      setThreePreviewErrorMessage(null)
+      return
+    }
+
+    if (!characterRecord.hasVrmModel) {
+      showHeartToast('3D preview needs a VRM on this AI girlfriend.', 'error')
+      return
+    }
+
+    if (!sessionUser || characterRecord.access.preview_3d_requires_auth) {
+      window.location.assign(REGISTERED_CHARACTER_SIGN_UP_HREF)
+      return
+    }
+
+    if (!sessionUser.isEmailVerified || characterRecord.access.preview_3d_requires_verified_email) {
+      setEmailVerificationPromptAction('preview-3d')
+      return
+    }
+
+    if (!characterRecord.access.can_preview_3d) {
+      if (characterRecord.access.preview_3d_unavailable_reason === 'NO_MODEL') {
+        showHeartToast('3D preview needs a VRM on this AI girlfriend.', 'error')
+        return
+      }
+
+      showHeartToast('3D preview is not available for this AI girlfriend right now.', 'error')
+      return
+    }
+
+    setIsThreePreviewLoading(true)
+    setThreePreviewErrorMessage(null)
+
+    try {
+      const payload = await getCharacterVrmSignedUrl(characterRecord.id)
+      setSignedVrmUrl(payload.data.model_url)
+      setIsThreePreviewOpen(true)
+      setIsThreePreviewExpanded(false)
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.code === 'EMAIL_VERIFICATION_REQUIRED') {
+        setEmailVerificationPromptAction('preview-3d')
+        return
+      }
+
+      if (error instanceof ApiRequestError && error.status === 404) {
+        showHeartToast('3D preview needs a VRM on this AI girlfriend.', 'error')
+        return
+      }
+
+      if (error instanceof ApiRequestError && error.status === 401) {
+        window.location.assign(REGISTERED_CHARACTER_SIGN_UP_HREF)
+        return
+      }
+
+      showHeartToast(error instanceof Error ? error.message : '3D preview is not available right now.', 'error')
+    } finally {
+      setIsThreePreviewLoading(false)
+    }
+  }, [characterRecord, isThreePreviewOpen, sessionUser, showHeartToast])
+
+  const storyLikesTotal = useMemo(() => {
+    const officialStoryLikes = officialStory?.likesCount ?? 0
+    return officialStoryLikes + communityStories.reduce((sum, row) => sum + row.likesCount, 0)
+  }, [communityStories, officialStory])
 
   const characterStats = useMemo(() => {
     if (!characterRecord) {
@@ -363,15 +464,15 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
 
     return [
       {
-        id: 'total-global-chats',
+        id: 'total-global-messages',
         icon: <ChatStatIcon className="size-[24px]" />,
-        value: formatCompactNumber(characterRecord.viewsCount),
-        label: 'Total Global Chats'
+        value: formatCompactCount(characterRecord.messageCount),
+        label: 'Messages'
       },
       {
         id: 'total-story-likes',
         icon: <HeartStatIcon className="size-[24px]" />,
-        value: formatCompactNumber(storyLikesTotal),
+        value: formatCompactCount(storyLikesTotal),
         label: 'Total Story Likes'
       }
     ]
@@ -385,49 +486,15 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
     return sessionUser.id === characterRecord.owner.id
   }, [sessionUser?.id, characterRecord])
 
-  const canPostReview = Boolean(sessionUser?.isEmailVerified && !isViewerCharacterOwner)
-
-  const handleToggleHeart = async () => {
-    if (!characterRecord) {
-      return
+  const isViewerOfficialStoryAuthor = useMemo(() => {
+    if (!sessionUser?.id || !officialStory) {
+      return false
     }
 
-    if (isViewerCharacterOwner) {
-      return
-    }
+    return sessionUser.id === officialStory.author.id
+  }, [officialStory, sessionUser?.id])
 
-    if (!sessionUser) {
-      showHeartToast('Please sign in before using hearts/favorites.', 'error')
-      return
-    }
-
-    if (isHeartSubmitting) {
-      return
-    }
-
-    setIsHeartSubmitting(true)
-
-    try {
-      const payload = await toggleCharacterHeart(characterRecord.id)
-      setCharacterRecord((previousCharacter) =>
-        previousCharacter
-          ? {
-            ...previousCharacter,
-            hasHearted: payload.data.hasHearted,
-            heartsCount: payload.data.heartsCount
-          }
-          : previousCharacter
-      )
-      showHeartToast(
-        payload.data.hasHearted ? 'Added to your favorites.' : 'Removed from your favorites.',
-        'success'
-      )
-    } catch (error) {
-      showHeartToast(error instanceof Error ? error.message : 'Failed to update favorites.', 'error')
-    } finally {
-      setIsHeartSubmitting(false)
-    }
-  }
+  const canPostReview = Boolean(sessionUser?.isEmailVerified)
 
   const handleToggleStoryLike = useCallback(
     async (storyId: string) => {
@@ -448,6 +515,11 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
 
       try {
         const payload = await toggleStoryLike(storyId)
+        setOfficialStory((previous) =>
+          previous?.id === storyId
+            ? { ...previous, likesCount: payload.data.likesCount, hasLiked: payload.data.liked }
+            : previous
+        )
         setCommunityStories((previous) =>
           previous.map((row) =>
             row.id === storyId
@@ -470,14 +542,14 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
     }
 
     if (!sessionUser) {
-      setReviewActionMessage('Please sign in before posting a review.')
+      setReviewActionMessage('Please sign in before posting a comment.')
       return
     }
 
     const normalizedBody = reviewInputBody.trim()
 
     if (normalizedBody.length < 3) {
-      setReviewActionMessage('Review text must be at least 3 characters.')
+      setReviewActionMessage('Comment text must be at least 3 characters.')
       return
     }
 
@@ -500,9 +572,9 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
       }
 
       await refreshReviewList(characterRecord.id)
-      setReviewActionMessage(ownReview ? 'Review updated.' : 'Review posted.')
+      setReviewActionMessage(ownReview ? 'Comment updated.' : 'Comment posted.')
     } catch (error) {
-      setReviewActionMessage(error instanceof Error ? error.message : 'Failed to submit review.')
+      setReviewActionMessage(error instanceof Error ? error.message : 'Failed to submit comment.')
     } finally {
       setIsReviewSubmitting(false)
     }
@@ -520,9 +592,9 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
       await deleteCharacterReview(ownReview.id)
       await refreshReviewList(characterRecord.id)
       setReviewInputBody('')
-      setReviewActionMessage('Review removed.')
+      setReviewActionMessage('Comment removed.')
     } catch (error) {
-      setReviewActionMessage(error instanceof Error ? error.message : 'Failed to delete review.')
+      setReviewActionMessage(error instanceof Error ? error.message : 'Failed to delete comment.')
     } finally {
       setIsReviewSubmitting(false)
     }
@@ -530,35 +602,52 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
 
   const officialScenarioPlayHref = useMemo(() => {
     if (!characterRecord) {
-      return '/play-demo'
+      return '/play'
     }
-    if (!sessionUser) {
-      return '/?openSignIn=1'
-    }
-    if (characterRecord.isPatreonGated && !characterRecord.gatedAccess.hasAccess) {
-      return '/members'
-    }
-    return `/play-demo?characterId=${encodeURIComponent(characterRecord.id)}&character=${encodeURIComponent(characterRecord.slug)}`
-  }, [characterRecord, sessionUser])
+    return resolveStartChatHref(sessionUser, characterRecord.access, officialStory?.id ?? null)
+  }, [characterRecord, officialStory, sessionUser])
 
   const buildScenarioPlayHref = useCallback(
     (storyId: string) => {
       if (!characterRecord) {
-        return '/play-demo'
+        return '/play'
       }
-      if (!sessionUser) {
-        return '/?openSignIn=1'
-      }
-      if (characterRecord.isPatreonGated && !characterRecord.gatedAccess.hasAccess) {
-        return '/members'
-      }
-      return `/play-demo?characterId=${encodeURIComponent(characterRecord.id)}&character=${encodeURIComponent(characterRecord.slug)}&storyId=${encodeURIComponent(storyId)}`
+      return resolveStartChatHref(sessionUser, characterRecord.access, storyId) ?? '#'
     },
     [characterRecord, sessionUser]
   )
 
+  const handleStartChatClick = useCallback(
+    (event: MouseEvent<HTMLAnchorElement>, storyId: string | null) => {
+      if (!characterRecord) {
+        return
+      }
+
+      const interception = resolveStartChatInterception(sessionUser, characterRecord.access, storyId)
+      if (!interception) {
+        return
+      }
+
+      if (interception.action === 'email-verification') {
+        event.preventDefault()
+        setEmailVerificationPromptAction('start-chat')
+        return
+      }
+
+      if (interception.action === 'missing-story') {
+        event.preventDefault()
+        showHeartToast('This AI girlfriend needs an approved story before chat can start.', 'error')
+        return
+      }
+
+      event.preventDefault()
+      showHeartToast('Chat is not available for this AI girlfriend right now.', 'error')
+    },
+    [characterRecord, sessionUser, showHeartToast]
+  )
+
   useLayoutEffect(() => {
-    if (!isThreePreviewOpen || !canOpenThreePreview || !characterRecord?.vroidFileUrl) {
+    if (!isThreePreviewOpen || !canOpenThreePreview || !signedVrmUrl) {
       return
     }
 
@@ -679,7 +768,7 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
 
         const loader = createVrmGLTFLoader(vrmRuntime)
 
-        const vrmUrl = characterRecord.vroidFileUrl as string
+        const vrmUrl = signedVrmUrl
 
         let loadTimeoutId: number | null = null
 
@@ -796,7 +885,7 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
           vrmInstance = null
           previewCanvas = null
         }
-  }, [canOpenThreePreview, characterRecord?.vroidFileUrl, isThreePreviewOpen, threePreviewContainerRevision])
+  }, [canOpenThreePreview, isThreePreviewOpen, signedVrmUrl, threePreviewContainerRevision])
 
   useEffect(() => {
     if (!isThreePreviewExpanded) {
@@ -811,10 +900,9 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
     }
   }, [isThreePreviewExpanded])
 
-  const writeScenarioHref =
-    characterRecord && sessionUser && canUseCharacterActions
-      ? `/ai-girlfriends/${encodeURIComponent(buildAiGirlfriendRouteKey(characterRecord.name, characterRecord.id))}/write-scenario`
-      : null
+  const writeScenarioHref = !characterRecord
+    ? null
+    : `/stories/create?characterId=${encodeURIComponent(buildAiGirlfriendRouteKey(characterRecord.name, characterRecord.id))}`
 
   return (
     <main className="relative min-h-screen overflow-x-hidden bg-[#050608] text-white">
@@ -854,40 +942,34 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
                       </svg>
                       2D
                     </button>
-                    {canUseCharacterActions ? (
+                    {canRequestThreePreview ? (
                       <button
                         type="button"
-                        onClick={() => {
-                          setIsThreePreviewOpen((previousState) => {
-                            if (previousState) {
-                              setIsThreePreviewExpanded(false)
-                            }
-
-                            return !previousState
-                          })
-                        }}
+                        onClick={handleThreePreviewClick}
                         className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] transition ${
                           isThreePreviewOpen ? 'bg-white/15 text-white' : 'text-white/55 hover:text-white/85'
                         }`}
                         aria-label="Toggle 3D preview"
-                        disabled={!canOpenThreePreview}
                       >
                         <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
                           <path d="m12 3.5 8 4.5-8 4.5-8-4.5 8-4.5Zm0 9 8-4.5v7L12 19l-8-4V8l8 4.5Z" strokeLinejoin="round" />
                         </svg>
                         3D Preview
                       </button>
-                    ) : (
-                      <Link
-                        href="/members"
-                        className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-white/45 transition hover:text-white/85"
+                    ) : null}
+                    {!canRequestThreePreview ? (
+                      <button
+                        type="button"
+                        className="inline-flex cursor-not-allowed items-center gap-2 rounded-xl px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-white/35"
+                        aria-label="3D preview unavailable"
+                        disabled
                       >
                         <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
                           <path d="m12 3.5 8 4.5-8 4.5-8-4.5 8-4.5Zm0 9 8-4.5v7L12 19l-8-4V8l8 4.5Z" strokeLinejoin="round" />
                         </svg>
                         3D Preview
-                      </Link>
-                    )}
+                      </button>
+                    ) : null}
                   </div>
 
                   {isThreePreviewOpen && canOpenThreePreview ? (
@@ -947,9 +1029,18 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
                     </div>
                   )}
 
-                  {canUseCharacterActions && !characterRecord.vroidFileUrl ? (
+                  {!characterRecord.hasVrmModel ? (
                     <p className="mt-2 text-center text-[11px] text-white/45">
                     3D preview needs a VRM on this AI girlfriend. Add a VRM URL or upload a file in Edit / Upload VRM, then refresh this page.
+                    </p>
+                  ) : null}
+                  {characterRecord.hasVrmModel && !characterRecord.access.can_preview_3d ? (
+                    <p className="mt-2 text-center text-[11px] text-white/45">
+                      {characterRecord.access.preview_3d_requires_auth
+                        ? 'Create an account to unlock the 3D preview.'
+                        : characterRecord.access.preview_3d_requires_verified_email
+                          ? 'Verify your email to unlock the 3D preview.'
+                          : '3D preview is not available for this AI girlfriend right now.'}
                     </p>
                   ) : null}
                 </div>
@@ -1016,16 +1107,14 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
                           Account
                         </Link>
                       </p>
-                    ) : isViewerCharacterOwner ? (
-                      <p className="mt-2 text-[13px] leading-relaxed text-white/60">You cannot review your own AI girlfriend.</p>
                     ) : null}
                     <textarea
                       value={reviewInputBody}
                       onChange={(event) => setReviewInputBody(event.target.value)}
-                    placeholder="Discuss this AI girlfriend..."
+                      placeholder="Discuss this AI girlfriend..."
                       disabled={!canPostReview}
                       className="mt-2 h-24 w-full resize-none rounded-xl border border-white/15 bg-black px-3 py-2 text-sm text-white outline-none focus:border-ember-300 disabled:opacity-50"
-                      aria-label="Review text"
+                      aria-label="Comment text"
                     />
                     <div className="mt-2 flex gap-2">
                       <button
@@ -1043,7 +1132,7 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
                           onClick={handleDeleteOwnReview}
                           disabled={isReviewSubmitting || !canPostReview}
                           className="rounded-lg border border-rose-300/35 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-rose-200 disabled:opacity-70"
-                          aria-label="Delete your review"
+                          aria-label="Delete your comment"
                         >
                           Delete
                         </button>
@@ -1070,26 +1159,28 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
               <div className="mt-7 border-t border-white/10 pt-7">
                 <CharacterCommunityStories
                   character={characterRecord}
+                  officialStory={officialStory}
                   stories={communityStories}
                   storiesLoadError={communityStoriesError}
                   isLoading={communityLoading}
                   sortMode={communitySort}
                   onSortChange={setCommunitySort}
                   officialPlayHref={officialScenarioPlayHref}
+                  onOfficialPlayClick={(event) => handleStartChatClick(event, officialStory?.id ?? null)}
+                  officialStoryLikesCount={officialStory?.likesCount ?? 0}
+                  officialStoryHasLiked={Boolean(officialStory?.hasLiked)}
                   buildScenarioPlayHref={buildScenarioPlayHref}
+                  onScenarioPlayClick={handleStartChatClick}
+                  buildScenarioEditHref={(story) => buildScenarioEditHref(story)}
                   viewerUserId={sessionUser?.id ?? null}
+                  viewerLinkedStories={viewerLinkedStories}
                   writeStoryHref={writeScenarioHref}
-                  onPlayIntent={() => {
-                    void recordCharacterChatStart(characterRecord.id)
-                      .then((payload) => {
-                        setCharacterRecord((previous) =>
-                          previous ? { ...previous, viewsCount: payload.data.viewsCount } : previous
-                        )
-                      })
-                      .catch(() => {})
+                  onOfficialHeartClick={() => {
+                    if (officialStory) {
+                      void handleToggleStoryLike(officialStory.id)
+                    }
                   }}
-                  onOfficialHeartClick={() => void handleToggleHeart()}
-                  officialHeartDisabled={isHeartSubmitting || isViewerCharacterOwner}
+                  officialHeartDisabled={!officialStory || isViewerOfficialStoryAuthor || storyHeartSubmittingId === officialStory.id}
                   onStoryHeartClick={(storyId) => void handleToggleStoryLike(storyId)}
                   storyHeartSubmittingId={storyHeartSubmittingId}
                 />
@@ -1110,6 +1201,36 @@ const CharacterPage = ({ characterId, initialCharacterRecord = null }: Character
           aria-live={heartToast.variant === 'error' ? 'assertive' : 'polite'}
         >
           {heartToast.message}
+        </div>
+      ) : null}
+      {emailVerificationPromptAction ? (
+        <div
+          className="fixed bottom-6 left-1/2 z-[210] w-[min(calc(100vw-2rem),30rem)] -translate-x-1/2 rounded-2xl border border-ember-300/35 bg-[#17100d]/95 p-4 text-sm text-ember-50 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur"
+          role="alertdialog"
+          aria-live="assertive"
+          aria-label="Email verification required"
+        >
+          <p className="font-semibold text-white">Verify your email to continue</p>
+          <p className="mt-2 leading-6 text-white/70">
+            {emailVerificationPromptAction === 'start-chat'
+              ? 'Email verification is required before starting chat with this AI girlfriend.'
+              : 'Email verification is required before opening the 3D preview.'}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link
+              href={EMAIL_VERIFICATION_PROFILE_HREF}
+              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-gradient-to-r from-ember-400 to-ember-500 px-4 text-xs font-semibold uppercase tracking-[0.08em] text-black"
+            >
+              Open Account
+            </Link>
+            <button
+              type="button"
+              onClick={() => setEmailVerificationPromptAction(null)}
+              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/15 px-4 text-xs font-semibold uppercase tracking-[0.08em] text-white/80 transition hover:border-white/25 hover:text-white"
+            >
+              Not now
+            </button>
+          </div>
         </div>
       ) : null}
     </main>

@@ -1,14 +1,17 @@
 import { Prisma, type SocialProvider } from '@prisma/client'
-import type { Request } from 'express'
+import type { NextFunction, Request, Response } from 'express'
 import { Router } from 'express'
 import { z } from 'zod'
 import { clearAuthCookie, setAuthCookie } from '../lib/auth-cookie'
 import { sendApiData, sendApiError } from '../lib/api-contract'
 import { authConfig, getEffectiveUserRoleForTesting } from '../lib/auth-config'
 import { oauthConfig } from '../lib/oauth-config'
-import { attachAcquisitionToUser, getLatestLandingAttributionForRequest } from '../lib/landing-page-attribution'
+import { recordRuntimeLogEntry } from '../lib/runtime-log-buffer'
+import { getLatestLandingAttributionForRequest } from '../services/landing/landing-page-attribution-service'
+import { claimLandingAcquisitionForUser } from '../services/landing/landing-acquisition-claim-service'
 import { hashPassword, verifyPassword } from '../lib/password-hash'
-import { optionalAuth, requireAuth } from '../middleware/auth-middleware'
+import { optionalAuth, requireAuth, requireVerifiedEmail } from '../middleware/auth-middleware'
+import { requireGameAccess } from '../middleware/game-access-middleware'
 import { prisma } from '../lib/prisma'
 import { getUnreadNotificationCount } from '../lib/user-notification-count'
 import {
@@ -19,14 +22,27 @@ import {
 } from '../services/auth-token-service'
 import {
   createOpaqueSessionForUser,
+  createOpaqueSessionForUserWithExpiry,
   createWebGlBridgeSessionForUser,
   extractSessionClientMeta,
   revokeOpaqueSessionByToken
 } from '../services/auth-service'
 import { emailService } from '../services/email-service'
+import {
+  issueWebglLaunchContext,
+  resolveWebglLaunchContext,
+  type WebglLaunchResolveError
+} from '../services/auth/webgl-launch-context-service'
+import {
+  mapStorySessionContextErrorToApiCode,
+  type StorySessionContextError
+} from '../services/chat/story-session-context-service'
+import { isGameAccessAllowed, sendMembershipRequiredError } from '../lib/game-access'
 import { resolveUserForOAuthAuthentication } from '../services/oauth/oauth-account-service'
+import { buildOAuthCallbackExpectedErrorRedirect } from '../services/oauth/oauth-callback-error-policy'
 import { getOAuthProviderClient, isOAuthProviderKey } from '../services/oauth/oauth-provider-registry'
 import { consumeOAuthState, issueOAuthState } from '../services/oauth/oauth-state-service'
+import { resolveEffectiveMembershipTierForUser, resolveUserBillingTierCents } from '../services/membership/membership-tier-service'
 
 const authRoutes = Router()
 
@@ -40,6 +56,24 @@ const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1).max(128)
 }).strict()
+
+const resolvePlayerName = (playerName: string | null | undefined, username: string) => {
+  const normalized = playerName?.trim()
+  return normalized && normalized.length > 0 ? normalized : username
+}
+
+const webglLaunchContextIssueSchema = z
+  .object({
+    story_id: z.string().trim().min(1),
+    launch_mode: z.literal('fresh_session')
+  })
+  .strict()
+
+const webglLaunchContextResolveSchema = z
+  .object({
+    launch_token: z.string().trim().min(20).max(500)
+  })
+  .strict()
 
 const resendVerificationSchema = z.object({
   email: z.string().email().optional()
@@ -55,6 +89,10 @@ const forgotPasswordSchema = z.object({
 
 const resetPasswordSchema = z.object({
   token: z.string().min(20).max(500),
+  password: z.string().min(8).max(128)
+}).strict()
+
+const setPasswordSchema = z.object({
   password: z.string().min(8).max(128)
 }).strict()
 
@@ -74,6 +112,19 @@ const oauthProviderToSocialProviderMap: Record<'google', SocialProvider> = {
   google: 'GOOGLE'
 }
 
+const setNoStoreCacheControl = (_request: Request, response: Response, next: NextFunction) => {
+  response.setHeader('Cache-Control', 'no-store')
+  next()
+}
+
+const setWebglLaunchResolveNoStoreCacheControl = (request: Request, response: Response, next: NextFunction) => {
+  if (request.method === 'POST' && request.path === '/auth/webgl-launch-context/resolve') {
+    response.setHeader('Cache-Control', 'no-store')
+  }
+
+  next()
+}
+
 const FAILED_LOGIN_WINDOW_MS = 15 * 60 * 1000
 const FAILED_LOGIN_MAX_ATTEMPTS = 6
 const FAILED_LOGIN_LOCK_MS = 20 * 60 * 1000
@@ -82,6 +133,30 @@ const FAILED_LOGIN_LOCK_ENABLED = false
 const getLoginThrottleIp = (request: Request) => {
   const candidate = request.ip || request.socket.remoteAddress || 'unknown'
   return candidate.trim() || 'unknown'
+}
+
+const isStorySessionContextError = (error: WebglLaunchResolveError): error is StorySessionContextError =>
+  error.code === 'STORY_NOT_FOUND' ||
+  error.code === 'STORY_NOT_LINKED_TO_CHARACTER' ||
+  error.code === 'CHARACTER_NOT_FOUND' ||
+  error.code === 'EMAIL_VERIFICATION_REQUIRED' ||
+  error.code === 'MEMBERSHIP_REQUIRED' ||
+  error.code === 'CHARACTER_NOT_AVAILABLE_FOR_CHAT'
+
+const mapWebglLaunchResolveErrorToApiCode = (error: WebglLaunchResolveError) => {
+  if (isStorySessionContextError(error)) {
+    return mapStorySessionContextErrorToApiCode(error)
+  }
+
+  return error.code
+}
+
+const getExpectedErrorDetails = (error: unknown) => {
+  if (typeof error !== 'object' || error === null || !('details' in error)) {
+    return null
+  }
+
+  return (error as { details?: Record<string, unknown> | null }).details ?? null
 }
 
 const getSessionTokensFromRequest = (request: Request) => {
@@ -250,14 +325,26 @@ const dispatchVerificationEmail = async (user: { id: string; email: string; user
 const dispatchPasswordResetEmail = async (user: { id: string; email: string; username: string }, request: Request) => {
   const clientMeta = extractSessionClientMeta(request)
   const { rawToken, expiresAt } = await issuePasswordResetToken(user.id, clientMeta)
-  const resetUrl = authConfig.resetPasswordUrlBase
+  const resetUrl = new URL(authConfig.resetPasswordUrlBase, oauthConfig.frontendPublicUrl)
+  resetUrl.searchParams.set('token', rawToken)
 
   await emailService.sendPasswordResetEmail({
     toEmail: user.email,
     username: user.username,
     resetCode: rawToken,
-    resetUrl,
+    resetUrl: resetUrl.toString(),
     expiresAt
+  })
+}
+
+const dispatchWelcomeEmail = async (user: { email: string; username: string }) => {
+  const frontendUrl = oauthConfig.frontendPublicUrl
+
+  await emailService.sendWelcomeEmail({
+    toEmail: user.email,
+    username: user.username,
+    ctaUrl: `${frontendUrl}/members`,
+    membersUrl: `${frontendUrl}/members`
   })
 }
 
@@ -296,6 +383,9 @@ authRoutes.get('/auth/oauth/:provider/start', optionalAuth, async (request, resp
 })
 
 authRoutes.get('/auth/oauth/:provider/callback', optionalAuth, async (request, response, next) => {
+  let callbackProviderKey: keyof typeof oauthProviderToSocialProviderMap | null = null
+  let oauthStatePayload: ReturnType<typeof consumeOAuthState> | null = null
+
   const resolveOAuthErrorRedirectPath = (redirectAfter: string | undefined) => {
     if (!request.authUser) {
       return '/'
@@ -304,13 +394,14 @@ authRoutes.get('/auth/oauth/:provider/callback', optionalAuth, async (request, r
     return redirectAfter ?? oauthConfig.defaultRedirectAfter
   }
 
-  const redirectWithError = (redirectAfter: string | undefined, message: string) => {
+  const redirectWithError = (redirectAfter: string | undefined, message: string, oauthErrorCode?: string) => {
     const redirectPath = resolveOAuthErrorRedirectPath(redirectAfter)
 
     response.redirect(
       302,
       buildFrontendRedirectUrl(redirectPath, {
         oauth: 'error',
+        oauth_error: oauthErrorCode,
         message,
         openSignIn: request.authUser ? undefined : '1'
       })
@@ -320,12 +411,14 @@ authRoutes.get('/auth/oauth/:provider/callback', optionalAuth, async (request, r
   try {
     const { provider } = z.object({ provider: z.string().trim().min(1) }).parse(request.params)
     const query = oauthCallbackQuerySchema.parse(request.query)
-    const oauthStatePayload = consumeOAuthState(request, response)
+    oauthStatePayload = consumeOAuthState(request, response)
 
     if (!isOAuthProviderKey(provider)) {
       redirectWithError(oauthStatePayload?.redirectAfter, 'OAuth provider is not supported.')
       return
     }
+
+    callbackProviderKey = provider
 
     if (!oauthStatePayload) {
       redirectWithError(undefined, 'OAuth state is missing or expired.')
@@ -379,23 +472,46 @@ authRoutes.get('/auth/oauth/:provider/callback', optionalAuth, async (request, r
     }
 
     const landingAttribution = await getLatestLandingAttributionForRequest(request)
-    await attachAcquisitionToUser(resolvedUser.id, landingAttribution)
+    await claimLandingAcquisitionForUser(resolvedUser.id, landingAttribution)
 
     const rawSessionToken = await createOpaqueSessionForUser(resolvedUser.id, extractSessionClientMeta(request))
     setAuthCookie(response, rawSessionToken)
+
+    if (resolvedUser.isNewlyCreated) {
+      try {
+        await dispatchWelcomeEmail(resolvedUser)
+      } catch (sendError) {
+        console.error('Failed to send welcome email after OAuth registration:', sendError)
+      }
+    }
 
     response.redirect(
       302,
       buildFrontendRedirectUrl(oauthStatePayload.redirectAfter, {
         oauth: 'success',
-        provider
+        provider,
+        newUser: resolvedUser.isNewlyCreated ? '1' : '0',
+        setPassword: resolvedUser.hasPassword ? undefined : '1'
       })
     )
   } catch (error) {
+    const expectedErrorRedirect = buildOAuthCallbackExpectedErrorRedirect({
+      error,
+      providerKey: callbackProviderKey,
+      redirectAfter: oauthStatePayload?.redirectAfter,
+      isAuthenticated: Boolean(request.authUser)
+    })
+
+    if (expectedErrorRedirect) {
+      recordRuntimeLogEntry(expectedErrorRedirect.runtimeLog.level, expectedErrorRedirect.runtimeLog.args)
+      response.redirect(302, buildFrontendRedirectUrl(expectedErrorRedirect.redirectPath, expectedErrorRedirect.redirectParams))
+      return
+    }
+
     if (error instanceof Error) {
       console.error('OAuth callback failure:', error)
       const fallbackRedirectPath = oauthConfig.defaultRedirectAfter
-      redirectWithError(fallbackRedirectPath, 'OAuth sign-in failed.')
+      redirectWithError(fallbackRedirectPath, 'OAuth sign-in failed.', 'oauth_signin_failed')
       return
     }
 
@@ -457,18 +573,20 @@ authRoutes.post('/auth/register', async (request, response, next) => {
         id: true,
         email: true,
         username: true,
+        playerName: true,
         role: true,
         isEmailVerified: true,
         avatarUrl: true
       }
     })
 
-    await attachAcquisitionToUser(createdUser.id, landingAttribution)
+    await claimLandingAcquisitionForUser(createdUser.id, landingAttribution)
 
     const rawSessionToken = await createOpaqueSessionForUser(createdUser.id, extractSessionClientMeta(request))
     setAuthCookie(response, rawSessionToken)
 
     let verificationEmailSent = false
+    let welcomeEmailSent = false
 
     try {
       await dispatchVerificationEmail(createdUser, request)
@@ -477,19 +595,29 @@ authRoutes.post('/auth/register', async (request, response, next) => {
       console.error('Failed to send verification email after registration:', sendError)
     }
 
+    try {
+      await dispatchWelcomeEmail(createdUser)
+      welcomeEmailSent = true
+    } catch (sendError) {
+      console.error('Failed to send welcome email after registration:', sendError)
+    }
+
     response.status(201).json({
       data: {
         user: {
           id: createdUser.id,
           email: createdUser.email,
           username: createdUser.username,
+          player_name: resolvePlayerName(createdUser.playerName, createdUser.username),
           role: getEffectiveUserRoleForTesting(createdUser.role),
           is_email_verified: createdUser.isEmailVerified,
+          has_password: true,
           avatar_url: createdUser.avatarUrl,
           unread_notification_count: 0
         },
         requires_email_verification: true,
-        verification_email_sent: verificationEmailSent
+        verification_email_sent: verificationEmailSent,
+        welcome_email_sent: welcomeEmailSent
       }
     })
   } catch (error) {
@@ -698,6 +826,7 @@ authRoutes.post('/auth/login', async (request, response, next) => {
         id: true,
         email: true,
         username: true,
+        playerName: true,
         role: true,
         isEmailVerified: true,
         isBanned: true,
@@ -749,11 +878,112 @@ authRoutes.post('/auth/login', async (request, response, next) => {
           id: existingUser.id,
           email: existingUser.email,
           username: existingUser.username,
+          player_name: resolvePlayerName(existingUser.playerName, existingUser.username),
           role: getEffectiveUserRoleForTesting(existingUser.role),
           is_email_verified: existingUser.isEmailVerified,
+          has_password: true,
           avatar_url: existingUser.avatarUrl,
           unread_notification_count: unreadNotificationCount
         }
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+/**
+ * Unity Desktop/VR bearer-token flow:
+ * issue an opaque session token directly in JSON without setting browser cookies.
+ */
+authRoutes.post('/auth/unity-token', async (request, response, next) => {
+  try {
+    const nowMs = Date.now()
+    const throttleIp = getLoginThrottleIp(request)
+    if (FAILED_LOGIN_LOCK_ENABLED) {
+      const lockRemainingSeconds = await getLoginLockRemainingSeconds(throttleIp, nowMs)
+      if (lockRemainingSeconds !== null) {
+        response.setHeader('Retry-After', String(lockRemainingSeconds))
+        sendApiError(
+          response,
+          429,
+          'RATE_LIMITED',
+          `Too many failed login attempts. Try again in ${lockRemainingSeconds} seconds.`,
+          {
+            retry_after_seconds: lockRemainingSeconds
+          }
+        )
+        return
+      }
+    }
+
+    const payload = loginSchema.parse(request.body)
+    const normalizedEmail = payload.email.trim().toLowerCase()
+
+    const existingUser = await prisma.user.findUnique({
+      where: {
+        email: normalizedEmail
+      },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        playerName: true,
+        role: true,
+        isEmailVerified: true,
+        isBanned: true,
+        passwordHash: true
+      }
+    })
+
+    if (!existingUser?.passwordHash) {
+      if (FAILED_LOGIN_LOCK_ENABLED) {
+        await recordFailedLoginAttempt(throttleIp, nowMs)
+      }
+      sendApiError(response, 401, 'INVALID_CREDENTIALS', 'Invalid e-mail or password.')
+      return
+    }
+
+    if (existingUser.isBanned) {
+      sendApiError(response, 403, 'ACCOUNT_SUSPENDED', 'This account has been suspended.')
+      return
+    }
+
+    const passwordMatches = await verifyPassword(payload.password, existingUser.passwordHash)
+
+    if (!passwordMatches) {
+      if (FAILED_LOGIN_LOCK_ENABLED) {
+        await recordFailedLoginAttempt(throttleIp, nowMs)
+      }
+      sendApiError(response, 401, 'INVALID_CREDENTIALS', 'Invalid e-mail or password.')
+      return
+    }
+
+    if (FAILED_LOGIN_LOCK_ENABLED) {
+      await clearFailedLoginAttempts(throttleIp)
+    }
+
+    const effectiveTierCode = await resolveEffectiveMembershipTierForUser(existingUser.id)
+    if (!isGameAccessAllowed(effectiveTierCode)) {
+      sendMembershipRequiredError(response)
+      return
+    }
+
+    const clientMeta = extractSessionClientMeta(request)
+    const { rawSessionToken, expiresAt } = await createOpaqueSessionForUserWithExpiry(existingUser.id, clientMeta)
+
+    sendApiData(response, {
+      access_token: rawSessionToken,
+      token_type: 'Bearer',
+      expires_at: expiresAt.toISOString(),
+      user: {
+        id: existingUser.id,
+        email: existingUser.email,
+        username: existingUser.username,
+        player_name: resolvePlayerName(existingUser.playerName, existingUser.username),
+        role: getEffectiveUserRoleForTesting(existingUser.role),
+        is_email_verified: existingUser.isEmailVerified,
+        has_password: true
       }
     })
   } catch (error) {
@@ -790,12 +1020,11 @@ authRoutes.post('/auth/forgot-password', async (request, response, next) => {
       select: {
         id: true,
         email: true,
-        username: true,
-        passwordHash: true
+        username: true
       }
     })
 
-    if (existingUser?.passwordHash) {
+    if (existingUser) {
       try {
         await dispatchPasswordResetEmail(existingUser, request)
       } catch (sendError) {
@@ -876,6 +1105,53 @@ authRoutes.post('/auth/reset-password', async (request, response, next) => {
   }
 })
 
+authRoutes.post('/auth/set-password', requireAuth, async (request, response, next) => {
+  try {
+    const authUser = request.authUser
+    if (!authUser) {
+      sendApiError(response, 401, 'AUTH_REQUIRED', 'Authentication required.')
+      return
+    }
+
+    const payload = setPasswordSchema.parse(request.body)
+    const existingUser = await prisma.user.findUnique({
+      where: {
+        id: authUser.userId
+      },
+      select: {
+        id: true,
+        passwordHash: true
+      }
+    })
+
+    if (!existingUser) {
+      sendApiError(response, 401, 'AUTH_REQUIRED', 'Session user not found.')
+      return
+    }
+
+    if (existingUser.passwordHash) {
+      sendApiError(response, 409, 'PASSWORD_ALREADY_SET', 'Use password reset to change an existing password.')
+      return
+    }
+
+    const passwordHash = await hashPassword(payload.password)
+    await prisma.user.update({
+      where: {
+        id: existingUser.id
+      },
+      data: {
+        passwordHash
+      }
+    })
+
+    sendApiData(response, {
+      set: true
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 authRoutes.get('/auth/me', requireAuth, async (request, response, next) => {
   try {
     const authUser = request.authUser
@@ -885,7 +1161,7 @@ authRoutes.get('/auth/me', requireAuth, async (request, response, next) => {
       return
     }
 
-    const [existingUser, unreadNotificationCount] = await Promise.all([
+    const [existingUser, unreadNotificationCount, effectiveTierCode, billingTierCents] = await Promise.all([
       prisma.user.findUnique({
         where: {
           id: authUser.userId
@@ -894,8 +1170,10 @@ authRoutes.get('/auth/me', requireAuth, async (request, response, next) => {
           id: true,
           email: true,
           username: true,
+          playerName: true,
           role: true,
           isEmailVerified: true,
+          passwordHash: true,
           avatarUrl: true,
           createdAt: true,
           updatedAt: true,
@@ -910,7 +1188,9 @@ authRoutes.get('/auth/me', requireAuth, async (request, response, next) => {
           }
         }
       }),
-      getUnreadNotificationCount(authUser.userId)
+      getUnreadNotificationCount(authUser.userId),
+      resolveEffectiveMembershipTierForUser(authUser.userId),
+      resolveUserBillingTierCents(authUser.userId)
     ])
 
     if (!existingUser) {
@@ -923,12 +1203,16 @@ authRoutes.get('/auth/me', requireAuth, async (request, response, next) => {
       id: existingUser.id,
       email: existingUser.email,
       username: existingUser.username,
+      player_name: resolvePlayerName(existingUser.playerName, existingUser.username),
       role: getEffectiveUserRoleForTesting(existingUser.role),
       is_email_verified: existingUser.isEmailVerified,
+      has_password: Boolean(existingUser.passwordHash),
       avatar_url: existingUser.avatarUrl,
       created_at: existingUser.createdAt,
       updated_at: existingUser.updatedAt,
       tier_code: existingUser.tierCode,
+      effective_tier_code: existingUser.role === 'ADMIN' ? 'admin' : effectiveTierCode,
+      effective_tier_cents: existingUser.role === 'ADMIN' ? null : billingTierCents,
       tier: existingUser.tier
         ? {
             code: existingUser.tier.code,
@@ -952,7 +1236,7 @@ authRoutes.get('/auth/me', requireAuth, async (request, response, next) => {
  * Mint a short-lived session token for Unity WebGL: call with browser cookie auth, then pass the
  * returned `token` to Unity (e.g. via SendMessage) and send `Authorization: Bearer <token>` on API requests.
  */
-authRoutes.get('/auth/webgl-token', requireAuth, async (request, response, next) => {
+authRoutes.get('/auth/webgl-token', setNoStoreCacheControl, requireAuth, requireGameAccess, async (request, response, next) => {
   try {
     const authUser = request.authUser
 
@@ -964,6 +1248,7 @@ authRoutes.get('/auth/webgl-token', requireAuth, async (request, response, next)
     const clientMeta = extractSessionClientMeta(request)
     const { rawSessionToken, expiresAt } = await createWebGlBridgeSessionForUser(authUser.userId, clientMeta)
 
+    response.setHeader('Cache-Control', 'no-store')
     response.json({
       data: {
         token: rawSessionToken,
@@ -976,5 +1261,78 @@ authRoutes.get('/auth/webgl-token', requireAuth, async (request, response, next)
   }
 })
 
+/**
+ * Website -> Unity WebGL launch handoff.
+ * Website mints a short-lived launch context bound to user + selected story.
+ */
+authRoutes.post('/auth/webgl-launch-context', setNoStoreCacheControl, requireAuth, requireGameAccess, requireVerifiedEmail, async (request, response, next) => {
+  try {
+    const authUser = request.authUser
+    if (!authUser) {
+      sendApiError(response, 401, 'AUTH_REQUIRED', 'Authentication required.')
+      return
+    }
+
+    const payload = webglLaunchContextIssueSchema.parse(request.body ?? {})
+    const result = await issueWebglLaunchContext(authUser, {
+      storyId: payload.story_id,
+      launchMode: payload.launch_mode
+    })
+
+    if (!result.ok) {
+      sendApiError(
+        response,
+        result.error.status,
+        mapStorySessionContextErrorToApiCode(result.error),
+        result.error.message,
+        getExpectedErrorDetails(result.error)
+      )
+      return
+    }
+
+    sendApiData(response, {
+      launch_token: result.data.launchToken,
+      story_id: result.data.storyId,
+      character_id: result.data.characterId,
+      launch_mode: result.data.launchMode,
+      expires_at: result.data.expiresAt.toISOString()
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+/**
+ * Unity WebGL resolves a one-time launch token into a short-lived bearer plus
+ * the already-selected story/session bootstrap payload.
+ */
+authRoutes.post('/auth/webgl-launch-context/resolve', setNoStoreCacheControl, async (request, response, next) => {
+  try {
+    const payload = webglLaunchContextResolveSchema.parse(request.body ?? {})
+    const result = await resolveWebglLaunchContext(
+      {
+        launchToken: payload.launch_token
+      },
+      extractSessionClientMeta(request)
+    )
+
+    if (!result.ok) {
+      sendApiError(
+        response,
+        result.error.status,
+        mapWebglLaunchResolveErrorToApiCode(result.error),
+        result.error.message,
+        getExpectedErrorDetails(result.error)
+      )
+      return
+    }
+
+    sendApiData(response, result.data)
+  } catch (error) {
+    next(error)
+  }
+})
+
+export { setWebglLaunchResolveNoStoreCacheControl }
 export default authRoutes
 

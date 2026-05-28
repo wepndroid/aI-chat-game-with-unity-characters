@@ -7,20 +7,21 @@ import {
   type StoryModerationStatus,
   type StoryPublicationStatus
 } from '@/lib/story-api'
-import { listCharacters, type CharacterListRecord } from '@/lib/character-api'
+import { listCharacters, uploadCharacterAssets, type CharacterListRecord } from '@/lib/character-api'
 import { buildAiGirlfriendRouteKey, extractAiGirlfriendIdFromRouteKey } from '@/lib/ai-girlfriend-route'
-import { STORY_BODY_FIELD_TEXTAREA_CLASS, StoryBodyMarkupPreview } from '@/lib/story-body-markup-preview'
+import { STORY_BODY_FIELD_TEXTAREA_CLASS } from '@/lib/story-body-markup-preview'
 import { SCENARIO_EDIT_RETURN_TO_YOUR_SCENARIOS } from '@/components/your-characters/your-scenarios-helpers'
-import { STORY_SCENARIO_TYPE_LABELS, STORY_SCENARIO_TYPES, type StoryScenarioType } from '@/lib/story-scenario-types'
+import { lastPathSegmentFromUrl } from '@/lib/url-filename'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 type EditStoryPageProps = {
   storyId: string
-  /** Segment from `/ai-girlfriends/[id]/edit-scenario/...` (id or slug). */
   characterRouteKey?: string | null
 }
+
+const VOICE_FILE_MAX_BYTES = 30 * 1024 * 1024
 
 const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps) => {
   const router = useRouter()
@@ -31,10 +32,15 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
   const isAdminEditor = sessionUser?.role === 'ADMIN'
 
   const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [personality, setPersonality] = useState('')
   const [scenarioStory, setScenarioStory] = useState('')
-  const [scenarioChat, setScenarioChat] = useState('')
+  const [exampleDialogs, setExampleDialogs] = useState('')
+  const [firstMessage, setFirstMessage] = useState('')
+  const [voiceFile, setVoiceFile] = useState<File | null>(null)
+  const [voiceFileUrl, setVoiceFileUrl] = useState('')
+  const [voiceFileName, setVoiceFileName] = useState('')
   const [selectedCharacterId, setSelectedCharacterId] = useState('')
-  const [scenarioType, setScenarioType] = useState<StoryScenarioType | ''>('')
   const [characters, setCharacters] = useState<CharacterListRecord[]>([])
   const [linkedCharacterName, setLinkedCharacterName] = useState('')
   const [publicationStatus, setPublicationStatus] = useState<StoryPublicationStatus>('PUBLISHED')
@@ -44,13 +50,16 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isLoadingStory, setIsLoadingStory] = useState(true)
-  /** Snapshot after load — resubmit for review only when current fields differ. */
   const [contentBaseline, setContentBaseline] = useState<{
     title: string
+    description: string
+    personality: string
     scenarioStory: string
-    scenarioChat: string
+    exampleDialogs: string
+    firstMessage: string
     characterId: string
-    scenarioType: string
+    voiceFileUrl: string
+    voiceFileName: string
   } | null>(null)
 
   useEffect(() => {
@@ -76,47 +85,32 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
           return
         }
 
-        const isApprovedLive =
-          story.publicationStatus === 'PUBLISHED' && story.moderationStatus === 'APPROVED'
-        if (isApprovedLive && sessionUser.role !== 'ADMIN') {
-          setLoadError('Approved live scenarios cannot be edited.')
-          setIsLoadingStory(false)
-          return
-        }
-
         setTitle(story.title ?? '')
-        const hasSplit =
-          (story.scenarioStory && story.scenarioStory.trim().length > 0) ||
-          (story.scenarioChat && story.scenarioChat.trim().length > 0)
-        if (hasSplit) {
-          setScenarioStory(story.scenarioStory ?? '')
-          setScenarioChat(story.scenarioChat ?? '')
-        } else {
-          setScenarioStory(story.body ?? '')
-          setScenarioChat('')
-        }
+        setDescription(story.promptDescription ?? '')
+        setPersonality(story.personality ?? '')
+        setScenarioStory((story.scenarioStory ?? story.body ?? '').trim())
+        setExampleDialogs(story.scenarioChat ?? story.exampleDialogs ?? '')
+        setFirstMessage(story.firstMessage ?? '')
+        setVoiceFile(null)
+        setVoiceFileUrl(story.voiceFileUrl ?? '')
+        setVoiceFileName(story.voiceFileName ?? '')
         const initialCharacterId = story.characterId ?? story.character?.id ?? ''
         setSelectedCharacterId(initialCharacterId)
         setLinkedCharacterName(story.character?.name ?? '')
-        setScenarioType(
-          story.scenarioType && story.scenarioType in STORY_SCENARIO_TYPE_LABELS
-            ? (story.scenarioType as StoryScenarioType)
-            : ''
-        )
         setPublicationStatus(story.publicationStatus)
         setStoryModerationStatus(story.moderationStatus)
         setStoryRejectReason(story.moderationRejectReason)
 
-        const initialTitle = (story.title ?? '').trim()
-        const initialScenarioStory = hasSplit ? (story.scenarioStory ?? '').trim() : (story.body ?? '').trim()
-        const initialScenarioChat = hasSplit ? (story.scenarioChat ?? '').trim() : ''
         setContentBaseline({
-          title: initialTitle,
-          scenarioStory: initialScenarioStory,
-          scenarioChat: initialScenarioChat,
+          title: (story.title ?? '').trim(),
+          description: (story.promptDescription ?? '').trim(),
+          personality: (story.personality ?? '').trim(),
+          scenarioStory: (story.scenarioStory ?? story.body ?? '').trim(),
+          exampleDialogs: (story.scenarioChat ?? story.exampleDialogs ?? '').trim(),
+          firstMessage: (story.firstMessage ?? '').trim(),
           characterId: initialCharacterId,
-          scenarioType:
-            story.scenarioType && story.scenarioType in STORY_SCENARIO_TYPE_LABELS ? (story.scenarioType as StoryScenarioType) : ''
+          voiceFileUrl: story.voiceFileUrl ?? '',
+          voiceFileName: story.voiceFileName ?? ''
         })
 
         const isAdminEditingOther =
@@ -154,66 +148,79 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
   }, [isAuthLoading, sessionUser, router, storyId])
 
   const t = title.trim()
+  const desc = description.trim()
+  const persona = personality.trim()
   const st = scenarioStory.trim()
-  const ch = scenarioChat.trim()
-  const hasSelectedCharacterOption = useMemo(
-    () => (selectedCharacterId ? characters.some((character) => character.id === selectedCharacterId) : false),
-    [characters, selectedCharacterId]
-  )
+  const ch = exampleDialogs.trim()
+  const first = firstMessage.trim()
+
   const storyBodyFields = {
     title: t,
+    promptDescription: description,
+    personality,
+    scenario: scenarioStory,
+    firstMessage,
+    exampleDialogs,
     scenarioStory: st,
     scenarioChat: ch,
-    characterId: selectedCharacterId.trim() || undefined,
-    scenarioType: scenarioType || null
+    voiceFileUrl: voiceFileUrl.trim() || undefined,
+    voiceFileName: voiceFileName.trim() || undefined
   }
+
   const hasContentChanged = useMemo(() => {
     if (!contentBaseline) {
       return false
     }
     return (
       t !== contentBaseline.title ||
+      desc !== contentBaseline.description ||
+      persona !== contentBaseline.personality ||
       st !== contentBaseline.scenarioStory ||
-      ch !== contentBaseline.scenarioChat ||
-      selectedCharacterId !== contentBaseline.characterId ||
-      (scenarioType || '') !== contentBaseline.scenarioType
+      ch !== contentBaseline.exampleDialogs ||
+      first !== contentBaseline.firstMessage ||
+      voiceFileUrl.trim() !== contentBaseline.voiceFileUrl ||
+      voiceFileName.trim() !== contentBaseline.voiceFileName ||
+      Boolean(voiceFile)
     )
-  }, [contentBaseline, t, st, ch, selectedCharacterId, scenarioType])
+  }, [contentBaseline, t, desc, persona, st, ch, first, voiceFile, voiceFileName, voiceFileUrl])
 
-  /** Live / pending / rejected published edits must change something before resubmitting for review. */
   const mustChangeBeforeReviewSubmit =
     publicationStatus === 'PUBLISHED' &&
     storyModerationStatus !== null &&
     ['APPROVED', 'REJECTED', 'PENDING'].includes(storyModerationStatus)
 
-  const mustLinkCharacterWhenPublished = characters.length > 0
   const canSavePublished =
     publicationStatus === 'PUBLISHED' &&
     t.length >= 3 &&
+    desc.length >= 1 &&
+    persona.length >= 1 &&
     st.length >= 30 &&
-    ch.length >= 10 &&
+    first.length >= 1 &&
     st.length + ch.length <= 20000 &&
     !isSubmitting &&
     !loadError &&
-    Boolean(scenarioType) &&
-    (!mustLinkCharacterWhenPublished || Boolean(selectedCharacterId.trim())) &&
     (!mustChangeBeforeReviewSubmit || hasContentChanged)
+
   const canSaveDraftEdit =
     publicationStatus === 'DRAFT' &&
     t.length >= 1 &&
-    (st.length >= 1 || ch.length >= 1) &&
+    desc.length >= 1 &&
+    persona.length >= 1 &&
+    st.length >= 1 &&
+    first.length >= 1 &&
     !isSubmitting &&
     !loadError
+
   const canPublishFromDraft =
     publicationStatus === 'DRAFT' &&
     t.length >= 3 &&
+    desc.length >= 1 &&
+    persona.length >= 1 &&
     st.length >= 30 &&
-    ch.length >= 10 &&
+    first.length >= 1 &&
     st.length + ch.length <= 20000 &&
     !isSubmitting &&
-    !loadError &&
-    Boolean(scenarioType) &&
-    (!mustLinkCharacterWhenPublished || Boolean(selectedCharacterId.trim()))
+    !loadError
 
   const characterPagePath = useCallback(() => {
     const fromList = characters.find((c) => c.id === selectedCharacterId)
@@ -235,6 +242,37 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
     return returnToPath ?? characterPagePath()
   }, [isAdminEditor, returnToPath, characterPagePath])
 
+  const uploadPendingVoiceFile = async () => {
+    if (!voiceFile) {
+      return {
+        voiceFileUrl: voiceFileUrl.trim() || undefined,
+        voiceFileName: voiceFileName.trim() || undefined
+      }
+    }
+
+    if (!voiceFile.name.toLowerCase().endsWith('.wav')) {
+      throw new Error('Voice upload must be a .wav file.')
+    }
+
+    if (voiceFile.size > VOICE_FILE_MAX_BYTES) {
+      throw new Error('Voice WAV exceeds max size limit (30MB).')
+    }
+
+    const formData = new FormData()
+    formData.append('voice', voiceFile)
+    const uploadPayload = await uploadCharacterAssets(formData)
+    const nextVoiceUrl = uploadPayload.data.voiceFileUrl
+
+    if (!nextVoiceUrl) {
+      throw new Error('Voice upload did not return a WAV URL.')
+    }
+
+    return {
+      voiceFileUrl: nextVoiceUrl,
+      voiceFileName: uploadPayload.data.voiceFileName ?? voiceFile.name ?? lastPathSegmentFromUrl(nextVoiceUrl)
+    }
+  }
+
   const handleSaveDraftOnly = async () => {
     if (!canSaveDraftEdit) return
 
@@ -242,8 +280,7 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
     setErrorMessage(null)
 
     try {
-      await updateStory(storyId, { ...storyBodyFields })
-
+      await updateStory(storyId, { ...storyBodyFields, ...(await uploadPendingVoiceFile()) })
       router.push(resolveExitPath())
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not save story.'
@@ -261,6 +298,7 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
     try {
       await updateStory(storyId, {
         ...storyBodyFields,
+        ...(await uploadPendingVoiceFile()),
         publicationStatus: 'PUBLISHED'
       })
 
@@ -279,8 +317,7 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
     setErrorMessage(null)
 
     try {
-      await updateStory(storyId, { ...storyBodyFields })
-
+      await updateStory(storyId, { ...storyBodyFields, ...(await uploadPendingVoiceFile()) })
       router.push(resolveExitPath())
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not save story.'
@@ -327,15 +364,11 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
             {returnToPath ? 'Back to your scenarios' : 'Back to AI girlfriend'}
           </Link>
 
-          <h1 className="font-[family-name:var(--font-heading)] text-4xl font-semibold italic text-white md:text-5xl">
-            Edit Story
-          </h1>
+          <h1 className="font-[family-name:var(--font-heading)] text-4xl font-semibold italic text-white md:text-5xl">Edit Story</h1>
 
           {publicationStatus === 'PUBLISHED' && storyModerationStatus === 'REJECTED' ? (
             <div className="mt-6 rounded-lg border border-rose-400/35 bg-rose-950/30 px-4 py-3 md:px-5 md:py-4">
-              <p className="font-[family-name:var(--font-heading)] text-base font-semibold italic text-rose-100/95 md:text-lg">
-                This scenario was rejected
-              </p>
+              <p className="font-[family-name:var(--font-heading)] text-base font-semibold italic text-rose-100/95 md:text-lg">This scenario was rejected</p>
               {storyRejectReason?.trim() ? (
                 <div className="mt-2 rounded-md border border-white/10 bg-black/30 px-3 py-2">
                   <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-white/45">Reason</p>
@@ -345,34 +378,24 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
                 <p className="mt-2 text-sm text-white/55">No rejection reason was recorded.</p>
               )}
               <p className="mt-3 text-[13px] leading-relaxed text-white/70">
-                Edit the scenario below, then save — <span className="font-semibold text-ember-200/95">Submit for review</span>{' '}
-                is available only after you change the title, category, character link, or scenario text.
+                Edit the scenario below, then save. Submit for review is available only after you change the title or story content.
               </p>
             </div>
           ) : null}
 
           {publicationStatus === 'PUBLISHED' && storyModerationStatus === 'APPROVED' ? (
             <div className="mt-6 rounded-lg border border-emerald-400/30 bg-emerald-950/20 px-4 py-3 md:px-5 md:py-4">
-              <p className="font-[family-name:var(--font-heading)] text-base font-semibold italic text-emerald-100/95 md:text-lg">
-                This scenario is live
-              </p>
+              <p className="font-[family-name:var(--font-heading)] text-base font-semibold italic text-emerald-100/95 md:text-lg">This scenario is live</p>
               <p className="mt-3 text-[13px] leading-relaxed text-white/70">
-                If you change the title, category, character link, or scenario text and save, the scenario is{' '}
-                <span className="font-semibold text-ember-200/95">sent for moderation again</span> and stays hidden from the
-                public listing until an admin approves it.
+                If you change the title or story content and save, the scenario is sent for moderation again and stays hidden from the public listing until an admin approves it.
               </p>
             </div>
           ) : null}
 
           {publicationStatus === 'PUBLISHED' && storyModerationStatus === 'PENDING' ? (
             <div className="mt-6 rounded-lg border border-amber-400/35 bg-amber-950/20 px-4 py-3 md:px-5 md:py-4">
-              <p className="font-[family-name:var(--font-heading)] text-base font-semibold italic text-amber-100/95 md:text-lg">
-                Awaiting moderation
-              </p>
-              <p className="mt-3 text-[13px] leading-relaxed text-white/70">
-                You can update the scenario below; <span className="font-semibold text-ember-200/95">Save</span> is enabled
-                only when something changes.
-              </p>
+              <p className="font-[family-name:var(--font-heading)] text-base font-semibold italic text-amber-100/95 md:text-lg">Awaiting moderation</p>
+              <p className="mt-3 text-[13px] leading-relaxed text-white/70">You can update the scenario below; Save is enabled only when something changes.</p>
             </div>
           ) : null}
 
@@ -386,9 +409,7 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
             className="mt-8 min-w-0 space-y-5"
           >
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.08em] text-white/60">
-                Title
-              </label>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.08em] text-white/60">Title</label>
               <input
                 type="text"
                 value={title}
@@ -401,47 +422,46 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.08em] text-white/60">
-                Story category
-              </label>
-              <select
-                value={scenarioType}
-                onChange={(e) => setScenarioType(e.target.value as StoryScenarioType | '')}
-                className="h-[48px] w-full rounded-lg border border-white/15 bg-[#0a0c10]/90 pl-4 pr-14 text-sm text-white outline-none transition focus:border-ember-400/60"
-                aria-label="Story category"
-              >
-                <option value="">Select category…</option>
-                {STORY_SCENARIO_TYPES.map((key) => (
-                  <option key={key} value={key}>
-                    {STORY_SCENARIO_TYPE_LABELS[key]}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.08em] text-white/60">
-                Related AI girlfriend (optional)
-              </label>
-              <select
-                value={selectedCharacterId}
-                onChange={(e) => setSelectedCharacterId(e.target.value)}
-                className="h-[48px] w-full rounded-lg border border-white/15 bg-[#0a0c10]/90 pl-4 pr-14 text-sm text-white outline-none transition focus:border-ember-400/60"
-              >
-                <option value="">None</option>
-                {!hasSelectedCharacterOption && selectedCharacterId ? (
-                  <option value={selectedCharacterId}>{linkedCharacterName || 'Linked AI girlfriend'}</option>
-                ) : null}
-                {characters.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.08em] text-white/60">Related AI girlfriend</label>
+              <div className="flex min-h-[48px] w-full items-center rounded-lg border border-white/15 bg-[#0a0c10]/90 px-4 text-sm text-white/75">
+                {linkedCharacterName || (selectedCharacterId ? 'Linked AI girlfriend' : 'No linked AI girlfriend')}
+              </div>
             </div>
 
             <div className="min-w-0 overflow-x-hidden rounded-md border border-white/10 bg-black/25 p-4 md:p-5">
               <div className="min-w-0 space-y-7">
+                <div className="min-w-0">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <label className="block text-[22px] font-medium text-white/80">Description</label>
+                    <p className="text-[18px] text-white/35">{description.length} / 5000 tokens</p>
+                  </div>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    maxLength={5000}
+                    rows={5}
+                    placeholder="Description..."
+                    className={STORY_BODY_FIELD_TEXTAREA_CLASS}
+                    aria-label="Description"
+                  />
+                </div>
+
+                <div className="min-w-0">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <label className="block text-[22px] font-medium text-white/80">Personality</label>
+                    <p className="text-[18px] text-white/35">{personality.length} / 8000 tokens</p>
+                  </div>
+                  <textarea
+                    value={personality}
+                    onChange={(e) => setPersonality(e.target.value)}
+                    maxLength={8000}
+                    rows={5}
+                    placeholder="How the character thinks, speaks, and reacts..."
+                    className={STORY_BODY_FIELD_TEXTAREA_CLASS}
+                    aria-label="Personality"
+                  />
+                </div>
+
                 <div className="min-w-0">
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <label className="block text-[22px] font-medium text-white/80">Scenario</label>
@@ -461,11 +481,11 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
                 <div className="min-w-0">
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <label className="block text-[22px] font-medium text-white/80">Example dialogs (optional)</label>
-                    <p className="text-[18px] text-white/35">{scenarioChat.length} / 12000 tokens</p>
+                    <p className="text-[18px] text-white/35">{exampleDialogs.length} / 12000 tokens</p>
                   </div>
                   <textarea
-                    value={scenarioChat}
-                    onChange={(e) => setScenarioChat(e.target.value)}
+                    value={exampleDialogs}
+                    onChange={(e) => setExampleDialogs(e.target.value)}
                     maxLength={12000}
                     rows={6}
                     placeholder="Sample exchanges (e.g. User: ... / Character: ...)"
@@ -473,41 +493,77 @@ const EditStoryPage = ({ storyId, characterRouteKey = null }: EditStoryPageProps
                     aria-label="Example dialogs"
                   />
                 </div>
-              </div>
 
-              <p className="mt-4 text-[12px] leading-relaxed text-white/45">
-                Text styling guide:{' '}
-                <span className="text-white/65">&quot;quoted dialogue&quot;</span> uses your story-category color,{' '}
-                <span className="text-white/65">**double-asterisk actions**</span> become gray italic narration, and{' '}
-                <span className="text-white/65">*single-asterisk emphasis*</span> becomes pink italic text in chat preview.
-              </p>
-              {st.length > 0 || ch.length > 0 ? (
-                <div className="mt-5 min-w-0 overflow-hidden rounded-md border border-white/10 bg-black/40 p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-white/45">Card preview</p>
-                  <div className="mt-3 grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 md:items-start">
-                    <p className="min-w-0 whitespace-pre-line text-[12px] leading-relaxed text-white/75 [overflow-wrap:anywhere]">
-                      {st || '…'}
-                    </p>
-                    <div className="min-w-0 overflow-hidden rounded-md border border-white/10 bg-[#121010] p-3">
-                      <p className="text-[8px] font-bold uppercase tracking-[0.11em] text-[#f59e0b]">Chat preview</p>
-                      <div className="mt-2 min-w-0">
-                        <StoryBodyMarkupPreview
-                          key={scenarioType || 'none'}
-                          text={ch || '…'}
-                          scenarioType={scenarioType || null}
-                          className="text-[12px] leading-relaxed"
-                        />
-                      </div>
+                <div className="min-w-0 rounded-md border border-white/10 bg-black/25 p-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-white/45">First message (required)</p>
+                  <p className="mt-2 text-[13px] leading-relaxed text-white/60">
+                    Required plain text. Use <span className="text-white/75">*text*</span> for pink, <span className="text-white/75">&quot;text&quot;</span> for normal white, and <span className="text-white/75">**actions**</span> for actions.
+                  </p>
+                  <div className="mt-2 mb-2 flex items-center justify-between gap-3">
+                    <label className="block text-sm font-semibold text-white/80">First message</label>
+                    <p className="text-[18px] text-white/35">{firstMessage.length} / 50000 tokens</p>
+                  </div>
+                  <textarea
+                    value={firstMessage}
+                    onChange={(e) => setFirstMessage(e.target.value)}
+                    maxLength={50000}
+                    rows={5}
+                    placeholder='Use *like this* for pink, "like this" for normal white, and ** for actions.'
+                    className={STORY_BODY_FIELD_TEXTAREA_CLASS}
+                    aria-label="First message"
+                  />
+                </div>
+
+                <div className="min-w-0 rounded-md border border-white/10 bg-black/25 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-white/45">Voice WAV</p>
+                      <p className="mt-1 text-xs text-white/55">
+                        {voiceFile
+                          ? voiceFile.name
+                          : voiceFileName.trim()
+                            ? voiceFileName.trim()
+                            : voiceFileUrl.trim()
+                              ? lastPathSegmentFromUrl(voiceFileUrl)
+                              : 'No story voice selected.'}
+                      </p>
                     </div>
+                    <label className="inline-flex h-10 cursor-pointer items-center justify-center rounded-md border border-white/20 bg-white/5 px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-white/85 transition hover:border-white/35 hover:bg-white/10">
+                      Choose WAV
+                      <input
+                        type="file"
+                        accept=".wav,audio/wav,audio/x-wav"
+                        className="sr-only"
+                        disabled={isSubmitting}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0] ?? null
+                          event.target.value = ''
+
+                          if (!file) return
+
+                          if (!file.name.toLowerCase().endsWith('.wav')) {
+                            setErrorMessage('Voice upload must be a .wav file.')
+                            return
+                          }
+
+                          if (file.size > VOICE_FILE_MAX_BYTES) {
+                            setErrorMessage('Voice WAV exceeds max size limit (30MB).')
+                            return
+                          }
+
+                          setVoiceFile(file)
+                          setVoiceFileName(file.name)
+                          setErrorMessage(null)
+                        }}
+                      />
+                    </label>
                   </div>
                 </div>
-              ) : null}
+              </div>
             </div>
 
             {errorMessage ? (
-              <p className="rounded-md border border-rose-300/20 bg-rose-300/10 px-4 py-3 text-xs font-semibold text-rose-200">
-                {errorMessage}
-              </p>
+              <p className="rounded-md border border-rose-300/20 bg-rose-300/10 px-4 py-3 text-xs font-semibold text-rose-200">{errorMessage}</p>
             ) : null}
 
             {publicationStatus === 'DRAFT' ? (

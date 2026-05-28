@@ -6,7 +6,16 @@ import { AdminVrmMetricHeartIcon } from '@/components/ui-elements/admin-vrm-metr
 import { StoryBodyMarkupPreview } from '@/lib/story-body-markup-preview'
 import { scenarioTypeBadgeClass, scenarioTypeDisplayLabel } from '@/lib/story-scenario-types'
 import { ADMIN_OVERVIEW_REFRESH_EVENT } from '@/lib/admin-overview-events'
-import { deleteStory, listAdminStories, moderateStory, type StoryListRecord } from '@/lib/story-api'
+import {
+  clearCharacterDefaultStory,
+  deleteStory,
+  listAdminStories,
+  moderateStory,
+  setCharacterDefaultStory,
+  updateStoryOrigin,
+  type StoryListRecord,
+  type StoryOrigin
+} from '@/lib/story-api'
 import Link from 'next/link'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -34,6 +43,13 @@ const StoryEyeIcon = () => (
 const StoryTrashIcon = () => (
   <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
     <path d="M4.8 6.8h14.4M9.3 6.8V5.4h5.4v1.4M8.4 9.3v8.4M12 9.3v8.4M15.6 9.3v8.4M6.8 6.8l.6 12a1.7 1.7 0 0 0 1.7 1.6h5.8a1.7 1.7 0 0 0 1.7-1.6l.6-12" />
+  </svg>
+)
+
+const StoryEditIcon = () => (
+  <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+    <path d="M4.5 19.5h3.75L18.8 8.95a1.9 1.9 0 0 0 0-2.69l-1.06-1.06a1.9 1.9 0 0 0-2.69 0L4.5 15.75v3.75Z" />
+    <path d="m13.8 6.45 3.75 3.75" strokeLinecap="round" />
   </svg>
 )
 
@@ -183,6 +199,9 @@ type AdminStoryRowActionsProps = {
   onOpenReject: (row: StoryListRecord) => void
   onRequestDelete: (storyId: string, title: string) => void
   onOpenPreview: (row: StoryListRecord) => void
+  onSetOrigin: (storyId: string, origin: StoryOrigin) => void
+  onSetDefault: (characterId: string, storyId: string) => void
+  onClearDefault: (characterId: string) => void
 }
 
 const AdminStoryRowActions = ({
@@ -191,19 +210,23 @@ const AdminStoryRowActions = ({
   onApprove,
   onOpenReject,
   onRequestDelete,
-  onOpenPreview
+  onOpenPreview,
+  onSetOrigin,
+  onSetDefault,
+  onClearDefault
 }: AdminStoryRowActionsProps) => {
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false)
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null)
   const menuAnchorRef = useRef<HTMLDivElement>(null)
   const menuPortalRef = useRef<HTMLDivElement>(null)
 
-  /** Gear + moderation menu: pending (approve/reject) or approved (reject only — revoke approval). */
-  const showSettingsGear = storyRow.moderationStatus === 'PENDING' || storyRow.moderationStatus === 'APPROVED'
+  const showSettingsGear = true
 
   useLayoutEffect(() => {
     if (!settingsMenuOpen) {
-      setMenuPosition(null)
+      queueMicrotask(() => {
+        setMenuPosition(null)
+      })
       return
     }
 
@@ -279,6 +302,14 @@ const AdminStoryRowActions = ({
         <StoryEyeIcon />
       </button>
 
+      <Link
+        href={`/stories/${encodeURIComponent(storyRow.id)}/edit`}
+        className={storyActionLinkClassName}
+        aria-label={`Edit story: ${storyRow.title}`}
+      >
+        <StoryEditIcon />
+      </Link>
+
       {showSettingsGear ? (
         <div className="inline-flex" ref={menuAnchorRef}>
           <button
@@ -288,7 +319,7 @@ const AdminStoryRowActions = ({
             className={storyActionButtonClassName}
             aria-expanded={settingsMenuOpen}
             aria-haspopup="menu"
-            aria-label={`Moderation options for ${storyRow.title}`}
+            aria-label={`Story options for ${storyRow.title}`}
           >
             {rowBusy ? <span className="text-[10px] text-ember-300">…</span> : <StorySettingsGearIcon />}
           </button>
@@ -309,6 +340,48 @@ const AdminStoryRowActions = ({
             }}
             className="rounded-lg border border-white/15 bg-[#12161c] py-1 shadow-lg shadow-black/40"
           >
+            <button
+              type="button"
+              role="menuitem"
+              disabled={rowBusy}
+              className="flex w-full items-center px-3 py-2 text-left text-sm text-[#c8d4e8] transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-45"
+              onClick={() => {
+                setSettingsMenuOpen(false)
+                onSetOrigin(storyRow.id, storyRow.origin === 'OFFICIAL' ? 'COMMUNITY' : 'OFFICIAL')
+              }}
+            >
+              Mark as {storyRow.origin === 'OFFICIAL' ? 'Community' : 'Official'}
+            </button>
+            {storyRow.characterId ? (
+              storyRow.isDefault ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={rowBusy}
+                  className="flex w-full items-center px-3 py-2 text-left text-sm text-[#c8d4e8] transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-45"
+                  onClick={() => {
+                    setSettingsMenuOpen(false)
+                    onClearDefault(storyRow.characterId)
+                  }}
+                >
+                  Clear default
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={rowBusy || storyRow.publicationStatus !== 'PUBLISHED' || storyRow.moderationStatus !== 'APPROVED'}
+                  className="flex w-full items-center px-3 py-2 text-left text-sm text-[#c8d4e8] transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-45"
+                  onClick={() => {
+                    setSettingsMenuOpen(false)
+                    onSetDefault(storyRow.characterId, storyRow.id)
+                  }}
+                >
+                  Set default
+                </button>
+              )
+            ) : null}
+            <div className="my-1 border-t border-white/10" />
             {storyRow.moderationStatus === 'PENDING' ? (
               <button
                 type="button"
@@ -365,6 +438,19 @@ const moderationLabel: Record<'PENDING' | 'APPROVED' | 'REJECTED', string> = {
   APPROVED: 'Approved',
   REJECTED: 'Rejected'
 }
+
+const StoryMetadataBadges = ({ row }: { row: StoryListRecord }) => (
+  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+    <span className="inline-flex rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#9ca9c2]">
+      {row.origin === 'OFFICIAL' ? 'Official' : 'Community'}
+    </span>
+    {row.isDefault ? (
+      <span className="inline-flex rounded-full border border-ember-500/30 bg-ember-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-ember-200">
+        Default
+      </span>
+    ) : null}
+  </div>
+)
 
 type ModerationFilter = 'all' | 'pending' | 'approved' | 'rejected'
 
@@ -501,6 +587,57 @@ const AdminStoriesPage = () => {
         window.dispatchEvent(new Event(ADMIN_OVERVIEW_REFRESH_EVENT))
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Failed to reject.')
+      } finally {
+        setBusyStoryId(null)
+      }
+    })
+  }
+
+  const handleSetOrigin = (storyId: string, origin: StoryOrigin) => {
+    Promise.resolve().then(async () => {
+      setBusyStoryId(storyId)
+      setErrorMessage(null)
+
+      try {
+        await updateStoryOrigin(storyId, origin)
+        await loadStories()
+        window.dispatchEvent(new Event(ADMIN_OVERVIEW_REFRESH_EVENT))
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to update story origin.')
+      } finally {
+        setBusyStoryId(null)
+      }
+    })
+  }
+
+  const handleSetDefault = (characterId: string, storyId: string) => {
+    Promise.resolve().then(async () => {
+      setBusyStoryId(storyId)
+      setErrorMessage(null)
+
+      try {
+        await setCharacterDefaultStory(characterId, storyId)
+        await loadStories()
+        window.dispatchEvent(new Event(ADMIN_OVERVIEW_REFRESH_EVENT))
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to set default story.')
+      } finally {
+        setBusyStoryId(null)
+      }
+    })
+  }
+
+  const handleClearDefault = (characterId: string, storyId: string) => {
+    Promise.resolve().then(async () => {
+      setBusyStoryId(storyId)
+      setErrorMessage(null)
+
+      try {
+        await clearCharacterDefaultStory(characterId)
+        await loadStories()
+        window.dispatchEvent(new Event(ADMIN_OVERVIEW_REFRESH_EVENT))
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to clear default story.')
       } finally {
         setBusyStoryId(null)
       }
@@ -681,6 +818,7 @@ const AdminStoriesPage = () => {
                       <td className="max-w-[min(380px,40vw)] px-4 py-4 align-top">
                         <p className="font-[family-name:var(--font-heading)] text-[17px] font-normal leading-snug text-white">{row.title}</p>
                         <p className="mt-1 line-clamp-2 text-sm leading-snug text-[#6f809d]">{row.bodyPreview}</p>
+                        <StoryMetadataBadges row={row} />
                       </td>
                       <td className="whitespace-nowrap px-4 py-4 align-middle text-[15px] font-[family-name:var(--font-heading)] font-normal text-[#9ca9c2]">
                         {row.author.username}
@@ -710,6 +848,9 @@ const AdminStoriesPage = () => {
                           onOpenReject={openRejectModal}
                           onRequestDelete={requestDeleteStory}
                           onOpenPreview={setPreviewStory}
+                          onSetOrigin={handleSetOrigin}
+                          onSetDefault={handleSetDefault}
+                          onClearDefault={(characterId) => handleClearDefault(characterId, row.id)}
                         />
                       </td>
                     </tr>

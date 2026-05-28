@@ -4,7 +4,7 @@ import AdminPageShell from '@/components/shared/admin-page-shell'
 import AdminReviewQueueCard, { type AdminReviewQueueCardRecord } from '@/components/ui-elements/admin-review-queue-card'
 import AdminReviewRejectDialog from '@/components/ui-elements/admin-review-reject-dialog'
 import AdminScanReportDialog from '@/components/ui-elements/admin-scan-report-dialog'
-import { listAdminReviewQueue, updateCharacterStatus, type AdminReviewQueueRecord } from '@/lib/character-api'
+import { listAdminReviewQueue, moderateCharacterStatus, type AdminReviewQueueRecord } from '@/lib/character-api'
 import { ADMIN_OVERVIEW_REFRESH_EVENT } from '@/lib/admin-overview-events'
 import { apiGet } from '@/lib/api-client'
 import { useCallback, useEffect, useState } from 'react'
@@ -103,7 +103,7 @@ const ReviewQueuePage = () => {
       try {
         setBusyRecordId(recordId)
         setErrorMessage(null)
-        await updateCharacterStatus(recordId, 'APPROVED')
+        await moderateCharacterStatus(recordId, 'APPROVED')
         await loadReviewQueue({ withSpinner: false })
         dispatchAdminOverviewRefresh()
       } catch (error) {
@@ -170,7 +170,7 @@ const ReviewQueuePage = () => {
       setIsRejectSubmitting(true)
       setBusyRecordId(recordId)
       setErrorMessage(null)
-      await updateCharacterStatus(recordId, 'REJECTED', reason)
+      await moderateCharacterStatus(recordId, 'REJECTED', reason)
       setRejectModalTarget(null)
       await loadReviewQueue({ withSpinner: false })
       dispatchAdminOverviewRefresh()

@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist-database-migration",
+    "noEmit": true
+  },
+  "include": ["scripts/database-migration/**/*.ts", "src/lib/log-redaction.ts"],
+  "exclude": ["dist", "dist-database-migration", "node_modules"]
+}

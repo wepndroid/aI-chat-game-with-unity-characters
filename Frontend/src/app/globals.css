@@ -99,17 +99,160 @@ body {
     opacity: 0.45;
     cursor: not-allowed;
   }
+
+  .legal-page-shell {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 28px;
+    background:
+      radial-gradient(circle at top left, rgba(244, 99, 19, 0.14), transparent 34%),
+      radial-gradient(circle at bottom right, rgba(244, 99, 19, 0.08), transparent 30%),
+      linear-gradient(180deg, rgba(17, 12, 10, 0.96), rgba(8, 8, 8, 0.98));
+    box-shadow:
+      0 30px 90px rgba(0, 0, 0, 0.34),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  .legal-rich-content {
+    color: rgba(255, 255, 255, 0.76);
+    font-size: 15px;
+    line-height: 1.82;
+  }
+
+  .legal-rich-content > :first-child {
+    margin-top: 0;
+  }
+
+  .legal-rich-content > :last-child {
+    margin-bottom: 0;
+  }
+
+  .legal-rich-content h1,
+  .legal-rich-content h2,
+  .legal-rich-content h3,
+  .legal-rich-content h4,
+  .legal-rich-content h5,
+  .legal-rich-content h6 {
+    color: #fff7f1;
+    font-family: var(--font-heading), sans-serif;
+    font-weight: 600;
+    line-height: 1.18;
+    letter-spacing: -0.02em;
+    margin-top: 2.25rem;
+    margin-bottom: 0.9rem;
+  }
+
+  .legal-rich-content h1 {
+    font-size: 2rem;
+  }
+
+  .legal-rich-content h2 {
+    font-size: 1.45rem;
+  }
+
+  .legal-rich-content h3 {
+    font-size: 1.18rem;
+  }
+
+  .legal-rich-content p,
+  .legal-rich-content ul,
+  .legal-rich-content ol,
+  .legal-rich-content table,
+  .legal-rich-content blockquote {
+    margin-top: 0.95rem;
+    margin-bottom: 0.95rem;
+  }
+
+  .legal-rich-content strong,
+  .legal-rich-content b {
+    color: #fffaf5;
+    font-weight: 600;
+  }
+
+  .legal-rich-content a {
+    color: #ffb27f;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(255, 178, 127, 0.45);
+    transition:
+      color 0.15s ease,
+      border-color 0.15s ease;
+  }
+
+  .legal-rich-content a:hover {
+    color: #ffd2b3;
+    border-color: rgba(255, 210, 179, 0.8);
+  }
+
+  .legal-rich-content ul,
+  .legal-rich-content ol {
+    padding-left: 1.35rem;
+  }
+
+  .legal-rich-content li {
+    margin: 0.4rem 0;
+    padding-left: 0.15rem;
+  }
+
+  .legal-rich-content li::marker {
+    color: rgba(255, 178, 127, 0.8);
+  }
+
+  .legal-rich-content hr {
+    margin: 1.6rem 0;
+    border: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .legal-rich-content blockquote {
+    border-left: 3px solid rgba(244, 99, 19, 0.55);
+    padding-left: 1rem;
+    color: rgba(255, 255, 255, 0.68);
+  }
+
+  .legal-rich-content table {
+    width: 100%;
+    overflow: hidden;
+    border-collapse: separate;
+    border-spacing: 0;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .legal-rich-content th,
+  .legal-rich-content td {
+    padding: 0.9rem 1rem;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  }
+
+  .legal-rich-content th {
+    color: #fff7f1;
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .legal-rich-content tr:last-child td {
+    border-bottom: 0;
+  }
 }
 
-/* Minimum readable copy: Tailwind `text-xs` (12px) and smaller arbitrary sizes → 14px */
-.text-\[8px\],
-.text-\[9px\],
-.text-\[10px\],
-.text-\[11px\],
-.text-\[12px\],
-.text-\[13px\],
-.text-xs {
-  font-size: 14px !important;
+/* Keep tiny utility text readable on larger screens without inflating mobile UI. */
+@media (min-width: 640px) {
+  .text-\[8px\],
+  .text-\[9px\],
+  .text-\[10px\],
+  .text-\[11px\],
+  .text-\[12px\],
+  .text-\[13px\],
+  .text-xs {
+    font-size: 14px !important;
+  }
 }
 
 /* Large-screen readability: widen common page containers */

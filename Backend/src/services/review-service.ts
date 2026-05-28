@@ -70,15 +70,11 @@ const assertReviewEligibility = async (userId: string, characterIdOrSlug: string
   const [actor, character] = await Promise.all([getReviewActorOrThrow(userId), getCharacterForReviewOrThrow(characterIdOrSlug)])
 
   if (!actor.isEmailVerified) {
-    throw new ReviewVerificationError(403, 'Please verify your e-mail before posting a review.')
+    throw new ReviewVerificationError(403, 'Please verify your e-mail before posting a comment.')
   }
 
   if (character.status !== 'APPROVED') {
-    throw new ReviewVerificationError(403, 'This character is not available for public reviews.')
-  }
-
-  if (character.ownerId === userId) {
-    throw new ReviewVerificationError(403, 'You cannot review your own character.')
+    throw new ReviewVerificationError(403, 'This character is not available for public comments.')
   }
 }
 

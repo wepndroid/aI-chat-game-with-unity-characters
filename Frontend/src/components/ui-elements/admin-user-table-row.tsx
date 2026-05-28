@@ -1,5 +1,6 @@
 import AdminUserRolePill, { type AdminUserRole } from '@/components/ui-elements/admin-user-role-pill'
 import AdminUserStatusPill, { type AdminUserStatus } from '@/components/ui-elements/admin-user-status-pill'
+import { formatCompactCount } from '@/lib/format-compact-count'
 import Image from 'next/image'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -19,6 +20,29 @@ type AdminUserTableRecord = {
   uploads: number
   joined: string
   tierCents: number | null
+  tierCode: string
+  manualTierCode: string | null
+  patreonLinked: boolean
+  patreonMembershipStatus: string | null
+  quota: {
+    tierCode: string
+    periodEndsAt: string
+    message: {
+      limit: number | null
+      used: number
+      reserved: number
+      remaining: number | null
+      unlimited: boolean
+    }
+    voice: {
+      enabled: boolean
+      limit: number | null
+      used: number
+      reserved: number
+      remaining: number | null
+      unlimited: boolean
+    }
+  }
 }
 
 type AdminUserTableRowProps = {
@@ -29,6 +53,7 @@ type AdminUserTableRowProps = {
   onUpdateRole?: (userId: string, role: AdminUserRole) => void
   onToggleBan?: (userId: string, banned: boolean) => void
   onEditDetails?: (userId: string) => void
+  onOpenPatreonDebug?: (userId: string) => void
 }
 
 const roleOptionList: AdminUserRole[] = ['user', 'creator', 'admin']
@@ -37,6 +62,44 @@ const roleMenuLabelMap: Record<AdminUserRole, string> = {
   user: 'User',
   creator: 'Creator',
   admin: 'Admin'
+}
+
+const formatQuotaAmount = (value: number | null, unlimited: boolean) => {
+  if (unlimited || value === null) {
+    return 'Unlimited'
+  }
+
+  return formatCompactCount(value)
+}
+
+const QuotaLine = ({
+  label,
+  limit,
+  remaining,
+  unlimited,
+  disabled = false
+}: {
+  label: string
+  limit: number | null
+  remaining: number | null
+  unlimited: boolean
+  disabled?: boolean
+}) => {
+  if (disabled) {
+    return (
+      <p className="text-[12px] leading-5 text-white/42">
+        <span className="font-semibold text-white/55">{label}:</span> Off
+      </p>
+    )
+  }
+
+  return (
+    <p className="text-[12px] leading-5 text-[#9fb0cb]">
+      <span className="font-semibold text-white/72">{label}:</span>{' '}
+      <span className="text-white">{formatQuotaAmount(remaining, unlimited)}</span> left
+      <span className="text-white/45"> / {formatQuotaAmount(limit, unlimited)} limit</span>
+    </p>
+  )
 }
 
 /** Shield-off (slash) — ban / not protected (matches reference outline style). */
@@ -113,6 +176,26 @@ const EditPencilIcon = ({ className = 'size-4' }: { className?: string }) => {
   )
 }
 
+const PatreonDebugIcon = ({ className = 'size-4' }: { className?: string }) => {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M8 5.5A2.5 2.5 0 0 1 10.5 3h3A2.5 2.5 0 0 1 16 5.5v1A2.5 2.5 0 0 1 13.5 9h-3A2.5 2.5 0 0 1 8 6.5z" />
+      <path d="M12 9v5" />
+      <path d="M12 18.5h.01" />
+      <path d="M4 12a8 8 0 1 0 16 0" />
+    </svg>
+  )
+}
+
 const AdminUserTableRow = ({
   userRecord,
   isUpdatingRole = false,
@@ -120,7 +203,8 @@ const AdminUserTableRow = ({
   currentAdminUserId = null,
   onUpdateRole,
   onToggleBan,
-  onEditDetails
+  onEditDetails,
+  onOpenPatreonDebug
 }: AdminUserTableRowProps) => {
   const [roleMenuOpen, setRoleMenuOpen] = useState(false)
   const [roleMenuPosition, setRoleMenuPosition] = useState<{ top: number; left: number } | null>(null)
@@ -129,8 +213,10 @@ const AdminUserTableRow = ({
 
   useLayoutEffect(() => {
     if (!roleMenuOpen) {
-      setRoleMenuPosition(null)
-      return
+      const timeout = window.setTimeout(() => {
+        setRoleMenuPosition(null)
+      }, 0)
+      return () => window.clearTimeout(timeout)
     }
 
     const updatePosition = () => {
@@ -151,10 +237,11 @@ const AdminUserTableRow = ({
       })
     }
 
-    updatePosition()
+    const frameId = window.requestAnimationFrame(updatePosition)
     window.addEventListener('scroll', updatePosition, true)
     window.addEventListener('resize', updatePosition)
     return () => {
+      window.cancelAnimationFrame(frameId)
       window.removeEventListener('scroll', updatePosition, true)
       window.removeEventListener('resize', updatePosition)
     }
@@ -240,6 +327,11 @@ const AdminUserTableRow = ({
           <div className="min-w-0">
             <p className="font-[family-name:var(--font-heading)] text-[17px] font-normal leading-none text-white">{userRecord.username}</p>
             <p className="mt-1 break-words text-sm text-[#6f809d]">{userRecord.email}</p>
+            <p className="mt-1 text-[11px] uppercase tracking-[0.08em] text-white/40">
+              {userRecord.patreonLinked
+                ? `Patreon: ${userRecord.patreonMembershipStatus ?? 'linked'}`
+                : 'Patreon: not linked'}
+            </p>
           </div>
         </div>
       </td>
@@ -252,11 +344,30 @@ const AdminUserTableRow = ({
       <td className="px-3 py-3 align-middle sm:px-4 sm:py-4 text-base font-normal text-white/85">
         {userRecord.role === 'admin'
           ? 'Premium (Admin)'
-          : userRecord.tierCents && userRecord.tierCents > 0
-            ? `EUR ${(userRecord.tierCents / 100).toFixed(2)}`
-            : 'Free'}
+          : userRecord.tierCode === 'premium'
+            ? 'Premium'
+            : userRecord.tierCode === 'basic'
+              ? 'Basic'
+              : 'Free'}
       </td>
       <td className="px-3 py-3 align-middle sm:px-4 sm:py-4 text-base font-normal text-white/85">{userRecord.uploads}</td>
+      <td className="px-3 py-3 align-middle sm:px-4 sm:py-4">
+        <div className="min-w-[160px]">
+          <QuotaLine
+            label="Text"
+            limit={userRecord.quota.message.limit}
+            remaining={userRecord.quota.message.remaining}
+            unlimited={userRecord.quota.message.unlimited}
+          />
+          <QuotaLine
+            label="Voice"
+            limit={userRecord.quota.voice.limit}
+            remaining={userRecord.quota.voice.remaining}
+            unlimited={userRecord.quota.voice.unlimited}
+            disabled={!userRecord.quota.voice.enabled}
+          />
+        </div>
+      </td>
       <td className="px-3 py-3 align-middle sm:px-4 sm:py-4">
         <p className="text-base text-[#7c8aa3]">{userRecord.joined}</p>
       </td>
@@ -340,6 +451,16 @@ const AdminUserTableRow = ({
             ) : (
               <ShieldOffIcon />
             )}
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenPatreonDebug?.(userRecord.id)}
+            className="inline-flex size-9 items-center justify-center rounded-lg text-white/85 transition hover:bg-white/5 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-45"
+            aria-label={`Open Patreon debug for ${userRecord.username}`}
+            title={`Patreon debug for ${userRecord.username}`}
+            disabled={rowBusy || !onOpenPatreonDebug}
+          >
+            <PatreonDebugIcon className="size-[16px]" />
           </button>
           <button
             type="button"

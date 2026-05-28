@@ -2,23 +2,24 @@
 
 import AuthInputField from '@/components/ui-elements/auth-input-field'
 import { useAuth } from '@/components/providers/auth-provider'
-import { useWebglWarm } from '@/components/providers/webgl-warm-provider'
+import { useWebglPreloadIntent } from '@/components/providers/webgl-preload-provider'
 import MaintenanceBanner from '@/components/shared/maintenance-banner'
 import { HeaderNotificationsBell } from '@/components/shared/header-notifications-bell'
 import { getGoogleOauthStartUrl, isGoogleOauthEnabled } from '@/lib/auth-api'
-import { AUTH_OPEN_SIGN_IN_MODAL_EVENT } from '@/lib/auth-events'
+import { AUTH_OPEN_SIGN_IN_MODAL_EVENT, AUTH_OPEN_SIGN_UP_MODAL_EVENT } from '@/lib/auth-events'
+import { trackGoogleOAuthStartEvent } from '@/lib/google-analytics-events'
 import { trackLandingSignupClick } from '@/lib/landing-page-api'
 import { AI_GIRLFRIEND_ROUTE_BASE } from '@/lib/ai-girlfriend-route'
+import { getUnauthenticatedOAuthErrorMessage, stripOAuthRedirectQueryParams } from '@/lib/oauth-redirect-query'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const signInQueryFlagKey = 'openSignIn'
 const signUpQueryFlagKey = 'openSignUp'
 const signUpHashFlag = '#sign-up'
 const oauthQueryFlagKey = 'oauth'
-const oauthMessageQueryFlagKey = 'message'
 
 const primaryNavigationItems = [
   {
@@ -30,7 +31,7 @@ const primaryNavigationItems = [
     label: 'AI Girlfriends'
   },
   {
-    href: '/play-demo',
+    href: '/play',
     label: 'Play'
   }
 ] as const
@@ -48,49 +49,11 @@ const replaceHomeUrlWithoutQueryKeys = (keysToRemove: string[]) => {
   window.history.replaceState({}, '', next)
 }
 
-const normalizeOAuthErrorMessage = (rawMessage: string | null) => {
-  if (!rawMessage) {
-    return 'Google sign-in did not complete. Please try again.'
-  }
-
-  const normalized = rawMessage.trim().toLowerCase()
-
-  if (normalized.includes('state') || normalized.includes('expired')) {
-    return 'Google sign-in session expired. Please try again.'
-  }
-
-  if (normalized.includes('not completed') || normalized.includes('missing oauth callback code')) {
-    return 'Google sign-in was canceled or incomplete. Please try again.'
-  }
-
-  if (normalized.includes('not available') || normalized.includes('not enabled')) {
-    return 'Google sign-in is temporarily unavailable. Please contact support.'
-  }
-
-  return rawMessage
-}
-
 const Header = () => {
   const pathname = usePathname()
   const googleOauthEnabled = isGoogleOauthEnabled()
   const { sessionUser, isAuthLoading, registerUser, loginUser, logoutUser, clearAuthError } = useAuth()
-  const warm = useWebglWarm()
-
-  const handlePlayNavClick = (event: ReactMouseEvent<HTMLAnchorElement>) => {
-    if (!sessionUser) {
-      return
-    }
-
-    if (
-      warm.tryOpenWarmPlay({
-        characterId: null,
-        characterSlug: null,
-        storyId: null
-      })
-    ) {
-      event.preventDefault()
-    }
-  }
+  const { preloadOnIntent } = useWebglPreloadIntent()
 
   /** Closed on first paint so SSR and client match; open from URL in useEffect after hydrate. */
   const [isSignInModalOpen, setIsSignInModalOpen] = useState(false)
@@ -110,6 +73,7 @@ const Header = () => {
   const [signInErrorMessage, setSignInErrorMessage] = useState<string | null>(null)
   const [signUpErrorMessage, setSignUpErrorMessage] = useState<string | null>(null)
   const previousSignUpModalOpenRef = useRef(false)
+  const supportsInlineAuthModals = pathname === '/' || pathname === '/home2'
 
   const handleOpenSignInModal = () => {
     clearAuthError()
@@ -119,7 +83,7 @@ const Header = () => {
     setIsMobileMenuOpen(false)
     setIsSignInModalOpen(true)
 
-    if (pathname === '/') {
+    if (supportsInlineAuthModals) {
       const url = new URL(window.location.href)
       url.searchParams.set(signInQueryFlagKey, '1')
       url.searchParams.delete(signUpQueryFlagKey)
@@ -139,7 +103,7 @@ const Header = () => {
     setIsMobileMenuOpen(false)
     setIsSignUpModalOpen(true)
 
-    if (pathname === '/') {
+    if (supportsInlineAuthModals) {
       const url = new URL(window.location.href)
       url.searchParams.delete(signInQueryFlagKey)
       url.searchParams.set(signUpQueryFlagKey, '1')
@@ -254,6 +218,7 @@ const Header = () => {
     }
 
     // Use signup intent so first-time Google users can be provisioned seamlessly.
+    trackGoogleOAuthStartEvent('signup')
     window.location.assign(getGoogleOauthStartUrl('/profile', 'signup'))
   }
 
@@ -300,7 +265,7 @@ const Header = () => {
       setIsSignUpModalOpen(false)
       setIsMobileMenuOpen(false)
       setIsSignInModalOpen(true)
-      if (pathname === '/') {
+      if (supportsInlineAuthModals) {
         const url = new URL(window.location.href)
         url.searchParams.set(signInQueryFlagKey, '1')
         url.searchParams.delete(signUpQueryFlagKey)
@@ -310,15 +275,35 @@ const Header = () => {
       }
     }
 
+    const handleOpenSignUpModalEvent = () => {
+      clearAuthError()
+      setIsSignInModalOpen(false)
+      setSignInErrorMessage(null)
+      setSignUpErrorMessage(null)
+      setIsMobileMenuOpen(false)
+      setIsSignUpModalOpen(true)
+
+      if (supportsInlineAuthModals) {
+        const url = new URL(window.location.href)
+        url.searchParams.delete(signInQueryFlagKey)
+        url.searchParams.set(signUpQueryFlagKey, '1')
+        const query = url.searchParams.toString()
+        const next = query ? `${url.pathname}?${query}${url.hash}` : `${url.pathname}${url.hash}`
+        window.history.replaceState({}, '', next)
+      }
+    }
+
     window.addEventListener(AUTH_OPEN_SIGN_IN_MODAL_EVENT, handleOpenSignInModalEvent)
+    window.addEventListener(AUTH_OPEN_SIGN_UP_MODAL_EVENT, handleOpenSignUpModalEvent)
 
     return () => {
       window.removeEventListener(AUTH_OPEN_SIGN_IN_MODAL_EVENT, handleOpenSignInModalEvent)
+      window.removeEventListener(AUTH_OPEN_SIGN_UP_MODAL_EVENT, handleOpenSignUpModalEvent)
     }
-  }, [clearAuthError, pathname])
+  }, [clearAuthError, pathname, supportsInlineAuthModals])
 
   useEffect(() => {
-    if (pathname !== '/') {
+    if (!supportsInlineAuthModals) {
       previousSignUpModalOpenRef.current = isSignUpModalOpen
       return
     }
@@ -330,10 +315,10 @@ const Header = () => {
     }
 
     previousSignUpModalOpenRef.current = isSignUpModalOpen
-  }, [isSignUpModalOpen, pathname])
+  }, [isSignUpModalOpen, supportsInlineAuthModals])
 
   useEffect(() => {
-    if (pathname !== '/') {
+    if (!supportsInlineAuthModals) {
       return
     }
 
@@ -343,20 +328,25 @@ const Header = () => {
     const normalizedHash = url.hash.trim().toLowerCase()
     const shouldOpenSignUpByHash = normalizedHash === signUpHashFlag || normalizedHash === '#signup'
     const oauthStatus = url.searchParams.get(oauthQueryFlagKey)
-    const oauthMessage = url.searchParams.get(oauthMessageQueryFlagKey)
-    const shouldHandleOAuthError = oauthStatus === 'error'
+    const oauthErrorMessage = getUnauthenticatedOAuthErrorMessage(url.searchParams)
+    const shouldHandleOAuthError = Boolean(oauthErrorMessage)
+    const shouldIgnoreOAuthLinkError = oauthStatus === 'link_error'
 
-    if (!shouldOpenSignIn && !shouldOpenSignUp && !shouldOpenSignUpByHash && !shouldHandleOAuthError) {
+    if (!shouldOpenSignIn && !shouldOpenSignUp && !shouldOpenSignUpByHash && !shouldHandleOAuthError && !shouldIgnoreOAuthLinkError) {
       return
     }
 
     clearAuthError()
     // Strip OAuth noise from the URL; keep openSignIn / openSignUp in the address bar while modals stay open.
-    url.searchParams.delete(oauthQueryFlagKey)
-    url.searchParams.delete(oauthMessageQueryFlagKey)
-    url.searchParams.delete('provider')
+    stripOAuthRedirectQueryParams(url.searchParams)
     if (shouldOpenSignUpByHash) {
       url.hash = ''
+    }
+    if (shouldIgnoreOAuthLinkError && !shouldOpenSignIn && !shouldOpenSignUp && !shouldOpenSignUpByHash) {
+      const query = url.searchParams.toString()
+      const next = query ? `${url.pathname}?${query}${url.hash}` : `${url.pathname}${url.hash}`
+      window.history.replaceState({}, '', next)
+      return
     }
     if (shouldOpenSignUp || shouldOpenSignUpByHash) {
       url.searchParams.set(signUpQueryFlagKey, '1')
@@ -379,20 +369,20 @@ const Header = () => {
       }
 
       if (shouldHandleOAuthError && !shouldOpenSignUp) {
-        setSignInErrorMessage(normalizeOAuthErrorMessage(oauthMessage))
+        setSignInErrorMessage(oauthErrorMessage)
       }
     })
-  }, [pathname, clearAuthError])
+  }, [supportsInlineAuthModals, clearAuthError])
 
   return (
     <>
       <header className="fixed z-40 w-[100%] border-b border-white/10 bg-[#0b0b0b]/35 backdrop-blur-sm">
-        <div className="mx-auto w-full max-w-[1150px] px-4 py-3.5 md:px-7 md:py-4">
+        <div className="mx-auto w-full max-w-[1150px] px-4 py-3 md:px-7 md:py-4">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2.5">
               <button
                 type="button"
-                className="inline-flex size-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-white transition hover:border-ember-400/50 hover:bg-white/[0.08] md:hidden"
+                className="inline-flex size-10 shrink-0 items-center justify-center rounded-[18px] border border-ember-500/25 bg-[linear-gradient(180deg,rgba(56,24,15,0.92),rgba(18,10,8,0.96))] text-white shadow-[0_12px_28px_rgba(0,0,0,0.28)] transition hover:border-ember-400/55 hover:bg-[linear-gradient(180deg,rgba(78,31,17,0.95),rgba(24,11,8,0.98))] md:hidden"
                 aria-label={isMobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
                 aria-expanded={isMobileMenuOpen}
                 aria-controls="mobile-site-menu"
@@ -420,7 +410,7 @@ const Header = () => {
                   alt="SecretWaifu logo"
                   width={164}
                   height={44}
-                  className="h-8 w-auto max-w-[150px] md:h-9 md:max-w-none"
+                  className="h-7 w-auto max-w-[138px] md:h-9 md:max-w-none"
                   priority
                   suppressHydrationWarning
                 />
@@ -432,7 +422,9 @@ const Header = () => {
                 <Link
                   key={item.href}
                   href={item.href}
-                  onClick={item.href === '/play-demo' ? handlePlayNavClick : undefined}
+                  onPointerEnter={item.href === '/play' ? preloadOnIntent : undefined}
+                  onFocus={item.href === '/play' ? preloadOnIntent : undefined}
+                  onTouchStart={item.href === '/play' ? preloadOnIntent : undefined}
                   className="transition hover:text-ember-300"
                   aria-label={`Go to ${item.label.toLowerCase()}`}
                 >
@@ -539,7 +531,7 @@ const Header = () => {
                 </button>
                 <button
                   type="button"
-                  className="inline-flex shrink-0 items-center rounded-full border border-ember-400/45 bg-ember-500/12 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ember-100 transition hover:bg-ember-500/18 md:hidden"
+                  className="inline-flex h-10 shrink-0 items-center rounded-full border border-ember-400/45 bg-ember-500/12 px-3.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-ember-100 transition hover:bg-ember-500/18 md:hidden"
                   aria-label="Open sign in modal"
                   onClick={handleOpenSignInModal}
                   disabled={isAuthLoading}
@@ -552,56 +544,60 @@ const Header = () => {
 
           {isMobileMenuOpen ? (
             <div id="mobile-site-menu" className="mt-3 border-t border-white/10 pt-3 md:hidden" aria-label="Mobile navigation">
-              <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] p-3 shadow-[0_18px_60px_rgba(0,0,0,0.35)]">
+              <div className="overflow-hidden rounded-[24px] border border-ember-500/25 bg-[linear-gradient(180deg,rgba(39,16,10,0.96),rgba(14,9,8,0.98))] shadow-[0_22px_60px_rgba(0,0,0,0.42)]">
                 {sessionUser ? (
-                  <div className="mb-3 flex items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
-                    <span className="relative flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-gradient-to-br from-ember-500/40 to-black text-base font-bold uppercase text-white">
-                      {sessionUser.avatarUrl ? (
-                        <Image
-                          src={sessionUser.avatarUrl}
-                          alt=""
-                          width={48}
-                          height={48}
-                          unoptimized
-                          className="size-12 object-cover"
-                        />
-                      ) : (
-                        sessionUser.username.slice(0, 1)
-                      )}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold uppercase tracking-[0.12em] text-white">
-                        {sessionUser.username}
-                      </p>
-                      <p className="mt-1 text-sm text-white/55">Jump between account, stories, and your latest activity.</p>
+                  <div className="border-b border-white/10 px-4 py-3">
+                    <div className="flex items-center gap-3 rounded-[18px] bg-black/20 px-3 py-2.5">
+                      <span className="relative flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-gradient-to-br from-ember-500/40 to-black text-base font-bold uppercase text-white">
+                        {sessionUser.avatarUrl ? (
+                          <Image
+                            src={sessionUser.avatarUrl}
+                            alt=""
+                            width={48}
+                            height={48}
+                            unoptimized
+                            className="size-11 object-cover"
+                          />
+                        ) : (
+                          sessionUser.username.slice(0, 1)
+                        )}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-[12px] font-semibold uppercase tracking-[0.12em] text-white">
+                          {sessionUser.username}
+                        </p>
+                        <p className="mt-0.5 text-[12px] leading-4 text-white/55">Jump into your account and recent activity.</p>
+                      </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="mb-3 rounded-2xl border border-ember-500/25 bg-ember-500/10 px-4 py-3">
-                    <p className="text-sm font-semibold uppercase tracking-[0.14em] text-white">Start chatting faster</p>
-                    <p className="mt-1 text-sm text-white/62">Sign in or create an account without leaving the page.</p>
+                  <div className="border-b border-white/10 px-4 py-3">
+                    <div className="rounded-[18px] bg-[linear-gradient(135deg,rgba(244,99,19,0.18),rgba(255,255,255,0.03))] px-3 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/94">Start chatting faster</p>
+                      <p className="mt-1 text-[12px] leading-4 text-white/62">Sign in or create an account without leaving the page.</p>
+                    </div>
                   </div>
                 )}
 
-                <div className="grid gap-2">
+                <div className="grid gap-1.5 p-3">
                   {primaryNavigationItems.map((item) => (
                     <Link
                       key={item.href}
                       href={item.href}
-                      onClick={(event) => {
+                      onPointerEnter={item.href === '/play' ? preloadOnIntent : undefined}
+                      onFocus={item.href === '/play' ? preloadOnIntent : undefined}
+                      onTouchStart={item.href === '/play' ? preloadOnIntent : undefined}
+                      onClick={() => {
                         handleCloseMobileMenu()
-                        if (item.href === '/play-demo') {
-                          handlePlayNavClick(event)
-                        }
                       }}
-                      className="group rounded-2xl border border-white/10 bg-black/25 px-4 py-3.5 transition hover:border-ember-400/40 hover:bg-black/35"
+                      className="group rounded-[18px] border border-transparent bg-white/[0.03] px-4 py-3 transition hover:border-ember-400/35 hover:bg-white/[0.06]"
                       aria-label={`Go to ${item.label.toLowerCase()}`}
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white">{item.label}</p>
+                        <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-white">{item.label}</p>
                         <svg
                           viewBox="0 0 24 24"
-                          className="size-5 shrink-0 text-white/45 transition group-hover:translate-x-0.5 group-hover:text-ember-200"
+                          className="size-4 shrink-0 text-white/45 transition group-hover:translate-x-0.5 group-hover:text-ember-200"
                           fill="none"
                           stroke="currentColor"
                           strokeWidth="2"
@@ -618,23 +614,23 @@ const Header = () => {
                     <Link
                       href="/profile"
                       onClick={handleCloseMobileMenu}
-                      className="rounded-2xl border border-ember-500/30 bg-ember-500/10 px-4 py-3.5 transition hover:border-ember-400/50 hover:bg-ember-500/14"
+                      className="rounded-[18px] border border-ember-500/30 bg-ember-500/10 px-4 py-3 transition hover:border-ember-400/50 hover:bg-ember-500/14"
                       aria-label="Go to account"
                     >
-                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white">Account</p>
+                      <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-white">Account</p>
                     </Link>
                   ) : (
                     <div className="grid grid-cols-2 gap-2 pt-1">
                       <button
                         type="button"
-                        className="rounded-2xl border border-ember-500/45 bg-ember-500/12 px-4 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-ember-100 transition hover:bg-ember-500/18"
+                        className="rounded-[18px] border border-ember-500/45 bg-ember-500/12 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-ember-100 transition hover:bg-ember-500/18"
                         onClick={handleOpenSignInModal}
                       >
                         Sign In
                       </button>
                       <button
                         type="button"
-                        className="rounded-2xl border border-white/15 bg-white/[0.04] px-4 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-white/[0.08]"
+                        className="rounded-[18px] border border-white/15 bg-white/[0.04] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-white/[0.08]"
                         onClick={handleOpenSignUpModal}
                       >
                         Sign Up
@@ -646,10 +642,10 @@ const Header = () => {
                     <Link
                       href="/admin/dashboard"
                       onClick={handleCloseMobileMenu}
-                      className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3.5 transition hover:border-ember-400/40 hover:bg-black/35"
+                      className="rounded-[18px] border border-transparent bg-white/[0.03] px-4 py-3 transition hover:border-ember-400/35 hover:bg-white/[0.06]"
                       aria-label="Go to admin dashboard"
                     >
-                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white">Admin</p>
+                      <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-white">Admin</p>
                     </Link>
                   ) : null}
                 </div>
@@ -660,24 +656,24 @@ const Header = () => {
         <MaintenanceBanner />
       </header>
 
-      {pathname === '/' && isSignInModalOpen ? (
+      {supportsInlineAuthModals && isSignInModalOpen ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-5"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4 py-6 sm:px-5"
           onClick={handleModalContainerClick}
           aria-label="Sign in modal backdrop"
           role="presentation"
         >
-          <div className="w-full max-w-md rounded-2xl border border-ember-300/20 bg-[#171411]/95 p-6 shadow-ember backdrop-blur md:p-8">
-            <div className="mb-5">
-              <h2 className="font-[family-name:var(--font-heading)] text-4xl font-extrabold uppercase tracking-wider text-white">
+          <div className="w-full max-w-md rounded-[24px] border border-ember-300/20 bg-[#171411]/95 p-4 shadow-ember backdrop-blur sm:p-6 md:p-8">
+            <div className="mb-4">
+              <h2 className="font-[family-name:var(--font-heading)] text-[28px] font-extrabold uppercase tracking-[0.05em] text-white sm:text-4xl sm:tracking-wider">
                 Welcome Back
               </h2>
-              <p className="mt-2 text-xs font-semibold uppercase tracking-[0.08em] text-white/55">
+              <p className="mt-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-white/55 sm:mt-2 sm:text-xs">
                 Click outside this panel to close.
               </p>
             </div>
 
-            <form className="space-y-4" aria-label="Sign in form" onSubmit={handleSignInSubmit}>
+            <form className="space-y-3.5 sm:space-y-4" aria-label="Sign in form" onSubmit={handleSignInSubmit}>
               <AuthInputField
                 label="Email Address"
                 name="email"
@@ -701,10 +697,10 @@ const Header = () => {
                 <p className="text-xs font-semibold uppercase tracking-[0.08em] text-rose-300">{signInErrorMessage}</p>
               ) : null}
 
-              <div className="pt-1 text-right">
+              <div className="pt-0.5 text-right">
                 <Link
                   href="/auth/forgot-password"
-                  className="text-xs font-semibold uppercase tracking-[0.08em] text-ember-300 transition hover:text-ember-200"
+                  className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ember-300 transition hover:text-ember-200 sm:text-xs"
                   aria-label="Go to forgot password"
                 >
                   Forgot Password?
@@ -714,7 +710,7 @@ const Header = () => {
               <div className="text-right">
                 <button
                   type="button"
-                  className="text-xs font-semibold uppercase tracking-[0.08em] text-ember-300 transition hover:text-ember-200"
+                  className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ember-300 transition hover:text-ember-200 sm:text-xs"
                   aria-label="Open sign up modal"
                   onClick={handleOpenSignUpModal}
                 >
@@ -724,7 +720,7 @@ const Header = () => {
 
               <button
                 type="submit"
-                className="w-full rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 py-2.5 text-sm font-bold uppercase tracking-[0.12em] text-black transition hover:brightness-110"
+                className="w-full rounded-xl bg-gradient-to-r from-ember-400 to-ember-500 px-4 py-2.5 text-[12px] font-bold uppercase tracking-[0.11em] text-black transition hover:brightness-110 sm:rounded-md sm:text-sm"
                 aria-label="Sign in to account"
                 disabled={isSigningIn}
               >
@@ -733,7 +729,7 @@ const Header = () => {
 
               <button
                 type="button"
-                className="w-full rounded-md border border-white/20 bg-white/5 px-4 py-2.5 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:border-ember-300 hover:text-ember-200"
+                className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-2.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-white transition hover:border-ember-300 hover:text-ember-200 sm:rounded-md sm:text-sm"
                 aria-label="Sign in with Google"
                 onClick={handleSignInWithGoogle}
               >
@@ -743,9 +739,9 @@ const Header = () => {
           </div>
         </div>
       ) : null}
-      {pathname === '/' && isSignUpModalOpen ? (
+      {supportsInlineAuthModals && isSignUpModalOpen ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-5"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4 py-6 sm:px-5"
           onClick={(event) => {
             if (event.currentTarget !== event.target) {
               return
@@ -755,13 +751,13 @@ const Header = () => {
           aria-label="Sign up modal backdrop"
           role="presentation"
         >
-          <div className="w-full max-w-md rounded-2xl border border-ember-300/20 bg-[#171411]/95 p-6 shadow-ember backdrop-blur md:p-8">
-            <h2 className="font-[family-name:var(--font-heading)] text-4xl font-extrabold uppercase tracking-wider text-white">
+          <div className="w-full max-w-md rounded-[24px] border border-ember-300/20 bg-[#171411]/95 p-4 shadow-ember backdrop-blur sm:p-6 md:p-8">
+            <h2 className="font-[family-name:var(--font-heading)] text-[28px] font-extrabold uppercase tracking-[0.05em] text-white sm:text-4xl sm:tracking-wider">
               Create Account
             </h2>
-            <p className="mt-3 text-sm text-white/70">Register a new account to access your account and character management.</p>
+            <p className="mt-2 text-[13px] leading-5 text-white/70 sm:mt-3 sm:text-sm">Register a new account to access your account and character management.</p>
 
-            <form className="mt-5 space-y-4" aria-label="Sign up form" onSubmit={handleSignUpSubmit}>
+            <form className="mt-4 space-y-3.5 sm:mt-5 sm:space-y-4" aria-label="Sign up form" onSubmit={handleSignUpSubmit}>
               <AuthInputField
                 label="Username"
                 name="username"
@@ -805,7 +801,7 @@ const Header = () => {
 
               <button
                 type="submit"
-                className="w-full rounded-md bg-gradient-to-r from-ember-400 to-ember-500 px-4 py-2.5 text-sm font-bold uppercase tracking-[0.12em] text-black transition hover:brightness-110"
+                className="w-full rounded-xl bg-gradient-to-r from-ember-400 to-ember-500 px-4 py-2.5 text-[12px] font-bold uppercase tracking-[0.11em] text-black transition hover:brightness-110 sm:rounded-md sm:text-sm"
                 aria-label="Create account"
                 disabled={isSigningUp}
               >
@@ -815,13 +811,13 @@ const Header = () => {
               <button
                 type="button"
                 onClick={handleSignInWithGoogle}
-                className="w-full rounded-md border border-white/20 bg-white/5 px-4 py-2.5 text-sm font-semibold uppercase tracking-[0.08em] text-white transition hover:border-ember-300 hover:text-ember-200"
+                className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-2.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-white transition hover:border-ember-300 hover:text-ember-200 sm:rounded-md sm:text-sm"
                 aria-label="Sign up with Google"
               >
                 Sign Up with Google
               </button>
 
-              <p className="text-xs text-white/70">
+              <p className="text-[12px] text-white/70 sm:text-xs">
                 Already have an account?{' '}
                 <button
                   type="button"
@@ -830,7 +826,7 @@ const Header = () => {
                     setSignUpErrorMessage(null)
                     setIsSignUpModalOpen(false)
                     setIsSignInModalOpen(true)
-                    if (pathname === '/') {
+                    if (supportsInlineAuthModals) {
                       const url = new URL(window.location.href)
                       url.searchParams.delete(signUpQueryFlagKey)
                       url.searchParams.set(signInQueryFlagKey, '1')

@@ -3,6 +3,7 @@
 import { getCurrentSessionUser, loginWithPassword, logoutSession, registerWithPassword } from '@/lib/auth-api'
 import type { LoginAuthPayload, RegisterAuthPayload } from '@/lib/auth-api'
 import { ApiRequestError } from '@/lib/api-client'
+import { trackAuthLoginEvent, trackAuthSignUpEvent } from '@/lib/google-analytics-events'
 import type { SessionUser } from '@/lib/session-user'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 
@@ -96,6 +97,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
       const response = await registerWithPassword(payload)
       setSessionUser(response.data.user)
       setAuthErrorMessage(null)
+      trackAuthSignUpEvent('password')
 
       return {
         success: true,
@@ -116,6 +118,7 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
       const response = await loginWithPassword(payload)
       setSessionUser(response.data.user)
       setAuthErrorMessage(null)
+      trackAuthLoginEvent('password')
       return {
         success: true
       }

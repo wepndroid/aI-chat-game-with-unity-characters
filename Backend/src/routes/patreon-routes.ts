@@ -1,12 +1,16 @@
-import { randomBytes } from 'node:crypto'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { EntitlementStatus, Prisma } from '@prisma/client'
 import { Router } from 'express'
 import { z } from 'zod'
 import { exchangeAuthorizationCode, probePatreonAuthorizeConfiguration } from '../lib/patreon-client'
 import { getPatreonConfig, isPatreonOauthEnabled } from '../lib/patreon-config'
-import { syncPatreonMembership } from '../lib/patreon-sync'
+import { appendPatreonSyncLog } from '../lib/patreon-sync-log'
+import { deactivatePatreonMembership, syncPatreonMembership } from '../lib/patreon-sync'
 import { requireAuth, requireVerifiedEmail } from '../middleware/auth-middleware'
 import { prisma } from '../lib/prisma'
+import { calculateMonthlyEquivalentCents, resolveBillingPeriodMonths } from '../lib/subscription-billing'
+import { canTierAccessMemberBenefits } from '../lib/membership-tier-policy'
+import { resolveEffectiveMembershipTierForUser } from '../services/membership/membership-tier-service'
 
 const patreonRoutes = Router()
 
@@ -15,7 +19,65 @@ const connectQuerySchema = z.object({
   mode: z.enum(['json', 'redirect']).optional()
 })
 
+const patreonWebhookPayloadSchema = z
+  .object({
+    data: z
+      .object({
+        id: z.string().optional(),
+        relationships: z
+          .object({
+            user: z
+              .object({
+                data: z
+                  .object({
+                    id: z.string().optional()
+                  })
+                  .optional()
+              })
+              .optional()
+          })
+          .optional()
+      })
+      .optional()
+  })
+  .passthrough()
+
 const defaultPatreonRedirectAfter = '/members?patreon=connected'
+
+const normalizePatreonSignature = (signature: string | null | undefined) => {
+  if (!signature) {
+    return null
+  }
+
+  const trimmed = signature.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  // Some senders include an algorithm prefix (e.g. "md5=<hex>").
+  const equalsIndex = trimmed.indexOf('=')
+  const normalized = equalsIndex >= 0 ? trimmed.slice(equalsIndex + 1) : trimmed
+  return normalized.trim().toLowerCase()
+}
+
+const isValidHexDigest = (value: string) => /^[a-f0-9]+$/i.test(value)
+
+const verifyPatreonWebhookSignature = (input: { rawBody: string; signature: string; secret: string }) => {
+  const normalizedSignature = normalizePatreonSignature(input.signature)
+  if (!normalizedSignature || !isValidHexDigest(normalizedSignature)) {
+    return false
+  }
+
+  const expectedSignature = createHmac('md5', input.secret).update(input.rawBody, 'utf8').digest('hex')
+  const providedBuffer = Buffer.from(normalizedSignature, 'hex')
+  const expectedBuffer = Buffer.from(expectedSignature, 'hex')
+
+  if (providedBuffer.length !== expectedBuffer.length) {
+    return false
+  }
+
+  return timingSafeEqual(providedBuffer, expectedBuffer)
+}
 
 const sanitizeRedirectAfter = (value: string | undefined) => {
   if (!value) {
@@ -88,6 +150,9 @@ const normalizeCallbackErrorMessage = (error: unknown) => {
   return 'Patreon connection failed. Please try again.'
 }
 
+const isPatreonUnlinkedSyncError = (error: unknown) =>
+  error instanceof Error && error.message.trim() === 'Patreon account is not linked for this user.'
+
 patreonRoutes.get('/patreon/connect', requireVerifiedEmail, async (request, response, next) => {
   try {
     if (!isPatreonOauthEnabled()) {
@@ -140,6 +205,7 @@ patreonRoutes.get('/patreon/connect', requireVerifiedEmail, async (request, resp
 })
 
 patreonRoutes.get('/patreon/oauth/callback', async (request, response, next) => {
+  let resolvedOauthStateUserId: string | null = null
   try {
     const callbackQuery = z
       .object({
@@ -173,7 +239,7 @@ patreonRoutes.get('/patreon/oauth/callback', async (request, response, next) => 
     }
 
     if (oauthState.expiresAt.getTime() < Date.now()) {
-      await prisma.patreonOAuthState.delete({
+      await prisma.patreonOAuthState.deleteMany({
         where: {
           id: oauthState.id
         }
@@ -182,13 +248,17 @@ patreonRoutes.get('/patreon/oauth/callback', async (request, response, next) => 
       return
     }
 
+    resolvedOauthStateUserId = oauthState.userId
+
     const tokenPayload = await exchangeAuthorizationCode(callbackQuery.code)
     const syncResult = await syncPatreonMembership({
       userId: oauthState.userId,
-      tokenPayload
+      tokenPayload,
+      logSource: 'oauth_callback',
+      logTrigger: 'oauth_callback'
     })
 
-    await prisma.patreonOAuthState.delete({
+    await prisma.patreonOAuthState.deleteMany({
       where: {
         id: oauthState.id
       }
@@ -200,6 +270,18 @@ patreonRoutes.get('/patreon/oauth/callback', async (request, response, next) => 
     response.redirect(302, buildCallbackRedirectUrl(successPath))
   } catch (error) {
     console.error(error)
+    if (resolvedOauthStateUserId) {
+      await appendPatreonSyncLog({
+        userId: resolvedOauthStateUserId,
+        source: 'oauth_callback',
+        eventType: 'sync_error',
+        level: 'ERROR',
+        message: normalizeCallbackErrorMessage(error),
+        details: {
+          error: error instanceof Error ? error.message : String(error)
+        }
+      }).catch(() => {})
+    }
     const message = encodeURIComponent(normalizeCallbackErrorMessage(error))
     try {
       response.redirect(302, buildCallbackRedirectUrl(`/members?patreon=error&message=${message}`))
@@ -227,13 +309,15 @@ patreonRoutes.get('/patreon/status', requireAuth, async (request, response, next
           linked: true,
           membershipStatus: 'active_patron',
           tierCents: 1650,
+          effectiveTierCode: 'admin',
+          hasMemberBenefits: true,
           patreonUserId: 'admin-override',
           lastCheckedAt: new Date().toISOString(),
           nextChargeDate: null,
           entitlements: [
             {
               id: 'admin-override-entitlement',
-              tierCode: 'secretwaifu_access',
+              tierCode: 'premium',
               status: 'ACTIVE',
               validFrom: null,
               validUntil: null
@@ -267,17 +351,29 @@ patreonRoutes.get('/patreon/status', requireAuth, async (request, response, next
           linked: false,
           membershipStatus: 'not-connected',
           tierCents: 0,
+          effectiveTierCode: 'free',
+          hasMemberBenefits: false,
           entitlements: []
         }
       })
       return
     }
 
+    const billingPeriodMonths = resolveBillingPeriodMonths({
+      pledgeCadenceMonths: user.patreonAccount?.pledgeCadenceMonths,
+      lastChargeDate: user.patreonAccount?.lastChargeDate,
+      nextChargeDate: user.patreonAccount?.nextChargeDate
+    })
+
+    const effectiveTierCode = await resolveEffectiveMembershipTierForUser(authUser.userId)
+
     response.json({
       data: {
         linked: Boolean(user.patreonAccount),
         membershipStatus: user.patreonAccount?.membershipStatus ?? 'not-connected',
-        tierCents: user.patreonAccount?.tierCents ?? 0,
+        tierCents: calculateMonthlyEquivalentCents(user.patreonAccount?.tierCents ?? 0, billingPeriodMonths),
+        effectiveTierCode,
+        hasMemberBenefits: canTierAccessMemberBenefits(effectiveTierCode),
         patreonUserId: user.patreonAccount?.patreonUserId ?? null,
         lastCheckedAt: user.patreonAccount?.lastCheckedAt?.toISOString() ?? null,
         nextChargeDate: user.patreonAccount?.nextChargeDate?.toISOString() ?? null,
@@ -330,13 +426,39 @@ patreonRoutes.post('/patreon/sync', requireVerifiedEmail, async (request, respon
     }
 
     const syncResult = await syncPatreonMembership({
-      userId: authUser.userId
+      userId: authUser.userId,
+      logSource: 'user_sync',
+      logActorUserId: authUser.userId,
+      logActorLabel: authUser.email,
+      logTrigger: 'user_refresh'
     })
 
     response.json({
       data: syncResult
     })
   } catch (error) {
+    if (isPatreonUnlinkedSyncError(error)) {
+      response.status(409).json({
+        message: 'Patreon account is not linked for this user.'
+      })
+      return
+    }
+
+    const authUser = request.authUser
+    if (authUser) {
+      await appendPatreonSyncLog({
+        userId: authUser.userId,
+        source: 'user_sync',
+        eventType: 'sync_error',
+        level: 'ERROR',
+        message: error instanceof Error ? error.message : 'Patreon sync failed.',
+        actorUserId: authUser.userId,
+        actorLabel: authUser.email,
+        details: {
+          error: error instanceof Error ? error.message : String(error)
+        }
+      }).catch(() => {})
+    }
     next(error)
   }
 })
@@ -392,9 +514,114 @@ patreonRoutes.post('/patreon/disconnect', requireVerifiedEmail, async (request, 
       })
     ])
 
+    await appendPatreonSyncLog({
+      userId: authUser.userId,
+      source: 'user_disconnect',
+      eventType: 'disconnect',
+      level: 'WARN',
+      message: 'Patreon account was disconnected by the user.',
+      actorUserId: authUser.userId,
+      actorLabel: authUser.email
+    })
+
     response.json({
       data: {
         disconnected: true
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+patreonRoutes.post('/patreon/webhook', async (request, response, next) => {
+  try {
+    const expectedSharedSecret = process.env.PATREON_WEBHOOK_SHARED_SECRET?.trim()
+    if (expectedSharedSecret) {
+      const rawBody = (request as typeof request & { rawBody?: string }).rawBody ?? ''
+      const providedSignature = request.get('x-patreon-signature')?.trim() ?? null
+      const providedLegacySecret = request.get('x-patreon-webhook-secret')?.trim()
+      const signatureMatches =
+        rawBody.length > 0 &&
+        Boolean(providedSignature) &&
+        verifyPatreonWebhookSignature({
+          rawBody,
+          signature: providedSignature as string,
+          secret: expectedSharedSecret
+        })
+      const legacySecretMatches = Boolean(providedLegacySecret) && providedLegacySecret === expectedSharedSecret
+
+      if (!signatureMatches && !legacySecretMatches) {
+        response.status(401).json({
+          message: 'Invalid Patreon webhook signature.'
+        })
+        return
+      }
+    }
+
+    const eventType = request.get('x-patreon-event')?.trim().toLowerCase() ?? 'unknown'
+    const parsedBody = patreonWebhookPayloadSchema.safeParse(request.body)
+    if (!parsedBody.success) {
+      response.status(400).json({
+        message: 'Invalid Patreon webhook payload.'
+      })
+      return
+    }
+
+    const payload = parsedBody.data
+    const campaignMemberId = payload.data?.id?.trim() || null
+    const patreonUserId = payload.data?.relationships?.user?.data?.id?.trim() || null
+
+    const linkedAccount =
+      (campaignMemberId
+        ? await prisma.patreonAccount.findFirst({
+            where: { campaignMemberId },
+            select: { userId: true }
+          })
+        : null) ??
+      (patreonUserId
+        ? await prisma.patreonAccount.findFirst({
+            where: { patreonUserId },
+            select: { userId: true }
+          })
+        : null)
+
+    if (!linkedAccount) {
+      response.status(202).json({
+        data: {
+          accepted: true,
+          synced: false,
+          reason: 'account_not_linked',
+          event_type: eventType
+        }
+      })
+      return
+    }
+
+    const isDeleteLikeEvent =
+      eventType === 'members:delete' || eventType === 'members:pledge:delete' || eventType.endsWith(':delete')
+    const syncResult = isDeleteLikeEvent
+      ? await deactivatePatreonMembership({
+          userId: linkedAccount.userId,
+          membershipStatus: eventType,
+          logSource: 'webhook',
+          logTrigger: eventType
+        })
+      : await syncPatreonMembership({
+          userId: linkedAccount.userId,
+          logSource: 'webhook',
+          logTrigger: eventType
+        })
+
+    response.status(200).json({
+      data: {
+        accepted: true,
+        synced: true,
+        event_type: eventType,
+        user_id: linkedAccount.userId,
+        membership_status: 'membershipStatus' in syncResult ? syncResult.membershipStatus : eventType,
+        tier_code: syncResult.tierCode,
+        entitlement_status: syncResult.entitlementStatus
       }
     })
   } catch (error) {

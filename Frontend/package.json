@@ -7,7 +7,10 @@
     "dev:lan": "next dev --hostname 0.0.0.0 --port 7000",
     "build": "next build",
     "start": "next start --hostname 127.0.0.1 --port 7000",
-    "lint": "eslint . --max-warnings=0"
+    "lint": "eslint . --max-warnings=0",
+    "test:landing-attribution": "tsx --test src/lib/landing-attribution.test.ts",
+    "test:marketing": "tsx --test src/lib/marketing-automation-messages.test.ts src/lib/marketing-automation-delay.test.ts src/components/admin/marketing/marketing-page-copy.test.ts",
+    "test:unit": "tsx --test src/lib/webgl-launch-watchdog.test.ts src/lib/webgl-bridge-messages.test.ts src/lib/webgl-preload.test.ts src/lib/character-story-catalog-normalizer.test.ts src/lib/oauth-redirect-query.test.ts src/lib/google-analytics-events.test.ts src/lib/default-homepage-selection.test.ts src/lib/default-homepage-api.test.ts src/lib/character-moderation-api.test.ts src/lib/character-publication-api.test.ts src/components/character/character-action-state.test.ts src/components/character/character-story-catalog-display-policy.test.ts"
   },
   "dependencies": {
     "@pixiv/three-vrm": "^3.5.1",
@@ -35,6 +38,7 @@
     "eslint-config-next": "latest",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }

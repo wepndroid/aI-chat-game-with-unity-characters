@@ -1,6 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 import AdminOfficialVrmStatusPill, { type AdminOfficialVrmStatus } from '@/components/ui-elements/admin-official-vrm-status-pill'
-import { AdminVrmMetricHeartIcon, AdminVrmMetricViewsIcon } from '@/components/ui-elements/admin-vrm-metric-icons'
+import { AdminVrmMetricHeartIcon, AdminVrmMetricMessagesIcon } from '@/components/ui-elements/admin-vrm-metric-icons'
 import { buildAiGirlfriendRouteHref } from '@/lib/ai-girlfriend-route'
 import Link from 'next/link'
 
@@ -11,7 +11,7 @@ type AdminOfficialVrmRecord = {
   name: string
   tagline: string
   hearts: string
-  views: string
+  messages: string
   status: AdminOfficialVrmStatus
   releaseDate: string
   previewImageUrl: string | null
@@ -92,9 +92,9 @@ const AdminOfficialVrmRow = ({ vrmRecord, isBusy = false, onDeleteRequest }: Adm
             <AdminVrmMetricHeartIcon />
             {vrmRecord.hearts}
           </span>
-          <span className="inline-flex items-center gap-1 text-xs font-normal text-[#a8b6d0]" title="Views">
-            <AdminVrmMetricViewsIcon />
-            {vrmRecord.views}
+          <span className="inline-flex items-center gap-1 text-xs font-normal text-[#a8b6d0]" title="Messages">
+            <AdminVrmMetricMessagesIcon />
+            {vrmRecord.messages}
           </span>
         </div>
       </td>

@@ -1,4 +1,6 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from './prisma'
+import { createRuntimeAdminSettingsRefreshCache } from './runtime-admin-settings-cache'
 
 type UploadLimitsSettings = {
   maxVrmSizeMb: number
@@ -60,11 +62,15 @@ export type ApiKeysSettings = {
   patreonClientId: string
   patreonClientSecret: string
   patreonRedirectUri: string
+  emailProvider: 'smtp' | 'mailgun'
   smtpHost: string
   smtpPort: number
   smtpUser: string
   smtpPass: string
   smtpFrom: string
+  mailgunDomain: string
+  mailgunApiKey: string
+  mailgunRegion: 'us' | 'eu'
 }
 
 type RuntimeAdminSettings = {
@@ -80,20 +86,6 @@ type RuntimeAdminSettings = {
 
 const SETTINGS_SINGLETON_ID = 'singleton'
 
-const envApiKeyDefaults: ApiKeysSettings = {
-  googleClientId: process.env.GOOGLE_OAUTH_CLIENT_ID?.trim() || '',
-  googleClientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim() || '',
-  googleRedirectUri: process.env.GOOGLE_OAUTH_REDIRECT_URI?.trim() || '',
-  patreonClientId: process.env.PATREON_CLIENT_ID?.trim() || '',
-  patreonClientSecret: process.env.PATREON_CLIENT_SECRET?.trim() || '',
-  patreonRedirectUri: process.env.PATREON_REDIRECT_URI?.trim() || '',
-  smtpHost: process.env.EMAIL_SMTP_HOST?.trim() || '',
-  smtpPort: Number(process.env.EMAIL_SMTP_PORT || 587),
-  smtpUser: process.env.EMAIL_SMTP_USER?.trim() || '',
-  smtpPass: process.env.EMAIL_SMTP_PASS?.trim() || '',
-  smtpFrom: process.env.EMAIL_FROM?.trim() || ''
-}
-
 const getApiKeysFromEnvExact = (): ApiKeysSettings => ({
   googleClientId: process.env.GOOGLE_OAUTH_CLIENT_ID?.trim() || '',
   googleClientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim() || '',
@@ -101,36 +93,34 @@ const getApiKeysFromEnvExact = (): ApiKeysSettings => ({
   patreonClientId: process.env.PATREON_CLIENT_ID?.trim() || '',
   patreonClientSecret: process.env.PATREON_CLIENT_SECRET?.trim() || '',
   patreonRedirectUri: process.env.PATREON_REDIRECT_URI?.trim() || '',
+  emailProvider: process.env.EMAIL_PROVIDER?.trim().toLowerCase() === 'mailgun' ? 'mailgun' : 'smtp',
   smtpHost: process.env.EMAIL_SMTP_HOST?.trim() || '',
   smtpPort: Number(process.env.EMAIL_SMTP_PORT || 587),
   smtpUser: process.env.EMAIL_SMTP_USER?.trim() || '',
   smtpPass: process.env.EMAIL_SMTP_PASS?.trim() || '',
-  smtpFrom: process.env.EMAIL_FROM?.trim() || ''
+  smtpFrom: process.env.EMAIL_FROM?.trim() || '',
+  mailgunDomain: process.env.MAILGUN_DOMAIN?.trim() || '',
+  mailgunApiKey: process.env.MAILGUN_API_KEY?.trim() || '',
+  mailgunRegion: process.env.MAILGUN_REGION?.trim().toLowerCase() === 'eu' ? 'eu' : 'us'
 })
 
-const mergeApiKeysDbWithEnv = (dbApiKeys: ApiKeysSettings): ApiKeysSettings => {
-  const env = getApiKeysFromEnvExact()
-  const pick = (dbVal: string, envVal: string) => (dbVal.trim().length > 0 ? dbVal : envVal)
-  const smtpTouchedInDb =
-    dbApiKeys.smtpHost.trim().length > 0 ||
-    dbApiKeys.smtpUser.trim().length > 0 ||
-    dbApiKeys.smtpFrom.trim().length > 0 ||
-    dbApiKeys.smtpPass.trim().length > 0
-
-  return {
-    googleClientId: pick(dbApiKeys.googleClientId, env.googleClientId),
-    googleClientSecret: pick(dbApiKeys.googleClientSecret, env.googleClientSecret),
-    googleRedirectUri: pick(dbApiKeys.googleRedirectUri, env.googleRedirectUri),
-    patreonClientId: pick(dbApiKeys.patreonClientId, env.patreonClientId),
-    patreonClientSecret: pick(dbApiKeys.patreonClientSecret, env.patreonClientSecret),
-    patreonRedirectUri: pick(dbApiKeys.patreonRedirectUri, env.patreonRedirectUri),
-    smtpHost: pick(dbApiKeys.smtpHost, env.smtpHost),
-    smtpPort: smtpTouchedInDb ? dbApiKeys.smtpPort : env.smtpPort,
-    smtpUser: pick(dbApiKeys.smtpUser, env.smtpUser),
-    smtpPass: pick(dbApiKeys.smtpPass, env.smtpPass),
-    smtpFrom: pick(dbApiKeys.smtpFrom, env.smtpFrom)
-  }
-}
+const buildSanitizedApiKeysForPersistence = (): ApiKeysSettings => ({
+  googleClientId: '',
+  googleClientSecret: '',
+  googleRedirectUri: '',
+  patreonClientId: '',
+  patreonClientSecret: '',
+  patreonRedirectUri: '',
+  emailProvider: 'smtp',
+  smtpHost: '',
+  smtpPort: 587,
+  smtpUser: '',
+  smtpPass: '',
+  smtpFrom: '',
+  mailgunDomain: '',
+  mailgunApiKey: '',
+  mailgunRegion: 'us'
+})
 
 const defaultRuntimeAdminSettings: RuntimeAdminSettings = {
   uploadLimits: {
@@ -180,68 +170,51 @@ const defaultRuntimeAdminSettings: RuntimeAdminSettings = {
     blockedRoutePrefixes: []
   },
   apiKeys: {
-    ...envApiKeyDefaults
+    ...buildSanitizedApiKeysForPersistence()
   }
 }
 
-let tableEnsured = false
-
-const isMissingCharacterFieldLimitsColumnError = (error: unknown) => {
-  if (!(error instanceof Error)) {
-    return false
+const parseRuntimeSettingsCacheTtlMs = () => {
+  const raw = process.env.RUNTIME_SETTINGS_CACHE_TTL_MS
+  if (!raw) {
+    return 15000
   }
 
-  return error.message.includes('no such column: characterFieldLimitsJson') || error.message.includes('no such column: thumbnailGenerationJson')
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isFinite(parsed)) {
+    return 15000
+  }
+
+  return Math.max(1000, Math.min(parsed, 300000))
 }
 
-const ensureCharacterFieldLimitsColumn = async () => {
-  const tableInfo = await prisma.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info('RuntimeAdminSettings')`)
-  const existingColumns = new Set(tableInfo.map((column) => column.name))
+const runtimeSettingsCacheTtlMs = parseRuntimeSettingsCacheTtlMs()
 
-  if (!existingColumns.has('characterFieldLimitsJson')) {
-    await prisma.$executeRawUnsafe(
-      `ALTER TABLE RuntimeAdminSettings ADD COLUMN characterFieldLimitsJson TEXT NOT NULL DEFAULT '${JSON.stringify(defaultRuntimeAdminSettings.characterFieldLimits)}'`
-    )
+const cloneRuntimeAdminSettings = (value: RuntimeAdminSettings): RuntimeAdminSettings =>
+  JSON.parse(JSON.stringify(value)) as RuntimeAdminSettings
+
+const runtimeAdminSettingsCache = createRuntimeAdminSettingsRefreshCache<RuntimeAdminSettings>({
+  clone: cloneRuntimeAdminSettings,
+  ttlMs: runtimeSettingsCacheTtlMs,
+  onStaleFallback: (error) => {
+    console.warn('[runtime-settings] serving stale cached settings after DB read failure', error)
+  }
+})
+
+const safeJsonValue = <T>(value: unknown, fallback: T) => {
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value) as T
+    } catch {
+      return fallback
+    }
   }
 
-  if (!existingColumns.has('thumbnailGenerationJson')) {
-    await prisma.$executeRawUnsafe(
-      `ALTER TABLE RuntimeAdminSettings ADD COLUMN thumbnailGenerationJson TEXT NOT NULL DEFAULT '${JSON.stringify(defaultRuntimeAdminSettings.thumbnailGeneration)}'`
-    )
-  }
-}
-
-const ensureSettingsTable = async () => {
-  if (tableEnsured) {
-    return
+  if (value && typeof value === 'object') {
+    return value as T
   }
 
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS RuntimeAdminSettings (
-      id TEXT PRIMARY KEY NOT NULL,
-      uploadLimitsJson TEXT NOT NULL,
-      characterFieldLimitsJson TEXT NOT NULL,
-      thumbnailGenerationJson TEXT NOT NULL,
-      requestLimitsJson TEXT NOT NULL,
-      sessionLoginJson TEXT NOT NULL,
-      featureSwitchesJson TEXT NOT NULL,
-      maintenanceJson TEXT NOT NULL,
-      apiKeysJson TEXT NOT NULL,
-      updatedAt TEXT NOT NULL
-    )
-  `)
-
-  await ensureCharacterFieldLimitsColumn()
-
-  tableEnsured = true
-}
-
-const safeJsonParse = <T>(value: string, fallback: T) => {
-  try {
-    return JSON.parse(value) as T
-  } catch {
-    return fallback
-  }
+  return fallback
 }
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
@@ -365,103 +338,104 @@ const normalize = (input: Partial<RuntimeAdminSettings>): RuntimeAdminSettings =
         typeof apiKeys.patreonClientSecret === 'string' ? apiKeys.patreonClientSecret.trim() : defaultRuntimeAdminSettings.apiKeys.patreonClientSecret,
       patreonRedirectUri:
         typeof apiKeys.patreonRedirectUri === 'string' ? apiKeys.patreonRedirectUri.trim() : defaultRuntimeAdminSettings.apiKeys.patreonRedirectUri,
+      emailProvider: apiKeys.emailProvider === 'mailgun' ? 'mailgun' : 'smtp',
       smtpHost: typeof apiKeys.smtpHost === 'string' ? apiKeys.smtpHost.trim() : defaultRuntimeAdminSettings.apiKeys.smtpHost,
       smtpPort: clamp(Number(apiKeys.smtpPort ?? defaultRuntimeAdminSettings.apiKeys.smtpPort), 1, 65535),
       smtpUser: typeof apiKeys.smtpUser === 'string' ? apiKeys.smtpUser.trim() : defaultRuntimeAdminSettings.apiKeys.smtpUser,
       smtpPass: typeof apiKeys.smtpPass === 'string' ? apiKeys.smtpPass.trim() : defaultRuntimeAdminSettings.apiKeys.smtpPass,
-      smtpFrom: typeof apiKeys.smtpFrom === 'string' ? apiKeys.smtpFrom.trim() : defaultRuntimeAdminSettings.apiKeys.smtpFrom
+      smtpFrom: typeof apiKeys.smtpFrom === 'string' ? apiKeys.smtpFrom.trim() : defaultRuntimeAdminSettings.apiKeys.smtpFrom,
+      mailgunDomain:
+        typeof apiKeys.mailgunDomain === 'string' ? apiKeys.mailgunDomain.trim() : defaultRuntimeAdminSettings.apiKeys.mailgunDomain,
+      mailgunApiKey:
+        typeof apiKeys.mailgunApiKey === 'string' ? apiKeys.mailgunApiKey.trim() : defaultRuntimeAdminSettings.apiKeys.mailgunApiKey,
+      mailgunRegion: apiKeys.mailgunRegion === 'eu' ? 'eu' : 'us'
     }
   }
+}
+
+const withEnvironmentApiKeys = (settings: RuntimeAdminSettings): RuntimeAdminSettings => ({
+  ...settings,
+  apiKeys: getApiKeysFromEnvExact()
+})
+
+const toPrismaJson = <T>(value: T): Prisma.InputJsonValue => value as Prisma.InputJsonValue
+
+const persistRuntimeAdminSettings = async (settings: RuntimeAdminSettings) => {
+  const sanitizedSettings = {
+    ...settings,
+    apiKeys: buildSanitizedApiKeysForPersistence()
+  }
+  const updatedAt = new Date()
+
+  await prisma.runtimeAdminSettings.upsert({
+    where: {
+      id: SETTINGS_SINGLETON_ID
+    },
+    create: {
+      id: SETTINGS_SINGLETON_ID,
+      uploadLimits: toPrismaJson(sanitizedSettings.uploadLimits),
+      characterFieldLimits: toPrismaJson(sanitizedSettings.characterFieldLimits),
+      thumbnailGeneration: toPrismaJson(sanitizedSettings.thumbnailGeneration),
+      requestLimits: toPrismaJson(sanitizedSettings.requestLimits),
+      sessionLogin: toPrismaJson(sanitizedSettings.sessionLogin),
+      featureSwitches: toPrismaJson(sanitizedSettings.featureSwitches),
+      maintenance: toPrismaJson(sanitizedSettings.maintenance),
+      apiKeys: toPrismaJson(sanitizedSettings.apiKeys),
+      updatedAt
+    },
+    update: {
+      uploadLimits: toPrismaJson(sanitizedSettings.uploadLimits),
+      characterFieldLimits: toPrismaJson(sanitizedSettings.characterFieldLimits),
+      thumbnailGeneration: toPrismaJson(sanitizedSettings.thumbnailGeneration),
+      requestLimits: toPrismaJson(sanitizedSettings.requestLimits),
+      sessionLogin: toPrismaJson(sanitizedSettings.sessionLogin),
+      featureSwitches: toPrismaJson(sanitizedSettings.featureSwitches),
+      maintenance: toPrismaJson(sanitizedSettings.maintenance),
+      apiKeys: toPrismaJson(sanitizedSettings.apiKeys),
+      updatedAt
+    }
+  })
+}
+
+const readRuntimeAdminSettingsFromDatabase = async (): Promise<RuntimeAdminSettings> => {
+  const row = await prisma.runtimeAdminSettings.findUnique({
+    where: {
+      id: SETTINGS_SINGLETON_ID
+    }
+  })
+
+  if (!row) {
+    const defaults = normalize(defaultRuntimeAdminSettings)
+    await persistRuntimeAdminSettings(defaults)
+    return withEnvironmentApiKeys(defaults)
+  }
+
+  const normalized = normalize({
+    uploadLimits: safeJsonValue(row.uploadLimits, defaultRuntimeAdminSettings.uploadLimits),
+    characterFieldLimits: safeJsonValue(row.characterFieldLimits, defaultRuntimeAdminSettings.characterFieldLimits),
+    thumbnailGeneration: safeJsonValue(row.thumbnailGeneration, defaultRuntimeAdminSettings.thumbnailGeneration),
+    requestLimits: safeJsonValue(row.requestLimits, defaultRuntimeAdminSettings.requestLimits),
+    sessionLogin: safeJsonValue(row.sessionLogin, defaultRuntimeAdminSettings.sessionLogin),
+    featureSwitches: safeJsonValue(row.featureSwitches, defaultRuntimeAdminSettings.featureSwitches),
+    maintenance: safeJsonValue(row.maintenance, defaultRuntimeAdminSettings.maintenance),
+    apiKeys: buildSanitizedApiKeysForPersistence()
+  })
+
+  return withEnvironmentApiKeys(normalized)
 }
 
 const getRuntimeAdminSettings = async () => {
-  await ensureSettingsTable()
-
-  type RuntimeSettingsRow = {
-    uploadLimitsJson: string
-    characterFieldLimitsJson: string
-    thumbnailGenerationJson: string
-    requestLimitsJson: string
-    sessionLoginJson: string
-    featureSwitchesJson: string
-    maintenanceJson: string
-    apiKeysJson: string
-  }
-
-  let rows: RuntimeSettingsRow[]
-
-  try {
-    rows = await prisma.$queryRaw<RuntimeSettingsRow[]>`SELECT uploadLimitsJson, characterFieldLimitsJson, thumbnailGenerationJson, requestLimitsJson, sessionLoginJson, featureSwitchesJson, maintenanceJson, apiKeysJson
-      FROM RuntimeAdminSettings
-      WHERE id = ${SETTINGS_SINGLETON_ID}
-      LIMIT 1`
-  } catch (error) {
-    if (!isMissingCharacterFieldLimitsColumnError(error)) {
-      throw error
-    }
-
-    await ensureCharacterFieldLimitsColumn()
-
-    rows = await prisma.$queryRaw<RuntimeSettingsRow[]>`SELECT uploadLimitsJson, characterFieldLimitsJson, thumbnailGenerationJson, requestLimitsJson, sessionLoginJson, featureSwitchesJson, maintenanceJson, apiKeysJson
-      FROM RuntimeAdminSettings
-      WHERE id = ${SETTINGS_SINGLETON_ID}
-      LIMIT 1`
-  }
-
-  if (!rows[0]) {
-    await updateRuntimeAdminSettings(defaultRuntimeAdminSettings)
-    return defaultRuntimeAdminSettings
-  }
-
-  const row = rows[0]
-  const normalized = normalize({
-    uploadLimits: safeJsonParse(row.uploadLimitsJson, defaultRuntimeAdminSettings.uploadLimits),
-    characterFieldLimits: safeJsonParse(row.characterFieldLimitsJson, defaultRuntimeAdminSettings.characterFieldLimits),
-    thumbnailGeneration: safeJsonParse(row.thumbnailGenerationJson, defaultRuntimeAdminSettings.thumbnailGeneration),
-    requestLimits: safeJsonParse(row.requestLimitsJson, defaultRuntimeAdminSettings.requestLimits),
-    sessionLogin: safeJsonParse(row.sessionLoginJson, defaultRuntimeAdminSettings.sessionLogin),
-    featureSwitches: safeJsonParse(row.featureSwitchesJson, defaultRuntimeAdminSettings.featureSwitches),
-    maintenance: safeJsonParse(row.maintenanceJson, defaultRuntimeAdminSettings.maintenance),
-    apiKeys: safeJsonParse(row.apiKeysJson, defaultRuntimeAdminSettings.apiKeys)
-  })
-
-  return {
-    ...normalized,
-    apiKeys: mergeApiKeysDbWithEnv(normalized.apiKeys)
-  }
+  return runtimeAdminSettingsCache.get(readRuntimeAdminSettingsFromDatabase)
 }
 
 const updateRuntimeAdminSettings = async (nextSettingsInput: Partial<RuntimeAdminSettings>) => {
-  await ensureSettingsTable()
   const nextSettings = normalize(nextSettingsInput)
-  const updatedAt = new Date().toISOString()
+  await persistRuntimeAdminSettings(nextSettings)
 
-  await prisma.$executeRaw`INSERT INTO RuntimeAdminSettings
-    (id, uploadLimitsJson, characterFieldLimitsJson, thumbnailGenerationJson, requestLimitsJson, sessionLoginJson, featureSwitchesJson, maintenanceJson, apiKeysJson, updatedAt)
-    VALUES (
-      ${SETTINGS_SINGLETON_ID},
-      ${JSON.stringify(nextSettings.uploadLimits)},
-      ${JSON.stringify(nextSettings.characterFieldLimits)},
-      ${JSON.stringify(nextSettings.thumbnailGeneration)},
-      ${JSON.stringify(nextSettings.requestLimits)},
-      ${JSON.stringify(nextSettings.sessionLogin)},
-      ${JSON.stringify(nextSettings.featureSwitches)},
-      ${JSON.stringify(nextSettings.maintenance)},
-      ${JSON.stringify(nextSettings.apiKeys)},
-      ${updatedAt}
-    )
-    ON CONFLICT(id) DO UPDATE SET
-      uploadLimitsJson = excluded.uploadLimitsJson,
-      characterFieldLimitsJson = excluded.characterFieldLimitsJson,
-      thumbnailGenerationJson = excluded.thumbnailGenerationJson,
-      requestLimitsJson = excluded.requestLimitsJson,
-      sessionLoginJson = excluded.sessionLoginJson,
-      featureSwitchesJson = excluded.featureSwitchesJson,
-      maintenanceJson = excluded.maintenanceJson,
-      apiKeysJson = excluded.apiKeysJson,
-      updatedAt = excluded.updatedAt`
+  const runtimeSettings = withEnvironmentApiKeys(nextSettings)
+  runtimeAdminSettingsCache.set(runtimeSettings)
 
-  return nextSettings
+  return runtimeSettings
 }
 
 const toMaskedApiKeys = (apiKeys: ApiKeysSettings) => {
@@ -479,7 +453,8 @@ const toMaskedApiKeys = (apiKeys: ApiKeysSettings) => {
     ...apiKeys,
     googleClientSecret: mask(apiKeys.googleClientSecret),
     patreonClientSecret: mask(apiKeys.patreonClientSecret),
-    smtpPass: mask(apiKeys.smtpPass)
+    smtpPass: mask(apiKeys.smtpPass),
+    mailgunApiKey: mask(apiKeys.mailgunApiKey)
   }
 }
 

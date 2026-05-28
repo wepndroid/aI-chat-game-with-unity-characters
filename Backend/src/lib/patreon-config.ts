@@ -1,7 +1,7 @@
 const PATREON_AUTHORIZE_URL = 'https://www.patreon.com/oauth2/authorize'
 const PATREON_TOKEN_URL = 'https://www.patreon.com/api/oauth2/token'
 const PATREON_IDENTITY_URL =
-  'https://www.patreon.com/api/oauth2/v2/identity?include=memberships,memberships.currently_entitled_tiers&fields%5Bmember%5D=patron_status,last_charge_status,last_charge_date,next_charge_date,currently_entitled_amount_cents&fields%5Btier%5D=title,amount_cents'
+  'https://www.patreon.com/api/oauth2/v2/identity?include=memberships,memberships.campaign,memberships.currently_entitled_tiers&fields%5Bmember%5D=patron_status,last_charge_status,last_charge_date,next_charge_date,currently_entitled_amount_cents,pledge_cadence,is_gifted&fields%5Btier%5D=title,amount_cents&fields%5Bcampaign%5D=creation_name'
 
 type PatreonConfig = {
   clientId: string
@@ -21,7 +21,7 @@ const getPatreonConfig = (): PatreonConfig => {
   const clientSecret = process.env.PATREON_CLIENT_SECRET
   const redirectUri = process.env.PATREON_REDIRECT_URI
   const frontendUrl = process.env.FRONTEND_URL ?? 'http://127.0.0.1:7000'
-  const scopes = (process.env.PATREON_SCOPES ?? 'identity identity.memberships')
+  const scopes = (process.env.PATREON_SCOPES ?? 'identity identity.memberships campaigns')
     .split(' ')
     .map((scope) => scope.trim())
     .filter(Boolean)

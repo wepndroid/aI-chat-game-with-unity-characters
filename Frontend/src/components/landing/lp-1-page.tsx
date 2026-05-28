@@ -7,27 +7,34 @@ import { usePathname, useSearchParams } from 'next/navigation'
 import PlatformItem from '@/components/ui-elements/platform-item'
 import type { PlatformIconType } from '@/components/ui-elements/platform-item'
 import StoryTypewriter from '@/components/landing/story-typewriter'
+import { buildLandingSignupHref, readCampaignAttribution } from '@/lib/landing-attribution'
 import { trackLandingVisit } from '@/lib/landing-page-api'
+
+const lp1LandingPage = {
+  key: 'lp-1',
+  name: 'Landing Page 1'
+}
 
 const Lp1Page = () => {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const searchParamsString = searchParams.toString()
-  const attributionQuery = new URLSearchParams(searchParamsString)
-  const campaignSource = searchParams.get('utm_source') ?? searchParams.get('source')
-  const campaignMedium = searchParams.get('utm_medium')
-  const campaignName = searchParams.get('utm_campaign')
-  const campaignContent = searchParams.get('utm_content')
-  const campaignTerm = searchParams.get('utm_term')
-  attributionQuery.set('openSignUp', '1')
-  const signUpHref = `/?${attributionQuery.toString()}`
+  const signUpHref = buildLandingSignupHref(searchParams, lp1LandingPage)
+  const {
+    source: campaignSource,
+    medium: campaignMedium,
+    campaign: campaignName,
+    content: campaignContent,
+    term: campaignTerm,
+    shortUrlKey
+  } = readCampaignAttribution(searchParams)
 
   React.useEffect(() => {
     void trackLandingVisit({
-      landingPageKey: 'lp-1',
-      landingPageName: 'Landing Page 1',
+      landingPageKey: lp1LandingPage.key,
+      landingPageName: lp1LandingPage.name,
       variantKey: 'control',
       variantName: 'Control',
+      shortUrlKey,
       routePath: pathname,
       source: campaignSource,
       medium: campaignMedium,
@@ -39,7 +46,7 @@ const Lp1Page = () => {
     }).catch(() => {
       // Analytics must never block the landing page experience.
     })
-  }, [campaignContent, campaignMedium, campaignName, campaignSource, campaignTerm, pathname, searchParamsString])
+  }, [campaignContent, campaignMedium, campaignName, campaignSource, campaignTerm, pathname, shortUrlKey])
 
   const heroPlatforms: { id: string; label: string; iconType: PlatformIconType; href: string; ariaLabel: string }[] = [
     { id: 'browser', label: 'Browser', iconType: 'browser', href: signUpHref, ariaLabel: 'Sign up to start in browser' },

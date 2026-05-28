@@ -1,18 +1,21 @@
 import { randomUUID } from 'node:crypto'
-import fs from 'node:fs'
 import path from 'node:path'
 import type { Request } from 'express'
 import { Router } from 'express'
 import multer from 'multer'
 import { prisma } from '../lib/prisma'
 import { tryDeleteTrustedUploadFile } from '../lib/delete-local-upload-file'
+import {
+  buildUploadUrl,
+  ensureUploadFolder,
+  getUploadRelativePathFromAbsolutePath,
+  uploadFolders
+} from '../lib/upload-paths'
 import { requireAuth, requireVerifiedEmail } from '../middleware/auth-middleware'
 
 const userAvatarRoutes = Router()
 
-const uploadsRoot = path.join(process.cwd(), 'uploads')
-
-fs.mkdirSync(uploadsRoot, { recursive: true })
+ensureUploadFolder(uploadFolders.avatars)
 
 const previewExtFromMime = (mime: string) => {
   if (mime === 'image/jpeg') return '.jpg'
@@ -24,7 +27,7 @@ const previewExtFromMime = (mime: string) => {
 
 const storage = multer.diskStorage({
   destination: (_request, _file, callback) => {
-    callback(null, uploadsRoot)
+    callback(null, ensureUploadFolder(uploadFolders.avatars))
   },
   filename: (_request, file, callback) => {
     const id = randomUUID()
@@ -98,7 +101,12 @@ userAvatarRoutes.post(
       }
 
       const origin = resolvePublicOrigin(request)
-      const avatarUrl = `${origin}/uploads/${file.filename}`
+      const relativePath = getUploadRelativePathFromAbsolutePath(file.path)
+      if (!relativePath) {
+        response.status(500).json({ message: 'Uploaded avatar path is invalid.' })
+        return
+      }
+      const avatarUrl = buildUploadUrl(origin, relativePath)
 
       const previous = await prisma.user.findUnique({
         where: { id: authUser.userId },
